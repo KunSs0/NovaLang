@@ -22,6 +22,7 @@ public final class NovaTypes {
     public static final ClassNovaType STRING = new ClassNovaType("String", false);
     public static final ClassNovaType ANY = new ClassNovaType("Any", false);
     public static final ClassNovaType NUMBER = new ClassNovaType("Number", false);
+    public static final ClassNovaType REGEX = new ClassNovaType("Regex", false);
     public static final ClassNovaType DYNAMIC = new ClassNovaType("dynamic", false);
 
     // 特殊类型
@@ -64,6 +65,7 @@ public final class NovaTypes {
             case "Boolean": return BOOLEAN;
             case "Char": return CHAR;
             case "String": return STRING;
+            case "Regex": return REGEX;
             case "Any": return ANY;
             case "Number": return NUMBER;
             case "dynamic":

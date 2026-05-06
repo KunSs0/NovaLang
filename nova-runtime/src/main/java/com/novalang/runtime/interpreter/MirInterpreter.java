@@ -2977,6 +2977,14 @@ final class MirInterpreter {
                 callDispatcher.executeInvokeStatic(frame, pipeInst);
                 return;
             }
+            case "bootstrapRegexCompile": {
+                // 直接调用 RegexLiteral.compile(pattern)
+                NovaValue pattern = frame.get(ops[0]);
+                NovaValue result = com.novalang.runtime.RegexLiteral.compile(
+                        pattern.asString());
+                if (inst.getDest() >= 0) frame.locals[inst.getDest()] = result;
+                return;
+            }
             default:
                 throw new NovaRuntimeException(NovaException.ErrorKind.INTERNAL,
                         "[内部错误] 未知的 bootstrap 方法: " + info.bootstrapMethod, null);

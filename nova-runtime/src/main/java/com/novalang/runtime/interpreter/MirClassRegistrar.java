@@ -75,6 +75,8 @@ final class MirClassRegistrar {
                 case DOUBLE:  return NovaDouble.of(((Number) value).doubleValue());
                 case CHAR:    return NovaChar.of((Character) value);
                 case STRING:  return NovaString.of((String) value);
+                case REGEX:   return com.novalang.runtime.RegexLiteral.compile(
+                        (String) value);
                 case BOOLEAN: return NovaBoolean.of((Boolean) value);
                 case NULL:    return NovaNull.NULL;
                 default:      return AbstractNovaValue.fromJava(value);

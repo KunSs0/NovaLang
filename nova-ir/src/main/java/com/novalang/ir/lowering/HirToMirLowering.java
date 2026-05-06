@@ -3134,6 +3134,17 @@ public class HirToMirLowering {
             case FLOAT: return builder.emitConstFloat((Float) lit.getValue(), loc);
             case DOUBLE: return builder.emitConstDouble((Double) lit.getValue(), loc);
             case STRING: return builder.emitConstString((String) lit.getValue(), loc);
+            case REGEX: {
+                String pattern = (String) lit.getValue();
+                int strReg = builder.emitConstString(pattern, loc);
+                InvokeDynamicInfo info = new InvokeDynamicInfo(
+                        "compile",
+                        "com/novalang/runtime/RegexLiteral",
+                        "bootstrapRegexCompile",
+                        "(Ljava/lang/String;)Lcom/novalang/runtime/NovaMap;");
+                return builder.emitInvokeDynamic(info, new int[]{strReg},
+                        MirType.ofObject("com/novalang/runtime/NovaMap"), loc);
+            }
             case BOOLEAN: return builder.emitConstBool((Boolean) lit.getValue(), loc);
             case CHAR: return builder.emitConstChar((Character) lit.getValue(), loc);
             case UNIT:

@@ -2706,6 +2706,7 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
         NovaType novaType;
         switch (node.getKind()) {
             case STRING:  novaType = NovaTypes.STRING;           break;
+            case REGEX:   novaType = NovaTypes.REGEX;            break;
             case INT:     novaType = NovaTypes.INT;              break;
             case LONG:    novaType = NovaTypes.LONG;             break;
             case FLOAT:   novaType = NovaTypes.FLOAT;            break;
@@ -3125,8 +3126,8 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
                 }
                 break;
             case EQ: case NE: case LT: case GT: case LE: case GE:
-            case REF_EQ: case REF_NE: case AND: case OR:
-            case IN: case NOT_IN:
+            case REF_EQ: case REF_NE: case MATCH_REGEX: case NOT_MATCH_REGEX:
+            case AND: case OR: case IN: case NOT_IN:
                 resultType = NovaTypes.BOOLEAN;
                 break;
             case RANGE_INCLUSIVE: case RANGE_EXCLUSIVE:

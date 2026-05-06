@@ -266,6 +266,8 @@ public class Lexer {
                     addToken(match('=') ? TokenType.REF_EQ : TokenType.EQ);
                 } else if (match('>')) {
                     addToken(TokenType.DOUBLE_ARROW);
+                } else if (match('~')) {
+                    addToken(TokenType.MATCH_REGEX);
                 } else {
                     addToken(TokenType.ASSIGN);
                 }
@@ -276,6 +278,8 @@ public class Lexer {
                     addToken(match('=') ? TokenType.REF_NE : TokenType.NE);
                 } else if (match('!')) {
                     addToken(TokenType.NOT_NULL);
+                } else if (match('~')) {
+                    addToken(TokenType.NOT_MATCH_REGEX);
                 } else {
                     addToken(TokenType.NOT);
                 }
@@ -381,11 +385,15 @@ public class Lexer {
                 character();
                 break;
 
-            // 原始字符串 r"..."
+            // 原始字符串 r"..."  正则表达式 re"..."
             case 'r':
                 if (peek() == '"') {
                     advance();
                     rawString();
+                } else if (peek() == 'e' && current + 1 < source.length() && source.charAt(current + 1) == '"') {
+                    advance(); // consume 'e'
+                    advance(); // consume '"'
+                    regexString();
                 } else {
                     identifier();
                 }
@@ -521,6 +529,39 @@ public class Lexer {
         advance(); // 闭合的 "
         String value = source.substring(start + 2, current - 1); // 去掉 r" 和 "
         addToken(TokenType.RAW_STRING, value);
+    }
+
+    private void regexString() {
+        while (peek() != '"' && !isAtEnd()) {
+            if (peek() == '\n') newLine();
+            advance();
+        }
+
+        if (isAtEnd()) {
+            error("Unterminated regex literal");
+            return;
+        }
+
+        advance(); // 闭合的 "
+
+        // 解析 flags 后缀: re"pattern"i, re"pattern"im, re"pattern"ims
+        StringBuilder flags = new StringBuilder();
+        while (!isAtEnd() && isRegexFlag(peek())) {
+            char flag = advance();
+            if (flags.indexOf(String.valueOf(flag)) < 0) {
+                flags.append(flag);
+            }
+        }
+
+        String pattern = source.substring(start + 3, current - 1 - flags.length()); // 去掉 re" 和 " 和 flags
+        if (flags.length() > 0) {
+            pattern = "(?" + flags.toString() + ")" + pattern; // 内联 flags
+        }
+        addToken(TokenType.REGEX_LITERAL, pattern);
+    }
+
+    private boolean isRegexFlag(char c) {
+        return c == 'i' || c == 'm' || c == 's';
     }
 
     private void multilineString() {

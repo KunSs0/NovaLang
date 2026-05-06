@@ -850,6 +850,143 @@ class StdlibExpansionTest {
             assertTrue(interpreter.evalRepl("r.matches(\"Hello\")").asBool());
             assertFalse(interpreter.evalRepl("Regex(\"hello\").matches(\"HELLO\")").asBool());
         }
+
+        @Test
+        @DisplayName("正则表达式字面量 re\"...\"")
+        void testRegexLiteral() {
+            // re"..." 返回与 Regex() 相同 API 的 NovaMap
+            interpreter.evalRepl("val r = re\"[0-9]+\"");
+            assertTrue(interpreter.evalRepl("r.matches(\"123\")").asBool());
+            assertFalse(interpreter.evalRepl("r.matches(\"abc\")").asBool());
+            assertTrue(interpreter.evalRepl("r.containsMatchIn(\"abc123def\")").asBool());
+
+            // find
+            interpreter.evalRepl("val m = r.find(\"abc123def456\")");
+            assertEquals("123", interpreter.evalRepl("m.value").asString());
+
+            // pattern
+            assertEquals("[0-9]+", interpreter.evalRepl("r.pattern").asString());
+        }
+
+        @Test
+        @DisplayName("正则表达式字面量 flags 后缀")
+        void testRegexLiteralFlags() {
+            // re"pattern"i → 大小写不敏感
+            interpreter.evalRepl("val ri = re\"hello\"i");
+            assertTrue(interpreter.evalRepl("ri.matches(\"HELLO\")").asBool());
+            assertTrue(interpreter.evalRepl("ri.matches(\"Hello\")").asBool());
+
+            // re"pattern" 不带 flags → 大小写敏感
+            interpreter.evalRepl("val rs = re\"hello\"");
+            assertFalse(interpreter.evalRepl("rs.matches(\"HELLO\")").asBool());
+
+            // re"pattern"m → 多行模式: ^$ 匹配每行首尾
+            interpreter.evalRepl("val rm = re\"^test$\"m");
+            assertTrue(interpreter.evalRepl("rm.containsMatchIn(\"line1\\ntest\\nline3\")").asBool());
+
+            // re"pattern"s → DOTALL: . 匹配换行符
+            interpreter.evalRepl("val rd = re\"a.b\"s");
+            assertTrue(interpreter.evalRepl("rd.matches(\"a\\nb\")").asBool());
+
+            // 组合 flags: im = 大小写不敏感 + 多行
+            interpreter.evalRepl("val rim = re\"^hello$\"im");
+            assertTrue(interpreter.evalRepl("rim.matches(\"HELLO\")").asBool());
+        }
+
+        @Test
+        @DisplayName("正则表达式命名捕获组 — re\"...\" 字面量")
+        void testRegexLiteralNamedGroups() {
+            // 基本命名捕获组 (re"..." 内不转义，\\d → Java 中 \"\\\\d\" → Nova → \\d → regex \d)
+            interpreter.evalRepl(
+                "val r = re\"(?<year>\\d{4})-(?<month>\\d{2})-(?<day>\\d{2})\"");
+
+            // pattern 级别: groupNames
+            interpreter.evalRepl("val names = r.groupNames");
+            assertTrue(interpreter.evalRepl("names.contains(\"year\")").asBool());
+            assertTrue(interpreter.evalRepl("names.contains(\"month\")").asBool());
+            assertTrue(interpreter.evalRepl("names.contains(\"day\")").asBool());
+
+            // pattern 级别: namedGroupIndices (name → 1-based index)
+            assertEquals(1, interpreter.evalRepl("r.namedGroupIndices.year").asInt());
+            assertEquals(2, interpreter.evalRepl("r.namedGroupIndices.month").asInt());
+            assertEquals(3, interpreter.evalRepl("r.namedGroupIndices.day").asInt());
+
+            // find — match 级别: namedGroups
+            interpreter.evalRepl("val m = r.find(\"日期: 2026-05-06\")");
+            assertEquals("2026", interpreter.evalRepl("m.namedGroups.year").asString());
+            assertEquals("05", interpreter.evalRepl("m.namedGroups.month").asString());
+            assertEquals("06", interpreter.evalRepl("m.namedGroups.day").asString());
+
+            // 原有 groups (按索引) 仍然可用
+            assertEquals("2026-05-06", interpreter.evalRepl("m.groups[0]").asString());
+            assertEquals("2026", interpreter.evalRepl("m.groups[1]").asString());
+            assertEquals("05", interpreter.evalRepl("m.groups[2]").asString());
+            assertEquals("06", interpreter.evalRepl("m.groups[3]").asString());
+        }
+
+        @Test
+        @DisplayName("正则表达式命名捕获组 — nova.text.Regex() 构造函数")
+        void testRegexConstructorNamedGroups() {
+            interpreter.evalRepl("import nova.text.*");
+            interpreter.evalRepl(
+                "val r = Regex(\"(?<word>[a-z]+) (?<num>[0-9]+)\")");
+
+            // pattern 级别: groupNames
+            interpreter.evalRepl("val names = r.groupNames");
+            assertTrue(interpreter.evalRepl("names.contains(\"word\")").asBool());
+            assertTrue(interpreter.evalRepl("names.contains(\"num\")").asBool());
+
+            // pattern 级别: namedGroupIndices
+            assertEquals(1, interpreter.evalRepl("r.namedGroupIndices.word").asInt());
+            assertEquals(2, interpreter.evalRepl("r.namedGroupIndices.num").asInt());
+
+            // containsMatchIn 和 matches
+            assertTrue(interpreter.evalRepl("r.containsMatchIn(\"hello 42\")").asBool());
+            assertTrue(interpreter.evalRepl("r.matches(\"hello 42\")").asBool());
+
+            // find — match 级别: namedGroups
+            interpreter.evalRepl("val m = r.find(\"hello 42 world\")");
+            assertEquals("hello", interpreter.evalRepl("m.namedGroups.word").asString());
+            assertEquals("42", interpreter.evalRepl("m.namedGroups.num").asString());
+
+            // findAll — "a 1" "b 2" "c 3" 各匹配一次
+            interpreter.evalRepl("val all = r.findAll(\"a 1 b 2 c 3\")");
+            assertEquals(3, interpreter.evalRepl("all.size()").asInt());
+            assertEquals("a", interpreter.evalRepl("all[0].namedGroups.word").asString());
+            assertEquals("1", interpreter.evalRepl("all[0].namedGroups.num").asString());
+            assertEquals("b", interpreter.evalRepl("all[1].namedGroups.word").asString());
+            assertEquals("2", interpreter.evalRepl("all[1].namedGroups.num").asString());
+            assertEquals("c", interpreter.evalRepl("all[2].namedGroups.word").asString());
+            assertEquals("3", interpreter.evalRepl("all[2].namedGroups.num").asString());
+        }
+
+        @Test
+        @DisplayName("=~ 正则表达式匹配运算符")
+        void testRegexMatchOperator() {
+            interpreter.evalRepl("import nova.text.*");
+            // =~ 等价于 regex.containsMatchIn(string)
+            assertTrue(interpreter.evalRepl("\"hello 123\" =~ re\"[0-9]+\"").asBool());
+            assertTrue(interpreter.evalRepl("\"hello 123\" =~ Regex(\"[0-9]+\")").asBool());
+            assertFalse(interpreter.evalRepl("\"abc\" =~ re\"[0-9]+\"").asBool());
+
+            // 使用 re\"...\" 字面量
+            interpreter.evalRepl("val r = re\"[a-z]+\"");
+            assertTrue(interpreter.evalRepl("\"hello\" =~ r").asBool());
+            assertFalse(interpreter.evalRepl("\"123\" =~ r").asBool());
+        }
+
+        @Test
+        @DisplayName("!~ 正则表达式不匹配运算符")
+        void testRegexNotMatchOperator() {
+            interpreter.evalRepl("import nova.text.*");
+            // !~ 等价于 !regex.containsMatchIn(string)
+            assertTrue(interpreter.evalRepl("\"abc\" !~ re\"[0-9]+\"").asBool());
+            assertFalse(interpreter.evalRepl("\"hello 123\" !~ re\"[0-9]+\"").asBool());
+
+            // 使用 Regex() 构造函数
+            assertTrue(interpreter.evalRepl("\"abc\" !~ Regex(\"[0-9]+\")").asBool());
+            assertFalse(interpreter.evalRepl("\"123\" !~ Regex(\"[0-9]+\")").asBool());
+        }
     }
 
     // ================================================================

@@ -58,6 +58,8 @@ public class BinaryExpr extends Expression {
         NE("!="),
         REF_EQ("==="),
         REF_NE("!=="),
+        MATCH_REGEX("=~"),
+        NOT_MATCH_REGEX("!~"),
         LT("<"),
         GT(">"),
         LE("<="),

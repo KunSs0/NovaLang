@@ -874,6 +874,11 @@ public class NovaFormatter implements AstVisitor<Void, FormatterContext> {
                 ctx.append(NovaStringUtils.escapeChar((Character) value));
                 ctx.append("'");
                 break;
+            case REGEX:
+                ctx.append("re\"");
+                ctx.append(value.toString());
+                ctx.append("\"");
+                break;
             case BOOLEAN:
                 ctx.append(value.toString());
                 break;

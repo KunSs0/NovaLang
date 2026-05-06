@@ -970,6 +970,7 @@ public class AstToHirLowering implements AstVisitor<AstNode, LoweringContext> {
             case DOUBLE: return new PrimitiveType(PrimitiveType.Kind.DOUBLE);
             case CHAR: return new PrimitiveType(PrimitiveType.Kind.CHAR);
             case STRING: return new ClassType("String");
+            case REGEX: return new ClassType("Regex");
             case BOOLEAN: return new PrimitiveType(PrimitiveType.Kind.BOOLEAN);
             case UNIT: return new PrimitiveType(PrimitiveType.Kind.UNIT);
             case NULL: return null;
@@ -1006,6 +1007,26 @@ public class AstToHirLowering implements AstVisitor<AstNode, LoweringContext> {
             return new RangeExpr(node.getLocation(),
                     lowerExpr(node.getLeft(), ctx), lowerExpr(node.getRight(), ctx),
                     null, true);
+        }
+
+        // =~ 和 !~ 降级为 Regex 方法调用
+        if (node.getOperator() == BinaryExpr.BinaryOp.MATCH_REGEX) {
+            // str =~ regex → regex.containsMatchIn(str)
+            Expression regex = lowerExpr(node.getRight(), ctx);
+            Expression str = lowerExpr(node.getLeft(), ctx);
+            MemberExpr member = new MemberExpr(node.getLocation(), regex, "containsMatchIn");
+            return new HirCall(node.getLocation(), null, member,
+                    Collections.emptyList(), Collections.singletonList(str));
+        }
+        if (node.getOperator() == BinaryExpr.BinaryOp.NOT_MATCH_REGEX) {
+            // str !~ regex → !regex.containsMatchIn(str)
+            Expression regex = lowerExpr(node.getRight(), ctx);
+            Expression str = lowerExpr(node.getLeft(), ctx);
+            MemberExpr member = new MemberExpr(node.getLocation(), regex, "containsMatchIn");
+            HirCall call = new HirCall(node.getLocation(), null, member,
+                    Collections.emptyList(), Collections.singletonList(str));
+            return new UnaryExpr(node.getLocation(), null,
+                    UnaryExpr.UnaryOp.NOT, call, true);
         }
 
         BinaryOp op = node.getOperator();

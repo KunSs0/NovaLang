@@ -46,6 +46,7 @@ public class Literal extends Expression {
         DOUBLE,
         CHAR,
         STRING,
+        REGEX,
         BOOLEAN,
         UNIT,
         NULL;

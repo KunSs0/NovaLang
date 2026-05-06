@@ -171,7 +171,7 @@ class ExprParser {
     private Expression parseEqualityExpr() {
         Expression left = parseComparisonExpr();
 
-        if (!parser.checkAny(EQ, NE, REF_EQ, REF_NE)) {
+        if (!parser.checkAny(EQ, NE, REF_EQ, REF_NE, MATCH_REGEX, NOT_MATCH_REGEX)) {
             return left;
         }
 
@@ -179,7 +179,7 @@ class ExprParser {
         Expression result = null;
         Expression prevRight = left;
 
-        while (parser.checkAny(EQ, NE, REF_EQ, REF_NE)) {
+        while (parser.checkAny(EQ, NE, REF_EQ, REF_NE, MATCH_REGEX, NOT_MATCH_REGEX)) {
             Token op = parser.advance();
             SourceLocation loc = parser.previousLocation();
             Expression right = parseComparisonExpr();
@@ -189,6 +189,8 @@ class ExprParser {
                 case NE: binOp = BinaryExpr.BinaryOp.NE; break;
                 case REF_EQ: binOp = BinaryExpr.BinaryOp.REF_EQ; break;
                 case REF_NE: binOp = BinaryExpr.BinaryOp.REF_NE; break;
+                case MATCH_REGEX: binOp = BinaryExpr.BinaryOp.MATCH_REGEX; break;
+                case NOT_MATCH_REGEX: binOp = BinaryExpr.BinaryOp.NOT_MATCH_REGEX; break;
                 default: throw new ParseException("Unexpected operator", op);
             }
 
@@ -519,7 +521,7 @@ class ExprParser {
     // 检查当前 token 是否是字面量的开始
     private boolean isLiteralStart() {
         return parser.checkAny(INT_LITERAL, LONG_LITERAL, FLOAT_LITERAL, DOUBLE_LITERAL,
-                       CHAR_LITERAL, STRING_LITERAL, RAW_STRING, MULTILINE_STRING,
+                       CHAR_LITERAL, STRING_LITERAL, RAW_STRING, MULTILINE_STRING, REGEX_LITERAL,
                        KW_TRUE, KW_FALSE, KW_NULL);
     }
 
@@ -786,7 +788,7 @@ class ExprParser {
         }
 
         // 字符/字符串字面量
-        if (parser.checkAny(CHAR_LITERAL, STRING_LITERAL, RAW_STRING, MULTILINE_STRING)) {
+        if (parser.checkAny(CHAR_LITERAL, STRING_LITERAL, RAW_STRING, MULTILINE_STRING, REGEX_LITERAL)) {
             return parseStringOrCharLiteral();
         }
 
@@ -918,6 +920,11 @@ class ExprParser {
 
         if (tok.getType() == CHAR_LITERAL) {
             return new Literal(loc, parser.literalHelper.parseCharValue(value), Literal.LiteralKind.CHAR);
+        }
+
+        // 正则表达式字面量 re"..."
+        if (tok.getType() == REGEX_LITERAL) {
+            return new Literal(loc, tok.getLiteral(), Literal.LiteralKind.REGEX);
         }
 
         // 原始字符串不支持插值

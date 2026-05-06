@@ -13,6 +13,7 @@ public enum TokenType {
     STRING_LITERAL,
     RAW_STRING,             // r"..."
     MULTILINE_STRING,       // """..."""
+    REGEX_LITERAL,          // re"..."
 
     // === 标识符 ===
     IDENTIFIER,
@@ -60,6 +61,8 @@ public enum TokenType {
     NE,             // !=
     REF_EQ,         // ===
     REF_NE,         // !==
+    MATCH_REGEX,    // =~
+    NOT_MATCH_REGEX,// !~
     LT,             // <
     GT,             // >
     LE,             // <=

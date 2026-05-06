@@ -13,7 +13,7 @@ public final class SourceLocation {
     public static final SourceLocation UNKNOWN = new SourceLocation("<unknown>", 0, 0, 0, 0);
 
     public SourceLocation(String file, int line, int column, int offset, int length) {
-        this.file = file != null ? file.intern() : null;
+        this.file = file;
         this.line = line;
         this.column = column;
         this.offset = offset;
