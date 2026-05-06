@@ -1086,6 +1086,28 @@ public class NovaFormatter implements AstVisitor<Void, FormatterContext> {
     }
 
     @Override
+    public Void visitCascadeExpr(CascadeExpr node, FormatterContext ctx) {
+        formatExpression(node.getTarget(), ctx);
+        for (CascadeExpr.CascadeCall call : node.getCalls()) {
+            ctx.append("~.");
+            ctx.append(call.getMethodName());
+            if (call.getArgs() != null && !call.getArgs().isEmpty()) {
+                ctx.append("(");
+                for (int i = 0; i < call.getArgs().size(); i++) {
+                    if (i > 0) ctx.append(", ");
+                    formatExpression(call.getArgs().get(i).getValue(), ctx);
+                }
+                ctx.append(")");
+            }
+            if (call.getTrailingLambda() != null) {
+                ctx.append(" ");
+                formatExpression(call.getTrailingLambda(), ctx);
+            }
+        }
+        return null;
+    }
+
+    @Override
     public Void visitSafeIndexExpr(SafeIndexExpr node, FormatterContext ctx) {
         formatExpression(node.getTarget(), ctx);
         ctx.append("?[");

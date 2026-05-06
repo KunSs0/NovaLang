@@ -1035,6 +1035,35 @@ public class AstToHirLowering implements AstVisitor<AstNode, LoweringContext> {
     }
 
     @Override
+    public AstNode visitCascadeExpr(CascadeExpr node, LoweringContext ctx) {
+        SourceLocation loc = node.getLocation();
+        Expression targetLowered = lowerExpr(node.getTarget(), ctx);
+        String tmp = ctx.freshTemp();
+
+        List<Statement> stmts = new ArrayList<>();
+        stmts.add(ctx.makeTempVal(loc, tmp, null, targetLowered));
+
+        Identifier tmpRef = ctx.tempRef(loc, tmp, null);
+        for (CascadeExpr.CascadeCall call : node.getCalls()) {
+            MemberExpr member = new MemberExpr(call.getLocation(), tmpRef, call.getMethodName());
+            List<Expression> args = new ArrayList<>();
+            if (call.getArgs() != null) {
+                for (CallExpr.Argument arg : call.getArgs()) {
+                    args.add(lowerExpr(arg.getValue(), ctx));
+                }
+            }
+            if (call.getTrailingLambda() != null) {
+                args.add(lowerExpr(call.getTrailingLambda(), ctx));
+            }
+            HirCall hirCall = new HirCall(call.getLocation(), null, member,
+                    Collections.emptyList(), args);
+            stmts.add(new ExpressionStmt(call.getLocation(), hirCall));
+        }
+
+        return new BlockExpr(loc, stmts, tmpRef);
+    }
+
+    @Override
     public AstNode visitUnaryExpr(UnaryExpr node, LoweringContext ctx) {
         return new UnaryExpr(node.getLocation(), null,
                 node.getOperator(), lowerExpr(node.getOperand(), ctx), node.isPrefix());

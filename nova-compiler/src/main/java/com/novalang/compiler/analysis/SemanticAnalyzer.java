@@ -3149,6 +3149,23 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
     }
 
     @Override
+    public Void visitCascadeExpr(CascadeExpr node, Void ctx) {
+        node.getTarget().accept(this, ctx);
+        for (CascadeExpr.CascadeCall call : node.getCalls()) {
+            if (call.getArgs() != null) {
+                for (CallExpr.Argument arg : call.getArgs()) {
+                    arg.getValue().accept(this, ctx);
+                }
+            }
+            if (call.getTrailingLambda() != null) {
+                call.getTrailingLambda().accept(this, ctx);
+            }
+        }
+        setNovaType(node, getNovaType(node.getTarget()));
+        return null;
+    }
+
+    @Override
     public Void visitUnaryExpr(UnaryExpr node, Void ctx) {
         node.getOperand().accept(this, ctx);
         NovaType operandNovaType = getNovaType(node.getOperand());

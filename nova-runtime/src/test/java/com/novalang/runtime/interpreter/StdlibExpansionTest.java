@@ -1430,4 +1430,55 @@ class StdlibExpansionTest {
             assertThrows(NovaRuntimeException.class, () -> strict.evalRepl("httpGet(\"http://example.com\")"));
         }
     }
+
+    // ================================================================
+    // 语言特性：级联操作符 ~.
+    // ================================================================
+
+    @Nested
+    @DisplayName("级联操作符 ~.")
+    class CascadeOperatorTest {
+
+        @Test
+        @DisplayName("基本级联调用")
+        void testBasicCascade() {
+            interpreter.evalRepl("class Counter(var count: Int) {"
+                    + "fun inc() { count = count + 1 }"
+                    + "fun add(n: Int) { count = count + n }"
+                    + "}");
+            interpreter.evalRepl("val c = Counter(0) ~.inc() ~.inc() ~.add(5)");
+            assertEquals(7, interpreter.evalRepl("c.count").asInt());
+        }
+
+        @Test
+        @DisplayName("级联后继续 . 调用")
+        void testCascadeThenDot() {
+            interpreter.evalRepl("class Counter(var count: Int) {"
+                    + "fun inc() { count = count + 1 }"
+                    + "}");
+            NovaValue result = interpreter.evalRepl("Counter(0) ~.inc() ~.inc().count");
+            assertEquals(2, result.asInt());
+        }
+
+        @Test
+        @DisplayName("级联调用单参数方法")
+        void testCascadeNoArgs() {
+            interpreter.evalRepl("class Builder() {"
+                    + "var value = \"\""
+                    + "fun appendA() { value = value + \"A\" }"
+                    + "fun appendB() { value = value + \"B\" }"
+                    + "fun build(): String = value"
+                    + "}");
+            interpreter.evalRepl("val b = Builder() ~.appendA() ~.appendA() ~.appendB()");
+            assertEquals("AAB", interpreter.evalRepl("b.value").asString());
+        }
+
+        @Test
+        @DisplayName("级联 with Java StringBuilder")
+        void testCascadeJavaObject() {
+            interpreter.evalRepl("import java java.lang.StringBuilder");
+            interpreter.evalRepl("val sb = StringBuilder() ~.append(\"Hello\") ~.append(\" \") ~.append(\"World\")");
+            assertEquals("Hello World", interpreter.evalRepl("sb.toString()").asString());
+        }
+    }
 }

@@ -332,7 +332,11 @@ public class Lexer {
                 break;
 
             case '~':
-                addToken(TokenType.BNOT);
+                if (match('.')) {
+                    addToken(TokenType.CASCADE);
+                } else {
+                    addToken(TokenType.BNOT);
+                }
                 break;
 
             case '?':

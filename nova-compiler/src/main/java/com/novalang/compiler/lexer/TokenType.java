@@ -63,6 +63,7 @@ public enum TokenType {
     REF_NE,         // !==
     MATCH_REGEX,    // =~
     NOT_MATCH_REGEX,// !~
+    CASCADE,        // ~.
     LT,             // <
     GT,             // >
     LE,             // <=

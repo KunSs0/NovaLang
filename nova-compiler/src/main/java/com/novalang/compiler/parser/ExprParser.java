@@ -556,6 +556,12 @@ class ExprParser {
                 }
                 parser.advance(); // consume ?
                 expr = new ErrorPropagationExpr(parser.previousLocation(), expr);
+            } else if (parser.match(CASCADE)) {
+                List<CascadeExpr.CascadeCall> cascadeCalls = new java.util.ArrayList<>();
+                do {
+                    cascadeCalls.add(parseCascadeCall());
+                } while (parser.match(CASCADE));
+                expr = new CascadeExpr(loc, expr, cascadeCalls);
             } else if (parser.match(DOT)) {
                 expr = parseDotMember(loc, expr);
             } else if (parser.match(SAFE_DOT)) {
@@ -583,6 +589,25 @@ class ExprParser {
         }
 
         return expr;
+    }
+
+    // ~.methodName [typeArgs] (args) [trailingLambda]
+    private CascadeExpr.CascadeCall parseCascadeCall() {
+        SourceLocation loc = parser.previousLocation();
+        String methodName = parser.expectMemberName();
+        List<TypeRef> typeArgs = null;
+        if (parser.check(LT) && parser.typeParser.tryParseCallTypeArgs()) {
+            typeArgs = parser.parseTypeRefList();
+        }
+        List<CallExpr.Argument> args = null;
+        if (parser.check(LPAREN)) {
+            args = parseCallArgs();
+        }
+        LambdaExpr trailingLambda = null;
+        if (parser.check(LBRACE) && canBeTrailingLambda()) {
+            trailingLambda = parseTrailingLambda();
+        }
+        return new CascadeExpr.CascadeCall(loc, methodName, typeArgs, args, trailingLambda);
     }
 
     // .member（允许关键字作为成员名，如 s.launch）

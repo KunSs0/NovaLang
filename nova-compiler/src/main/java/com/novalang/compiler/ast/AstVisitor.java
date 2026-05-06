@@ -136,6 +136,8 @@ public interface AstVisitor<R, C> {
 
     default R visitSafeCallExpr(SafeCallExpr node, C ctx) { return null; }
 
+    default R visitCascadeExpr(CascadeExpr node, C ctx) { return null; }
+
     default R visitSafeIndexExpr(SafeIndexExpr node, C ctx) { return null; }
 
     default R visitNotNullExpr(NotNullExpr node, C ctx) { return null; }
