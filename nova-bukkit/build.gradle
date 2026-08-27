@@ -1,8 +1,9 @@
 plugins {
     id 'java-library'
+    id 'com.gradleup.shadow' version '8.3.9'
 }
 
-description = 'NovaLang Bukkit integration - scheduler adapter for Bukkit/Spigot'
+description = 'NovaLang Bukkit runtime plugin and scheduler integration'
 
 repositories {
     maven { url 'https://hub.spigotmc.org/nexus/content/repositories/snapshots/' }
@@ -10,11 +11,76 @@ repositories {
 }
 
 dependencies {
-    implementation project(':nova-runtime')
+    api project(':nova-runtime-workspace')
     compileOnly('org.spigotmc:spigot-api:1.12.2-R0.1-SNAPSHOT') {
         exclude group: 'net.md-5', module: 'bungeecord-chat'
     }
 }
 
-// nova-bukkit 是轻量级适配器，需要配合 nova-runtime 使用
-// Bukkit 插件开发者需引入: nova-runtime-with-dependencies.jar + nova-bukkit.jar
+processResources {
+    filesMatching('plugin.yml') {
+        expand(version: project.version)
+    }
+}
+
+// Bukkit 服务端只安装一个完整产物，业务插件通过硬依赖共享 NovaLang 类加载器。
+shadowJar {
+    archiveBaseName.set('NovaLang')
+    archiveClassifier.set('')
+    mergeServiceFiles()
+
+    // 重定位第三方依赖，避免与服务端和业务插件携带的版本产生类冲突。
+    relocate 'com.github.benmanes.caffeine', 'com.novalang.deps.caffeine'
+    relocate 'org.checkerframework', 'com.novalang.deps.checkerframework'
+    relocate 'fi.iki.elonen', 'com.novalang.deps.nanohttpd'
+    relocate 'org.objectweb.asm', 'com.novalang.deps.asm'
+    relocate 'org.yaml.snakeyaml', 'com.novalang.deps.snakeyaml'
+    relocate 'com.google.gson', 'com.novalang.deps.gson'
+
+    exclude 'META-INF/*.SF', 'META-INF/*.DSA', 'META-INF/*.RSA'
+}
+
+jar.enabled = false
+
+// 业务插件以 compileOnly 方式消费与服务端部署完全一致的 NovaLang 产物。
+publishing {
+    publications {
+        shadow(MavenPublication) {
+            groupId = project.group
+            artifactId = project.name
+            version = project.version
+            artifact shadowJar
+        }
+    }
+}
+
+tasks.register('verifyPluginJar') {
+    group = 'verification'
+    description = 'Verifies that the deployable NovaLang Bukkit JAR contains its plugin metadata and runtime.'
+    dependsOn shadowJar
+
+    doLast {
+        File pluginJar = shadowJar.archiveFile.get().asFile
+        if (!zipTree(pluginJar).matching { include 'plugin.yml' }.files) {
+            throw new GradleException('The NovaLang Bukkit JAR does not contain plugin.yml.')
+        }
+        if (!zipTree(pluginJar).matching { include 'com/novalang/bukkit/NovaBukkitPlugin.class' }.files) {
+            throw new GradleException('The NovaLang Bukkit JAR does not contain its plugin main class.')
+        }
+        if (!zipTree(pluginJar).matching { include 'com/novalang/workspace/RuntimeWorkspace.class' }.files) {
+            throw new GradleException('The NovaLang Bukkit JAR does not contain the workspace runtime.')
+        }
+        if (!zipTree(pluginJar).matching { include 'com/novalang/workspace/WorkspaceTasks.class' }.files) {
+            throw new GradleException('The NovaLang Bukkit JAR does not contain Workspace task support.')
+        }
+        if (!zipTree(pluginJar).matching { include 'com/novalang/workspace/WorkspaceConfigFiles.class' }.files) {
+            throw new GradleException('The NovaLang Bukkit JAR does not contain Workspace config support.')
+        }
+        if (!zipTree(pluginJar).matching { include 'com/novalang/bukkit/BukkitWorkspaceEvents.class' }.files) {
+            throw new GradleException('The NovaLang Bukkit JAR does not contain Bukkit Workspace event support.')
+        }
+    }
+}
+
+tasks.build.dependsOn shadowJar
+tasks.build.dependsOn tasks.named('verifyPluginJar')

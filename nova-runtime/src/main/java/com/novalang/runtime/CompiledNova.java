@@ -173,7 +173,7 @@ public final class CompiledNova {
                 throw e;
             } catch (Throwable e) {
                 String msg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
-                throw new NovaRuntimeException("璋冪敤鍑芥暟 '" + funcName + "' 鏃跺嚭閿? " + msg, e);
+                throw new NovaRuntimeException("Call to function '" + funcName + "' failed: " + msg, e);
             }
         }
         // 字节码模式：初始化脚本上下文（使编译函数能访问注入的全局函数），调用后清理
@@ -195,7 +195,7 @@ public final class CompiledNova {
             throw e;
         } catch (Throwable e) {
             String msg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
-            throw new NovaRuntimeException("调用函数 '" + funcName + "' 时出错: " + msg, e);
+            throw new NovaRuntimeException("Call to function '" + funcName + "' failed: " + msg, e);
         } finally {
             NovaScriptContext.clear();
         }
@@ -230,7 +230,7 @@ public final class CompiledNova {
                 throw e;
             } catch (Throwable e) {
                 String msg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
-                throw new NovaRuntimeException("璋冪敤鍑芥暟 '" + funcName + "' 鏃跺嚭閿? " + msg, e);
+                throw new NovaRuntimeException("Call to function '" + funcName + "' failed: " + msg, e);
             }
         }
         NovaScriptContext prev = NovaScriptContext.current();
@@ -253,9 +253,69 @@ public final class CompiledNova {
             throw e;
         } catch (Throwable e) {
             String msg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
-            throw new NovaRuntimeException("调用函数 '" + funcName + "' 时出错: " + msg, e);
+            throw new NovaRuntimeException("Call to function '" + funcName + "' failed: " + msg, e);
         } finally {
             NovaScriptContext.setCurrent(prev);
+        }
+    }
+
+    /**
+     * 使用当前程序的基础绑定和本次调用绑定执行函数，不修改任一输入绑定集合。
+     *
+     * <p>该方法用于共享同一字节码程序的并发服务端调用。每次调用创建独立上下文，
+     * 脚本对全局变量的修改只在本次调用内可见。</p>
+     *
+     * @param funcName 函数名称
+     * @param executionBindings 本次调用绑定，允许为 {@code null}
+     * @param args 函数参数
+     * @return 函数返回值
+     * @throws IllegalArgumentException 调用绑定包含空键时抛出
+     * @throws NovaRuntimeException 当前程序不是字节码模式、函数不存在或执行失败时抛出
+     */
+    public Object callIsolated(String funcName,
+                               Map<String, Object> executionBindings,
+                               Object... args) {
+        if (nova != null) {
+            throw new NovaRuntimeException("callIsolated is only available in bytecode mode");
+        }
+        if (compiledClasses == null) {
+            throw new NovaRuntimeException("The compiled program has no executable bytecode");
+        }
+
+        Map<String, Object> localBindings = new HashMap<>(bindings);
+        if (executionBindings != null) {
+            for (Map.Entry<String, Object> entry : executionBindings.entrySet()) {
+                if (entry.getKey() == null) {
+                    throw new IllegalArgumentException("Binding key must not be null");
+                }
+                localBindings.put(entry.getKey(), NativeFunctionAdapter.toBindingValue(entry.getValue()));
+            }
+        }
+
+        try {
+            return withScriptExecutionContext(localBindings, false, () -> {
+                Class<?> functionClass = funcClassCache.get(funcName);
+                if (functionClass == null) {
+                    functionClass = findFuncClass(funcName);
+                    funcClassCache.put(funcName, functionClass);
+                }
+                Object result = MethodHandleCache.getInstance().invokeStatic(
+                        functionClass, funcName, args);
+                if (result instanceof NovaValue) {
+                    if (((NovaValue) result).isNull()) {
+                        return null;
+                    }
+                    return ((NovaValue) result).toJavaValue();
+                }
+                return result;
+            });
+        } catch (NovaRuntimeException exception) {
+            throw exception;
+        } catch (Throwable exception) {
+            String message = exception.getMessage() == null
+                    ? exception.getClass().getSimpleName() : exception.getMessage();
+            throw new NovaRuntimeException("Isolated call to function '" + funcName + "' failed: "
+                    + message, exception);
         }
     }
 
@@ -557,7 +617,7 @@ public final class CompiledNova {
         } catch (RuntimeException e) {
             throw e;
         } catch (Throwable e) {
-            throw NovaErrors.wrap("runDirect 执行失败", e);
+            throw NovaErrors.wrap("Direct script execution failed", e);
         } finally {
             NovaScriptContext.setCurrent(prev);
         }
@@ -597,7 +657,7 @@ public final class CompiledNova {
             } catch (RuntimeException e) {
                 throw e;
             } catch (Throwable e) {
-                throw NovaErrors.wrap("鑴氭湰鎵ц澶辫触", e);
+                throw NovaErrors.wrap("Script execution failed", e);
             }
         }
         NovaScriptContext.init(bindings);
@@ -620,7 +680,7 @@ public final class CompiledNova {
         } catch (RuntimeException e) {
             throw e;
         } catch (Throwable e) {
-            throw NovaErrors.wrap("脚本执行失败", e);
+            throw NovaErrors.wrap("Script execution failed", e);
         } finally {
             com.novalang.runtime.interpreter.JavaInterop.setScriptClassLoader(null);
             NovaScriptContext.clear();

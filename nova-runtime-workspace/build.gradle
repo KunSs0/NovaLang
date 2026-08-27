@@ -1,0 +1,17 @@
+plugins {
+    id 'java-library'
+}
+
+description = 'NovaLang Runtime Workspace - module graph, isolated execution and lifecycle management'
+
+dependencies {
+    api project(':nova-runtime')
+    implementation project(':nova-compiler')
+    implementation 'org.yaml:snakeyaml:2.0'
+}
+
+tasks.withType(Javadoc) {
+    options.encoding = 'UTF-8'
+    options.docEncoding = 'UTF-8'
+    options.charSet = 'UTF-8'
+}

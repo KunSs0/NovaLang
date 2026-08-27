@@ -120,7 +120,7 @@ repositories {
 }
 
 dependencies {
-    implementation("com.github.CoderKuo.NovaLang:nova-runtime-all:v0.1.14")
+    implementation("com.github.CoderKuo.NovaLang:nova-runtime-all:v0.2.0")
 }
 ```
 
@@ -131,7 +131,7 @@ repositories {
 }
 
 dependencies {
-    implementation 'com.github.CoderKuo.NovaLang:nova-runtime-all:v0.1.14'
+    implementation 'com.github.CoderKuo.NovaLang:nova-runtime-all:v0.2.0'
 }
 ```
 
@@ -147,7 +147,7 @@ dependencies {
 <dependency>
     <groupId>com.github.CoderKuo.NovaLang</groupId>
     <artifactId>nova-runtime-all</artifactId>
-    <version>v0.1.14</version>
+    <version>v0.2.0</version>
 </dependency>
 ```
 
@@ -157,7 +157,8 @@ dependencies {
 |------|------|
 | `nova-runtime-all` | 完整运行时（解释器 + 编译器 + 标准库） |
 | `nova-runtime-api` | 运行时 API（插件开发用） |
-| `nova-bukkit` | Bukkit/Spigot 集成 |
+| `nova-runtime-workspace` | 服务端 Workspace、模块 Alias、隔离执行与资源生命周期 |
+| `nova-bukkit` | 独立 Bukkit/Paper 运行时插件与调度器集成 |
 | `nova-json-gson` | JSON 提供者 — Gson |
 | `nova-json-fastjson2` | JSON 提供者 — FastJSON2 |
 | `nova-yaml-snakeyaml` | YAML 提供者 — SnakeYAML |
@@ -310,6 +311,7 @@ val first = list?[0]
 | [反射 API](docs/文档/反射API.md) | 运行时类型反射 |
 | [注解系统](docs/文档/注解系统.md) | 自定义注解 |
 | [语法文档](docs/文档/语法文档.md) | 语法详解与示例 |
+| [Runtime Workspace 设计](docs/设计/nova-runtime-workspace.md) | 模块 Alias、资源作用域、执行隔离与销毁重建规范 |
 | [更新日志](CHANGELOG.md) | 版本历史与发布说明 |
 
 ---
@@ -322,6 +324,7 @@ NovaLang
 ├── nova-compiler       # 词法分析、语法解析、AST
 ├── nova-ir             # HIR/MIR + 优化 Pass
 ├── nova-runtime        # 解释器 + 标准库
+├── nova-runtime-workspace # 服务端脚本 Workspace
 ├── nova-cli            # 命令行工具
 ├── nova-script         # JSR-223 脚本引擎
 ├── nova-lsp            # 语言服务器协议
@@ -369,7 +372,7 @@ STRICT        # 最小权限
 
 ## 项目状态
 
-NovaLang 正在积极开发中。当前版本：`0.1.11`
+NovaLang 正在积极开发中。当前版本：`0.2.0`
 
 访问[官方网站](https://nova.geekyunfu.com)体验在线 Playground 和完整文档。
 

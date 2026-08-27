@@ -36,7 +36,7 @@ public class IncrementalCompiler {
      */
     public Map<String, byte[]> compileProject(File sourceDir, File outputDir) throws IOException {
         if (!sourceDir.exists() || !sourceDir.isDirectory()) {
-            throw new IOException("源码目录不存在: " + sourceDir.getAbsolutePath());
+            throw new IOException("Source directory does not exist: " + sourceDir.getAbsolutePath());
         }
 
         outputDir.mkdirs();
@@ -116,7 +116,7 @@ public class IncrementalCompiler {
                 + skippedCount + " 个文件未变化");
 
         if (!failedFiles.isEmpty()) {
-            throw new IOException("编译失败的文件: " + failedFiles);
+            throw new IOException("Files failed to compile: " + failedFiles);
         }
 
         return allClasses;

@@ -33,7 +33,7 @@ class NovaSchedulerTest {
     @AfterEach
     void tearDown() {
         scheduler.shutdown();
-        SchedulerHolder.set(null);
+        SchedulerHolder.clear();
     }
 
     // ============================================================

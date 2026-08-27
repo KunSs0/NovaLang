@@ -1,0 +1,8 @@
+name: NovaLang
+version: '${version}'
+main: com.novalang.bukkit.NovaBukkitPlugin
+api-version: '1.21'
+load: STARTUP
+authors:
+  - NovaLang
+description: NovaLang runtime and workspace platform for Bukkit and Paper plugins.

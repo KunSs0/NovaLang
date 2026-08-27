@@ -116,7 +116,7 @@ repositories {
 }
 
 dependencies {
-    implementation("com.github.CoderKuo.NovaLang:nova-runtime-all:v0.1.15")
+    implementation("com.github.CoderKuo.NovaLang:nova-runtime-all:v0.2.0")
 }
 ```
 
@@ -127,7 +127,7 @@ repositories {
 }
 
 dependencies {
-    implementation 'com.github.CoderKuo.NovaLang:nova-runtime-all:v0.1.15'
+    implementation 'com.github.CoderKuo.NovaLang:nova-runtime-all:v0.2.0'
 }
 ```
 
@@ -143,7 +143,7 @@ dependencies {
 <dependency>
     <groupId>com.github.CoderKuo.NovaLang</groupId>
     <artifactId>nova-runtime-all</artifactId>
-    <version>v0.1.15</version>
+    <version>v0.2.0</version>
 </dependency>
 ```
 
@@ -153,7 +153,8 @@ dependencies {
 |--------|-------------|
 | `nova-runtime-all` | Full runtime (interpreter + compiler + stdlib) |
 | `nova-runtime-api` | Runtime API only (for plugin development) |
-| `nova-bukkit` | Bukkit/Spigot integration |
+| `nova-runtime-workspace` | Server Workspace, module aliases, isolated execution, and resource lifecycle |
+| `nova-bukkit` | Standalone Bukkit/Paper runtime plugin and scheduler integration |
 | `nova-json-gson` | JSON provider — Gson |
 | `nova-json-fastjson2` | JSON provider — FastJSON2 |
 | `nova-yaml-snakeyaml` | YAML provider — SnakeYAML |
@@ -318,6 +319,7 @@ NovaLang
 ├── nova-compiler       # Lexer, Parser, AST
 ├── nova-ir             # HIR/MIR + Optimization passes
 ├── nova-runtime        # Interpreter + Stdlib
+├── nova-runtime-workspace # Server script Workspace
 ├── nova-cli            # Command-line interface
 ├── nova-script         # JSR-223 script engine
 ├── nova-lsp            # Language Server Protocol
@@ -365,7 +367,7 @@ STRICT        # Minimal permissions
 
 ## Project Status
 
-NovaLang is under active development. Current version: `0.1.15`
+NovaLang is under active development. Current version: `0.2.0`
 
 Visit the [official website](https://nova.geekyunfu.com) for interactive playground and documentation.
 

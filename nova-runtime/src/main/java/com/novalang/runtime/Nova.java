@@ -833,6 +833,28 @@ public final class Nova {
         return this;
     }
 
+    /**
+     * 注册只可通过字符串 {@code import} 引用的 Nova 模块。
+     *
+     * <p>该方法不会执行模块，也不会将模块当作 Prelude 注入。调用方应在编译入口前
+     * 完成完整模块图解析，并使用稳定且唯一的 {@code moduleId} 注册依赖源码。</p>
+     *
+     * @param moduleId 字符串 import 使用的模块标识
+     * @param source Nova 模块源码
+     * @return 当前 Nova 实例
+     * @throws IllegalArgumentException 模块标识为空或源码为 {@code null} 时抛出
+     */
+    public Nova registerModule(String moduleId, String source) {
+        if (moduleId == null || moduleId.trim().isEmpty()) {
+            throw new IllegalArgumentException("moduleId must not be blank");
+        }
+        if (source == null) {
+            throw new IllegalArgumentException("module source must not be null");
+        }
+        interpreter.registerVirtualModule(moduleId, source);
+        return this;
+    }
+
     public Nova clearPreloads() {
         preludeSources.clear();
         evaluatedPreludeCount = 0;
