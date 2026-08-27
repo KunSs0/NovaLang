@@ -1,0 +1,2 @@
+// 输出最小的 Hello World 示例。
+println("Hello, World!")
