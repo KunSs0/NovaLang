@@ -1,10 +1,15 @@
-// Java 互操作补全示例
+import java java.io.File
+import java java.lang.Math
+import java java.lang.StringBuilder
+import java java.util.Date
+
+// Java 互操作补全示例：使用 Nova 集合语法糖和显式 Java import。
 // 测试: 在变量后输入 . 触发补全，应弹出 Java 类的 public 方法
 
 // === JDK 类（无需配置 classpath） ===
 
-// ArrayList
-val list = Java.type("java.util.ArrayList")()
+// Nova 可变列表
+val list = mutableListOf()
 list.add("hello")
 list.add("world")
 println(list.size())
@@ -13,15 +18,15 @@ println(list.get(0))
 list.add("")
 
 
-// HashMap
-val map = Java.type("java.util.HashMap")()
+// Nova 可变映射
+val map = mutableMapOf()
 map.put("name", "Nova")
 map.put("version", "1.0")
 println(map.get("name"))
 // 测试: 输入 map. 应弹出 put(), get(), remove(), size(), containsKey() 等
 map.getOrDefault("name",listOf())
 // StringBuilder
-val sb = Java.type("java.lang.StringBuilder")()
+val sb = StringBuilder()
 sb.append("Hello")
 sb.append(" ")
 sb.append("World")
@@ -30,15 +35,15 @@ println(sb.toString())
 // 测试: 输入 sb. 应弹出 append(), toString(), length(), insert(), delete() 等
 
 // File
-val file = Java.type("java.io.File")(".")
+val file = File(".")
 // 测试: 输入 file. 应弹出 exists(), getName(), getPath(), isDirectory() 等
 
-// Math (静态方法不在实例补全中)
-val math = Java.type("java.lang.Math")
-// 注意: Math 的方法大多是 static，实例补全会较少
+// Math 静态方法通过显式导入的类型直接调用
+val squareRoot = Math.sqrt(16.0)
+println(squareRoot)
 
 // === 类型注解形式 ===
-val date = Java.type("java.util.Date")()
+val date = Date()
 println(date)
 
 

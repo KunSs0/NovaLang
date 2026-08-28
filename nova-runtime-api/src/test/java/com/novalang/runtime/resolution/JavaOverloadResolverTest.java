@@ -50,6 +50,17 @@ class JavaOverloadResolverTest {
     }
 
     @Test
+    void classArgumentPrefersClassOverObjectOverload() throws Exception {
+        Method method = JavaOverloadResolver.selectBestMethod(
+                methodsNamed("classArgument"),
+                true,
+                new Class<?>[]{Class.class});
+
+        assertNotNull(method);
+        assertEquals(Class.class, method.getParameterTypes()[0]);
+    }
+
+    @Test
     void staticallyIncompatibleKnownArgumentsStillFail() throws Exception {
         Method method = JavaOverloadResolver.selectBestMethod(
                 methodsNamed("primitive"),
@@ -109,6 +120,14 @@ class JavaOverloadResolverTest {
 
         public String primitive(String value) {
             return "primitive-string";
+        }
+
+        public static String classArgument(Class<?> value) {
+            return "class";
+        }
+
+        public static String classArgument(Object value) {
+            return "object";
         }
     }
 

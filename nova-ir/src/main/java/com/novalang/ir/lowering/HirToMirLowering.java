@@ -2498,7 +2498,17 @@ public class HirToMirLowering {
         SourceLocation loc = expr.getLocation();
 
         if (expr instanceof Literal) return lowerLiteral((Literal) expr, builder);
-        if (expr instanceof Identifier) return lowerVarRef((Identifier) expr, builder);
+        if (expr instanceof Identifier) {
+            Identifier identifier = (Identifier) expr;
+            String javaInternalName = javaImports.get(identifier.getName());
+            if (javaInternalName != null) {
+                if (hasVisibleValueBinding(identifier.getName(), builder)) {
+                    return lowerVarRef(identifier, builder);
+                }
+                return builder.emitConstClass(javaInternalName, loc);
+            }
+            return lowerVarRef(identifier, builder);
+        }
         if (expr instanceof BinaryExpr) return lowerBinary((BinaryExpr) expr, builder);
         if (expr instanceof UnaryExpr) return lowerUnary((UnaryExpr) expr, builder);
         if (expr instanceof HirCall) return lowerCall((HirCall) expr, builder);
@@ -3407,6 +3417,49 @@ public class HirToMirLowering {
         }
         // 兜底：返回 null（避免创建未初始化的局部变量）
         return builder.emitConstNull(ref.getLocation());
+    }
+
+    /**
+     * 判断 Identifier 是否已经被值命名空间占用。
+     *
+     * <p>Java import 同时提供类型名和构造器入口，但不能遮蔽 Nova 的局部值、参数、
+     * 顶层值、函数或当前接收者字段。只有没有值绑定时，Identifier 才代表 Java 类字面量。</p>
+     */
+    private boolean hasVisibleValueBinding(String name, MirBuilder builder) {
+        List<MirLocal> locals = builder.getFunction().getLocals();
+        for (MirLocal local : locals) {
+            if (name.equals(local.getName())) {
+                return true;
+            }
+        }
+        if (topLevelFieldNames.containsKey(name)) {
+            return true;
+        }
+        if (topLevelFunctionNames.contains(name)) {
+            return true;
+        }
+        if (localFunctionDecls.containsKey(name)) {
+            return true;
+        }
+        for (MirLocal local : locals) {
+            if (!"this".equals(local.getName()) && !"$this".equals(local.getName())) {
+                continue;
+            }
+            MirType receiverType = local.getType();
+            if (receiverType.getKind() != MirType.Kind.OBJECT
+                    || receiverType.getClassName() == null) {
+                continue;
+            }
+            String className = receiverType.getClassName();
+            while (className != null) {
+                Set<String> fields = classFieldNames.get(className);
+                if (fields != null && fields.contains(name)) {
+                    return true;
+                }
+                className = classSuperClass.get(className);
+            }
+        }
+        return false;
     }
 
     private int lowerBinary(BinaryExpr expr, MirBuilder builder) {
@@ -4832,7 +4885,10 @@ public class HirToMirLowering {
             desc = MethodDescriptor.allObjectDesc(args.length);
         }
         String retDescStr = desc.substring(desc.indexOf(')') + 1);
-        MirType returnType = inferReturnType(retDescStr, className);
+        // Object 方法声明为 Any 时，Ljava/lang/Object; 就是其真实返回类型。
+        // 不能沿用 owner 推断，否则实际返回的集合等对象会在后续成员调用时被
+        // CHECKCAST 为 object 单例类型（例如 Routes.rotate(): Any）。
+        MirType returnType = descriptorToMirType(retDescStr);
         return builder.emitInvokeVirtualDesc(instance, methodName, args,
                 className, desc, returnType, loc);
     }

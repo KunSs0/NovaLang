@@ -35,6 +35,13 @@ public final class NovaBukkitPlugin extends JavaPlugin {
         }
     }
 
+    @Override
+    public void onEnable() {
+        if (getCommand("nova") != null) {
+            getCommand("nova").setExecutor(new NovaCommand());
+        }
+    }
+
     /**
      * 在插件卸载时释放由当前插件拥有的全局调度器。
      */

@@ -6,3 +6,12 @@ load: STARTUP
 authors:
   - NovaLang
 description: NovaLang runtime and workspace platform for Bukkit and Paper plugins.
+commands:
+  nova:
+    description: NovaLang Workspace 管理和 mock 单元测试
+    usage: /nova mock <xxx.mock.nova|目录> [--report=<文件>]
+    permission: novalang.mock
+permissions:
+  novalang.mock:
+    description: 运行 NovaLang mock 单元测试
+    default: op

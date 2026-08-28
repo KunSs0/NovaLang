@@ -12,6 +12,7 @@ repositories {
 
 dependencies {
     api project(':nova-runtime-workspace')
+    api project(':nova-mock')
     compileOnly('org.spigotmc:spigot-api:1.12.2-R0.1-SNAPSHOT') {
         exclude group: 'net.md-5', module: 'bungeecord-chat'
     }

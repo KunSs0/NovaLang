@@ -2,21 +2,54 @@
 
 ## 概述
 
-NovaLang 运行在 JVM 上，可以直接调用 Java 类库。通过 `Java` 命名空间和 `javaClass()` 函数，你可以创建 Java 对象、调用方法、访问字段，实现与 Java 生态的无缝互操作。
+NovaLang 运行在 JVM 上，可以直接调用 Java 类库。常规场景应使用 `import java`、`import static` 和 Nova 自带的标准函数；只有确实需要运行时动态类名或底层动态分派时，才使用 `Java` 命名空间和 `javaClass()`。
+
+集合、数组、字符串等已有 Nova 语法糖或标准函数时，必须优先使用 Nova 能力。例如普通可变集合使用 `mutableListOf()`、`mutableMapOf()`、`mutableSetOf()`，不得为了创建它们调用 `Java.new` 或 `Java.type`。
 
 > 注意：Java 互操作在 STRICT 沙箱模式下被完全禁用，在 STANDARD 模式下受限使用。
 
-## Java 命名空间
+## 常规 Java 导入
+
+### import java
+
+已知 Java 类应显式导入后直接构造或调用实例方法：
+
+```nova
+import java java.lang.StringBuilder
+
+val sb = StringBuilder("Hello")
+sb.append(" Nova")
+println(sb.toString())
+```
+
+### import static
+
+已知静态方法或字段应使用静态导入：
+
+```nova
+import static java.lang.Math.PI
+
+println(PI)
+```
+
+### 使用前检查 Nova API
+
+导入 Java 类前，先检查 Nova 标准库、集合函数和公开 API 是否已有等价能力。只有 Nova 没有等价方法，且确有 Java 能力边界时，才使用 Java 互操作；应在代码附近或对应审计文档中写明选择理由，并添加覆盖该边界的编译或运行测试。
+
+## Java 命名空间（低层动态互操作）
+
+以下 API 保留用于类名只能在运行时确定、脚本宿主需要动态分派等低层场景。它们不是常规 Java 类调用的首选方式；使用前必须完成上节的等价能力核对、理由记录和测试。
 
 ### Java.type(className)
 
 获取 Java 类引用，返回的对象可直接作为构造函数调用：
 
 ```nova
-val ArrayList = Java.type("java.util.ArrayList")
-val list = ArrayList()    // 创建 ArrayList 实例
-list.add("hello")
-println(list.size())      // 1
+// className 来自脚本参数或配置
+val className = runtimeClassName
+val javaType = Java.type(className)
+val instance = javaType()
+println(instance)
 ```
 
 ### Java.new(className, args...)
@@ -24,22 +57,21 @@ println(list.size())      // 1
 创建 Java 对象实例：
 
 ```nova
-val list = Java.new("java.util.ArrayList")
-val sb = Java.new("java.lang.StringBuilder", "Hello")
+// className 来自脚本参数或配置，且 Nova 没有等价构造器
+val instance = Java.new(runtimeClassName, runtimeArgument)
+println(instance)
 ```
 
-等价于 `Java.type(className)(args...)`。
+它等价于 `Java.type(className)(args...)`，仅用于类名或参数必须运行时决定的场景。
 
 ### Java.static(className, methodName, args...)
 
 调用 Java 静态方法：
 
 ```nova
-val time = Java.static("java.lang.System", "currentTimeMillis")
-println(time)
-
-val maxVal = Java.static("java.lang.Math", "max", 10, 20)
-println(maxVal)  // 20
+// ownerName 和 methodName 来自脚本参数或配置，且 Nova 没有等价 API
+val result = Java.static(ownerName, methodName, runtimeArgument)
+println(result)
 ```
 
 ### Java.field(className, fieldName)
@@ -47,21 +79,21 @@ println(maxVal)  // 20
 获取 Java 静态字段值：
 
 ```nova
-val pi = Java.field("java.lang.Math", "PI")
-println(pi)  // 3.141592653589793
-
-val maxInt = Java.field("java.lang.Integer", "MAX_VALUE")
-println(maxInt)  // 2147483647
+// ownerName 和 fieldName 来自脚本参数或配置，且 Nova 没有等价属性
+val value = Java.field(ownerName, fieldName)
+println(value)
 ```
 
 ### Java.isInstance(obj, className)
 
 检查对象是否是指定 Java 类的实例：
 
+如果目标类型在脚本中已知，优先使用 Nova 的 `is` / `!is` 类型判断；此函数用于类名只能在运行时确定的场景。
+
 ```nova
-val list = Java.new("java.util.ArrayList")
+val list = mutableListOf()
 println(Java.isInstance(list, "java.util.List"))       // true
-println(Java.isInstance(list, "java.util.ArrayList"))   // true
+println(Java.isInstance(list, "java.util.ArrayList"))   // 具体实现取决于运行时集合类型
 println(Java.isInstance(list, "java.util.Map"))         // false
 ```
 
@@ -69,23 +101,27 @@ println(Java.isInstance(list, "java.util.Map"))         // false
 
 获取对象的 Java 类名：
 
+已知对象类型查询优先使用 Nova 的 `classOf(obj)`；`Java.class` 仅用于需要低层动态结果的场景。
+
 ```nova
-val list = Java.new("java.util.ArrayList")
+val list = mutableListOf()
 println(Java.class(list))  // java.util.ArrayList
 ```
 
 ## javaClass() 函数
 
-简便方式获取 Java 类引用，效果与 `Java.type()` 相同：
+当类名只能在运行时获得时，可使用 `javaClass()` 获取 Java 类引用。已知类名仍应优先使用 `import java`：
 
 ```nova
-val ArrayList = javaClass("java.util.ArrayList")
-val list = ArrayList()
+// className 来自脚本参数或配置
+val className = runtimeClassName
+val javaType = javaClass(className)
+val instance = javaType()
 ```
 
 ## 自动包搜索
 
-使用 `Java.type()` 时，如果类名不包含完整包路径，NovaLang 会自动在以下包中搜索：
+使用低层 `Java.type()` 时，如果类名不包含完整包路径，NovaLang 会自动在以下包中搜索：
 
 - `java.lang.`
 - `java.util.`
@@ -98,9 +134,9 @@ val list = ArrayList()
 - `java.util.concurrent.`
 
 ```nova
-// 以下写法等价：
-val list = Java.type("java.util.ArrayList")()
-val list = Java.type("ArrayList")()  // 自动在 java.util 中找到
+// 以下写法等价（仅用于动态互操作）：
+val sb = Java.type("java.lang.StringBuilder")()
+val shortSb = Java.type("StringBuilder")()  // 自动在 java.lang 中找到
 ```
 
 ## 类型转换
@@ -158,7 +194,7 @@ NovaLang 的 Lambda 可自动转换为 Java 的单一抽象方法（SAM）接口
 | `Comparator<T>` | `{ a, b -> int }` |
 
 ```nova
-val list = Java.new("java.util.ArrayList")
+val list = mutableListOf()
 list.add(3)
 list.add(1)
 list.add(2)
@@ -173,8 +209,8 @@ println(list)  // [1, 2, 3]
 ### 集合操作
 
 ```nova
-// ArrayList
-val list = Java.type("java.util.ArrayList")()
+// Nova 可变列表
+val list = mutableListOf()
 list.add("Apple")
 list.add("Banana")
 list.add("Cherry")
@@ -182,25 +218,27 @@ println(list.size())    // 3
 println(list.get(1))    // Banana
 list.remove("Banana")
 
-// HashMap
-val map = Java.type("java.util.HashMap")()
+// Nova 可变映射
+val map = mutableMapOf()
 map.put("name", "Alice")
 map.put("age", 30)
 println(map.get("name"))         // Alice
 println(map.containsKey("age"))  // true
 
-// LinkedList
-val queue = Java.type("java.util.LinkedList")()
+// 队列场景使用 Nova 可变列表
+val queue = mutableListOf()
 queue.add("first")
 queue.add("second")
-println(queue.peek())   // first
-println(queue.poll())   // first
+println(queue.get(0))    // first
+queue.removeAt(0)
 ```
 
 ### 字符串处理
 
 ```nova
-val sb = Java.type("java.lang.StringBuilder")()
+import java java.lang.StringBuilder
+
+val sb = StringBuilder()
 sb.append("Hello")
 sb.append(" ")
 sb.append("World")
@@ -213,15 +251,21 @@ println(sb.length())    // 12
 
 ```nova
 // 当前日期
-val date = Java.type("java.util.Date")()
+import java java.util.Date
+
+val date = Date()
 println(date)
 
 // LocalDateTime
-val now = Java.static("java.time.LocalDateTime", "now")
+import java java.time.LocalDateTime
+
+val now = LocalDateTime.now()
 println(now)
 
 // 格式化
-val formatter = Java.static("java.time.format.DateTimeFormatter", "ofPattern", "yyyy-MM-dd")
+import java java.time.format.DateTimeFormatter
+
+val formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd")
 println(now.format(formatter))
 ```
 
@@ -229,13 +273,15 @@ println(now.format(formatter))
 
 ```nova
 // BigDecimal 精确计算
-val BigDecimal = Java.type("java.math.BigDecimal")
+import java java.math.BigDecimal
+
 val a = BigDecimal("0.1")
 val b = BigDecimal("0.2")
 println(a.add(b))  // 0.3
 
 // BigInteger
-val BigInteger = Java.type("java.math.BigInteger")
+import java java.math.BigInteger
+
 val big = BigInteger("123456789012345678901234567890")
 println(big.multiply(BigInteger("2")))
 ```
@@ -244,7 +290,8 @@ println(big.multiply(BigInteger("2")))
 
 ```nova
 // 注意：文件操作在 STANDARD/STRICT 沙箱下被禁止
-val File = Java.type("java.io.File")
+import java java.io.File
+
 val file = File("data.txt")
 println(file.exists())
 println(file.getName())
@@ -258,7 +305,7 @@ println(file.getAbsolutePath())
 Java 对象的方法可直接调用：
 
 ```nova
-val list = Java.new("java.util.ArrayList")
+val list = mutableListOf()
 list.add("item")           // 调用实例方法
 list.size()                 // 调用无参方法
 list.get(0)                 // 带参数调用
@@ -266,19 +313,20 @@ list.get(0)                 // 带参数调用
 
 ### 静态成员
 
-通过 `Java.type()` 获取类后访问静态成员：
+通过 `import java` 导入类后访问静态成员：
 
 ```nova
-val Math = Java.type("java.lang.Math")
+import java java.lang.Math
+
 println(Math.PI)            // 静态字段
-println(Math.max(3, 5))     // 静态方法
+println(Math.ulp(1.0))      // 静态方法（Nova 无等价 API）
 ```
 
-或使用 `Java.static()` 和 `Java.field()`：
+动态类名场景才使用低层 `Java.static()` 和 `Java.field()`：
 
 ```nova
-val pi = Java.field("java.lang.Math", "PI")
-val max = Java.static("java.lang.Math", "max", 3, 5)
+val pi = Java.field(runtimeOwnerName, runtimeFieldName)
+val value = Java.static(runtimeOwnerName, runtimeMethodName, runtimeArgument)
 ```
 
 ### 数组访问
@@ -397,11 +445,15 @@ entity.setHealth(100)    // 自动映射 setHealth → method_b
 
 ```nova
 // 假设 Java 方法签名: void process(int[] data)
-val processor = Java.type("com.example.DataProcessor")()
+import java com.example.DataProcessor
+
+val processor = DataProcessor()
 processor.process([1, 2, 3, 4, 5])  // List 自动转为 int[]
 
 // 假设 Java 方法签名: String join(String[] parts)
-val joiner = Java.type("com.example.StringJoiner")()
+import java com.example.StringJoiner
+
+val joiner = StringJoiner()
 val result = joiner.join(["hello", "world"])  // List 自动转为 String[]
 ```
 
@@ -485,7 +537,7 @@ try {
 
 ```nova
 // STANDARD 模式下：
-Java.type("java.util.ArrayList")()    // OK
+val list = mutableListOf()              // OK，使用 Nova 标准函数
 Java.type("java.io.File")            // 错误！Security policy denied
 Java.static("java.lang.System", "exit", 0)  // 错误！方法被禁止
 ```
@@ -496,8 +548,8 @@ Java.static("java.lang.System", "exit", 0)  // 错误！方法被禁止
 
 ```nova
 // STRICT 模式下：
-Java.type("java.util.ArrayList")  // 错误！Java interop not allowed
-javaClass("java.util.ArrayList")  // 错误！Java interop not allowed
+Java.type("java.lang.StringBuilder")  // 错误！Java interop not allowed
+javaClass("java.lang.StringBuilder")  // 错误！Java interop not allowed
 ```
 
 ### 自定义安全策略

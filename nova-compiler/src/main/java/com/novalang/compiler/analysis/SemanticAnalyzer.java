@@ -529,12 +529,35 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
         List<NovaType> types = new ArrayList<NovaType>();
         if (node == null) return types;
         for (CallExpr.Argument arg : node.getArgs()) {
-            types.add(getNovaType(arg.getValue()));
+            types.add(analyzedCallArgumentType(arg.getValue()));
         }
         if (node.getTrailingLambda() != null) {
-            types.add(getNovaType(node.getTrailingLambda()));
+            types.add(analyzedCallArgumentType(node.getTrailingLambda()));
         }
         return types;
+    }
+
+    private NovaType analyzedCallArgumentType(Expression expression) {
+        NovaType type = getNovaType(expression);
+        if (!(expression instanceof Identifier)) {
+            return type;
+        }
+
+        Identifier identifier = (Identifier) expression;
+        Symbol symbol = currentScope.resolve(identifier.getName());
+        if (symbol == null || symbol.getKind() != SymbolKind.IMPORT) {
+            return type;
+        }
+
+        NovaType importedType = symbol.getResolvedNovaType();
+        if (!(importedType instanceof JavaClassNovaType)) {
+            return type;
+        }
+        JavaTypeDescriptor descriptor = ((JavaClassNovaType) importedType).getDescriptor();
+        if (descriptor == null) {
+            return type;
+        }
+        return new JavaClassLiteralNovaType(descriptor, false);
     }
 
     private JavaTypeDescriptor.JavaExecutableDescriptor resolveJavaMemberCall(MemberExpr memberExpr, CallExpr node) {

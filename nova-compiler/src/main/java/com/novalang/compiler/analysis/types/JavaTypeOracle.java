@@ -112,6 +112,7 @@ public final class JavaTypeOracle {
         if (type == null) return Object.class;
         if (type instanceof NothingType && type.isNullable()) return null;
         if (NovaTypes.isDynamicType(type)) return Object.class;
+        if (type instanceof JavaClassLiteralNovaType) return Class.class;
         String typeName = type.getTypeName();
         if ("Int".equals(typeName)) return Integer.class;
         if ("Long".equals(typeName)) return Long.class;

@@ -1,0 +1,13 @@
+plugins {
+    id 'java-library'
+}
+
+description = 'NovaLang 通用 .mock.nova 单元测试流程'
+
+dependencies {
+    api project(':nova-runtime-workspace')
+}
+
+tasks.withType(JavaCompile) {
+    options.encoding = 'UTF-8'
+}

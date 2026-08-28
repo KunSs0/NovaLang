@@ -179,6 +179,12 @@ public final class JavaOverloadResolver {
         if (aVarArgs && !bVarArgs) return false;
         int len = Math.min(aParams.length, bParams.length);
         for (int i = 0; i < len; i++) {
+            // Object is the compiler's unknown/dynamic argument marker. It
+            // keeps candidates available, but must not make an Object
+            // overload more specific than a concrete reference overload.
+            if (aParams[i] == Object.class && bParams[i] != Object.class) {
+                continue;
+            }
             if (isAssignable(bParams[i], aParams[i]) && !aParams[i].equals(bParams[i])) {
                 return true;
             }
