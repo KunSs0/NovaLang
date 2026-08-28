@@ -74,8 +74,8 @@ tasks.register('verifyPluginJar') {
         if (!zipTree(pluginJar).matching { include 'com/novalang/workspace/RuntimeWorkspace.class' }.files) {
             throw new GradleException('The NovaLang Bukkit JAR does not contain the workspace runtime.')
         }
-        if (!zipTree(pluginJar).matching { include 'com/novalang/workspace/WorkspaceTasks.class' }.files) {
-            throw new GradleException('The NovaLang Bukkit JAR does not contain Workspace task support.')
+        if (!zipTree(pluginJar).matching { include 'com/novalang/workspace/WorkspaceScheduleContext.class' }.files) {
+            throw new GradleException('The NovaLang Bukkit JAR does not contain Workspace schedule support.')
         }
         if (!zipTree(pluginJar).matching { include 'com/novalang/workspace/WorkspaceConfigFiles.class' }.files) {
             throw new GradleException('The NovaLang Bukkit JAR does not contain Workspace config support.')

@@ -58,8 +58,7 @@ public final class BukkitNovaScheduler implements NovaScheduler {
      */
     @Override
     public Cancellable scheduleLater(long delayMs, Runnable task) {
-        // Bukkit 以 tick 调度；不足一个 tick 的延迟也必须进入下一 tick。
-        long ticks = Math.max(1, delayMs / 50);
+        long ticks = millisToTicks(delayMs);
         BukkitTask bt = Bukkit.getScheduler().runTaskLater(plugin, task, ticks);
         return new BukkitCancellable(bt);
     }
@@ -69,11 +68,27 @@ public final class BukkitNovaScheduler implements NovaScheduler {
      */
     @Override
     public Cancellable scheduleRepeat(long delayMs, long periodMs, Runnable task) {
-        // 延迟和周期分别换算，保证 Bukkit 不接收到零 tick 周期。
-        long delayTicks = Math.max(1, delayMs / 50);
-        long periodTicks = Math.max(1, periodMs / 50);
+        long delayTicks = millisToTicks(delayMs);
+        long periodTicks = millisToTicks(periodMs);
         BukkitTask bt = Bukkit.getScheduler().runTaskTimer(plugin, task, delayTicks, periodTicks);
         return new BukkitCancellable(bt);
+    }
+
+    /**
+     * 将毫秒延迟向上取整为 Bukkit tick。
+     *
+     * <p>宿主无法在半 tick 时刻运行任务，因此非 50ms 整数倍的请求必须等待到下一个
+     * tick，避免在请求的最短延迟之前提前触发。零毫秒仍统一进入下一 tick。</p>
+     *
+     * @param millis 延迟或周期毫秒数
+     * @return 至少为一的 tick 数
+     */
+    private long millisToTicks(long millis) {
+        long ticks = millis / 50L;
+        if (millis % 50L != 0L) {
+            ticks++;
+        }
+        return Math.max(1L, ticks);
     }
 
     /**

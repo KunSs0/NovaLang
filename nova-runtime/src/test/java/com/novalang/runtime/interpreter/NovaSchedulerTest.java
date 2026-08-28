@@ -143,7 +143,7 @@ class NovaSchedulerTest {
 
         @Override
         public Cancellable scheduleLater(long delayMs, Runnable task) {
-            long delayTicks = Math.max(1, delayMs / MS_PER_TICK);
+            long delayTicks = millisToTicks(delayMs);
             TickTask tt = new TickTask(task, currentTick.get() + delayTicks, 0);
             pendingTasks.add(tt);
             return tt;
@@ -151,11 +151,22 @@ class NovaSchedulerTest {
 
         @Override
         public Cancellable scheduleRepeat(long delayMs, long periodMs, Runnable task) {
-            long delayTicks = Math.max(1, delayMs / MS_PER_TICK);
-            long periodTicks = Math.max(1, periodMs / MS_PER_TICK);
+            long delayTicks = millisToTicks(delayMs);
+            long periodTicks = millisToTicks(periodMs);
             TickTask tt = new TickTask(task, currentTick.get() + delayTicks, periodTicks);
             pendingTasks.add(tt);
             return tt;
+        }
+
+        /**
+         * 将毫秒转换为不早于请求时刻的 tick 数。
+         */
+        static long millisToTicks(long millis) {
+            long ticks = millis / MS_PER_TICK;
+            if (millis % MS_PER_TICK != 0L) {
+                ticks++;
+            }
+            return Math.max(1L, ticks);
         }
 
         /** 单个调度任务 */
@@ -186,6 +197,15 @@ class NovaSchedulerTest {
     @Nested
     @DisplayName("schedule() — 延迟调度")
     class ScheduleTests {
+
+        @Test
+        @DisplayName("非整 tick 延迟向上取整，避免提前执行")
+        void scheduleRoundsPartialTickDelayUp() {
+            assertEquals(1L, MockTickScheduler.millisToTicks(0L));
+            assertEquals(1L, MockTickScheduler.millisToTicks(50L));
+            assertEquals(2L, MockTickScheduler.millisToTicks(51L));
+            assertEquals(2L, MockTickScheduler.millisToTicks(99L));
+        }
 
         @Test
         @DisplayName("schedule 返回 Task 类型")

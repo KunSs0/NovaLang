@@ -63,7 +63,7 @@ public class CustomNovaScheduler implements NovaScheduler {
 
     @Override
     public Cancellable scheduleLater(long delayMs, Runnable task) {
-        long ticks = Math.max(1, delayMs / 50);
+        long ticks = millisToTicks(delayMs);
         var bt = Bukkit.getScheduler().runTaskLater(plugin, task, ticks);
         return new Cancellable() {
             public void cancel() { bt.cancel(); }
@@ -73,13 +73,21 @@ public class CustomNovaScheduler implements NovaScheduler {
 
     @Override
     public Cancellable scheduleRepeat(long delayMs, long periodMs, Runnable task) {
-        long delayTicks = Math.max(1, delayMs / 50);
-        long periodTicks = Math.max(1, periodMs / 50);
+        long delayTicks = millisToTicks(delayMs);
+        long periodTicks = millisToTicks(periodMs);
         var bt = Bukkit.getScheduler().runTaskTimer(plugin, task, delayTicks, periodTicks);
         return new Cancellable() {
             public void cancel() { bt.cancel(); }
             public boolean isCancelled() { return bt.isCancelled(); }
         };
+    }
+
+    private long millisToTicks(long millis) {
+        long ticks = millis / 50;
+        if (millis % 50 != 0) {
+            ticks++;
+        }
+        return Math.max(1, ticks);
     }
 }
 ```

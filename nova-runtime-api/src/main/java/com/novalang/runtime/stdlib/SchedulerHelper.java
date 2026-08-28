@@ -4,6 +4,7 @@ import com.novalang.runtime.NovaErrors;
 import com.novalang.runtime.NovaException;
 import com.novalang.runtime.NovaException.ErrorKind;
 import com.novalang.runtime.NovaScheduler;
+import com.novalang.runtime.NovaSchedules;
 import com.novalang.runtime.NovaScriptContext;
 import com.novalang.runtime.NovaTask;
 import com.novalang.runtime.SchedulerHolder;
@@ -34,14 +35,11 @@ public final class SchedulerHelper {
             throw new NovaException(ErrorKind.ARGUMENT_MISMATCH,
                     "schedule 需要 2 个参数 (delayMs, block)，但传入了 " + args.length + " 个");
         }
-        NovaScheduler sched = SchedulerHolder.get();
-        if (sched == null) {
-            throw new NovaException(ErrorKind.INTERNAL,
-                    "未配置调度器", "请先调用 Nova.setScheduler()");
-        }
         long delayMs = ((Number) args[0]).longValue();
         Object block = args[1];
-        NovaScheduler.Cancellable handle = sched.scheduleLater(delayMs, () -> invoke0(block));
+        NovaScriptContext parentContext = NovaScriptContext.current();
+        com.novalang.runtime.NovaScheduler.Cancellable handle = NovaSchedules.scheduleLater(delayMs,
+                () -> invoke0InCapturedContext(block, parentContext));
         return new NovaTask(handle);
     }
 
@@ -56,15 +54,12 @@ public final class SchedulerHelper {
             throw new NovaException(ErrorKind.ARGUMENT_MISMATCH,
                     "scheduleRepeat 需要 3 个参数 (delayMs, periodMs, block)，但传入了 " + args.length + " 个");
         }
-        NovaScheduler sched = SchedulerHolder.get();
-        if (sched == null) {
-            throw new NovaException(ErrorKind.INTERNAL,
-                    "未配置调度器", "请先调用 Nova.setScheduler()");
-        }
         long delayMs = ((Number) args[0]).longValue();
         long periodMs = ((Number) args[1]).longValue();
         Object block = args[2];
-        NovaScheduler.Cancellable handle = sched.scheduleRepeat(delayMs, periodMs, () -> invoke0(block));
+        NovaScriptContext parentContext = NovaScriptContext.current();
+        com.novalang.runtime.NovaScheduler.Cancellable handle = NovaSchedules.scheduleRepeat(delayMs, periodMs,
+                () -> invoke0InCapturedContext(block, parentContext));
         return new NovaTask(handle);
     }
 
@@ -201,5 +196,24 @@ public final class SchedulerHelper {
     /** 无参调用 lambda（委托 LambdaUtils，支持 NovaCallable） */
     private static void invoke0(Object lambda) {
         LambdaUtils.invoke0(lambda);
+    }
+
+    /**
+     * 在调度线程恢复创建任务时的脚本绑定后执行 Lambda。
+     *
+     * <p>编译后的 Lambda 对未解析的函数和变量通过 {@link NovaScriptContext} 查找；
+     * 调度回调发生在原始入口函数已经返回之后，因此必须显式传播该上下文。</p>
+     *
+     * @param block Nova Lambda
+     * @param capturedContext 创建任务时的脚本上下文
+     */
+    private static void invoke0InCapturedContext(Object block, NovaScriptContext capturedContext) {
+        NovaScriptContext previousContext = NovaScriptContext.current();
+        NovaScriptContext.setCurrent(capturedContext);
+        try {
+            invoke0(block);
+        } finally {
+            NovaScriptContext.setCurrent(previousContext);
+        }
     }
 }

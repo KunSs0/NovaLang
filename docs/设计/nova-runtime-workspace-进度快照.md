@@ -38,7 +38,7 @@
 - `ResourceScope`、`ResourceScopeState`、`ScopeType`：表示 Generation、业务实例、阶段和单次调用等嵌套作用域。
 - `WorkspaceExecutionContext`、`WorkspaceExecutionDispatcher`、`ExecutionPolicy`：传播执行上下文，支持主线程、调用线程、并行安全和作用域串行策略。
 - `NovaCallback`、`WorkspaceCallbacks`：保存稳定的入口/函数引用，在 Generation 或 Scope 销毁后自动失效。
-- `WorkspaceTasks`：创建归属于当前作用域的延迟任务和循环任务，并在作用域销毁时清理。
+- 原生 `schedule/scheduleRepeat`：在 Workspace 中创建归属于当前作用域的延迟任务和循环任务，并在作用域销毁时清理。
 - `WorkspaceHost`、`WorkspaceProgram`、`WorkspaceBundle`、`WorkspaceBundleBuilder`：抽象宿主绑定、模块程序和加载产物。
 
 设计边界是：Workspace 不创建第二套调度器，不提供隐式 Prelude，不做未声明依赖的 fallback，也不提供自身的 `reload()`。上层重载必须销毁旧实例，再创建和加载新实例。

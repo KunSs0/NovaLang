@@ -521,23 +521,19 @@ public final class Builtins {
 
         // schedule(delayMs) { block } — 延迟调度，返回 Task
         env.defineVal("schedule", new NovaNativeFunction("schedule", 2, (interp, args) -> {
-            NovaScheduler sched = interp.getScheduler();
-            if (sched == null) throw new NovaRuntimeException(NovaException.ErrorKind.INTERNAL, "未配置调度器", "请先调用 Nova.setScheduler()");
             long delayMs = args.get(0).asLong();
             NovaCallable block = interp.asCallable(args.get(1), "schedule");
-            NovaScheduler.Cancellable handle = sched.scheduleLater(delayMs, () ->
+            NovaScheduler.Cancellable handle = NovaSchedules.scheduleLater(delayMs, () ->
                     block.call(interp.createChild(), java.util.Collections.emptyList()));
             return new NovaTask(handle);
         }));
 
         // scheduleRepeat(delayMs, periodMs) { block } — 重复调度，返回 Task
         env.defineVal("scheduleRepeat", new NovaNativeFunction("scheduleRepeat", 3, (interp, args) -> {
-            NovaScheduler sched = interp.getScheduler();
-            if (sched == null) throw new NovaRuntimeException(NovaException.ErrorKind.INTERNAL, "未配置调度器", "请先调用 Nova.setScheduler()");
             long delayMs = args.get(0).asLong();
             long periodMs = args.get(1).asLong();
             NovaCallable block = interp.asCallable(args.get(2), "scheduleRepeat");
-            NovaScheduler.Cancellable handle = sched.scheduleRepeat(delayMs, periodMs, () ->
+            NovaScheduler.Cancellable handle = NovaSchedules.scheduleRepeat(delayMs, periodMs, () ->
                     block.call(interp.createChild(), java.util.Collections.emptyList()));
             return new NovaTask(handle);
         }));

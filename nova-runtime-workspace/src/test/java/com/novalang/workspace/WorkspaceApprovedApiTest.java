@@ -43,8 +43,7 @@ class WorkspaceApprovedApiTest {
         SchedulerHolder.set(scheduler);
         AtomicInteger calls = new AtomicInteger();
         WorkspaceTestSupport.write(tempDirectory, "main.nova",
-                "fun onLater() { recordCall() }\n"
-                        + "fun main() { Java.static(\"com.novalang.workspace.WorkspaceTasks\", \"later\", 50, \"main\", \"onLater\") }");
+                "fun main() { schedule(50) { recordCall() } }");
         Path config = WorkspaceTestSupport.writeConfig(tempDirectory, "caller", "  - \"main\"\n");
         RuntimeWorkspace workspace = new RuntimeWorkspace(config, nova -> nova.defineFunction(
                 "recordCall", new Function0<Object>() {
@@ -57,6 +56,7 @@ class WorkspaceApprovedApiTest {
         try {
             workspace.load();
             assertEquals(1, workspace.getGeneration().getRootScope().getResourceCount());
+            assertEquals(50L, scheduler.laterDelayMs);
 
             scheduler.runLater();
 
@@ -74,16 +74,43 @@ class WorkspaceApprovedApiTest {
         CapturingScheduler scheduler = new CapturingScheduler();
         SchedulerHolder.set(scheduler);
         WorkspaceTestSupport.write(tempDirectory, "main.nova",
-                "fun onTick() { }\n"
-                        + "fun main() { Java.static(\"com.novalang.workspace.WorkspaceTasks\", \"repeat\", 50, 50, \"main\", \"onTick\") }");
+                "fun main() { scheduleRepeat(50, 50) { } }");
         Path config = WorkspaceTestSupport.writeConfig(tempDirectory, "caller", "  - \"main\"\n");
         RuntimeWorkspace workspace = new RuntimeWorkspace(config, nova -> { });
         workspace.load();
         assertFalse(scheduler.repeatHandle.isCancelled());
+        assertEquals(50L, scheduler.repeatDelayMs);
+        assertEquals(50L, scheduler.repeatPeriodMs);
 
         workspace.dispose();
 
         assertTrue(scheduler.repeatHandle.isCancelled());
+    }
+
+    @Test
+    @DisplayName("原生延迟任务在 Workspace dispose 后不再执行")
+    void shouldRejectNativeScheduledCallbackAfterWorkspaceDispose() throws Exception {
+        CapturingScheduler scheduler = new CapturingScheduler();
+        SchedulerHolder.set(scheduler);
+        AtomicInteger calls = new AtomicInteger();
+        WorkspaceTestSupport.write(tempDirectory, "main.nova",
+                "fun main() { schedule(50) { recordCall() } }");
+        Path config = WorkspaceTestSupport.writeConfig(tempDirectory, "caller", "  - \"main\"\n");
+        RuntimeWorkspace workspace = new RuntimeWorkspace(config, nova -> nova.defineFunction(
+                "recordCall", new Function0<Object>() {
+                    @Override
+                    public Object invoke() {
+                        calls.incrementAndGet();
+                        return null;
+                    }
+                }));
+        workspace.load();
+
+        workspace.dispose();
+        scheduler.runLater();
+
+        assertEquals(0, calls.get());
+        assertTrue(scheduler.laterHandle.isCancelled());
     }
 
     @Test
@@ -145,6 +172,9 @@ class WorkspaceApprovedApiTest {
     private static final class CapturingScheduler implements NovaScheduler {
         private Runnable laterTask;
         private Runnable repeatTask;
+        private long laterDelayMs;
+        private long repeatDelayMs;
+        private long repeatPeriodMs;
         private final Handle laterHandle = new Handle();
         private final Handle repeatHandle = new Handle();
 
@@ -169,6 +199,7 @@ class WorkspaceApprovedApiTest {
         /** {@inheritDoc} */
         @Override
         public Cancellable scheduleLater(long delayMs, Runnable task) {
+            laterDelayMs = delayMs;
             laterTask = task;
             return laterHandle;
         }
@@ -176,6 +207,8 @@ class WorkspaceApprovedApiTest {
         /** {@inheritDoc} */
         @Override
         public Cancellable scheduleRepeat(long delayMs, long periodMs, Runnable task) {
+            repeatDelayMs = delayMs;
+            repeatPeriodMs = periodMs;
             repeatTask = task;
             return repeatHandle;
         }

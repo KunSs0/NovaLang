@@ -237,6 +237,48 @@ public final class WorkspaceGeneration implements AutoCloseable {
     }
 
     /**
+     * 在当前代际的默认执行策略和资源上下文中执行原生调度回调。
+     *
+     * @param scope 任务归属作用域
+     * @param bindings 任务创建时捕获的绑定快照
+     * @param callback 原生调度回调
+     */
+    void executeScheduledCallback(ResourceScope scope,
+                                  Map<String, Object> bindings,
+                                  Runnable callback) {
+        lifecycleLock.readLock().lock();
+        try {
+            requireActive();
+            requireOwnedScope(scope);
+            Callable<Void> action = new Callable<Void>() {
+                @Override
+                public Void call() {
+                    WorkspaceExecutionContext.ContextHandle handle = WorkspaceExecutionContext.install(
+                            WorkspaceGeneration.this, scope, bindings);
+                    try {
+                        callback.run();
+                        return null;
+                    } finally {
+                        handle.close();
+                    }
+                }
+            };
+            WorkspaceExecutionDispatcher.execute(defaultPolicy, scope, action);
+        } finally {
+            lifecycleLock.readLock().unlock();
+        }
+    }
+
+    /**
+     * 判断当前代际是否仍可接受调度回调。
+     *
+     * @return 代际处于 ACTIVE 状态时返回 {@code true}
+     */
+    boolean isActive() {
+        return state == GenerationState.ACTIVE;
+    }
+
+    /**
      * 销毁代际，等待正在执行的同步调用退出并释放全部资源及程序引用。
      *
      * @throws WorkspaceException 某个宿主资源释放失败时抛出

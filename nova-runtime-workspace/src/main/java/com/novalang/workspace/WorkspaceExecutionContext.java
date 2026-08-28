@@ -1,5 +1,7 @@
 package com.novalang.workspace;
 
+import com.novalang.runtime.NovaScheduleContexts;
+
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -84,7 +86,9 @@ public final class WorkspaceExecutionContext {
         Map<String, Object> snapshot = Collections.unmodifiableMap(
                 new LinkedHashMap<String, Object>(bindings));
         CURRENT.set(new Frame(generation, scope, snapshot));
-        return new ContextHandle(previous, Thread.currentThread());
+        NovaScheduleContexts.ContextHandle scheduleContext = NovaScheduleContexts.install(
+                new WorkspaceScheduleContext(generation, scope, snapshot));
+        return new ContextHandle(previous, Thread.currentThread(), scheduleContext);
     }
 
     /**
@@ -108,11 +112,15 @@ public final class WorkspaceExecutionContext {
     static final class ContextHandle implements AutoCloseable {
         private final Frame previous;
         private final Thread ownerThread;
+        private final NovaScheduleContexts.ContextHandle scheduleContext;
         private boolean closed;
 
-        ContextHandle(Frame previous, Thread ownerThread) {
+        ContextHandle(Frame previous,
+                      Thread ownerThread,
+                      NovaScheduleContexts.ContextHandle scheduleContext) {
             this.previous = previous;
             this.ownerThread = ownerThread;
+            this.scheduleContext = scheduleContext;
         }
 
         /**
@@ -127,6 +135,7 @@ public final class WorkspaceExecutionContext {
                 throw new WorkspaceException("WorkspaceExecutionContext must be closed on its installing thread");
             }
             closed = true;
+            scheduleContext.close();
             if (previous == null) {
                 CURRENT.remove();
             } else {
