@@ -36,6 +36,8 @@ public class MirCodeGenerator {
     private final Set<Integer> stringLocals = new HashSet<>();
     /** 当前方法的 JVM 描述符（用于判断返回值类型） */
     private String currentMethodDesc;
+    /** 当前方法所属类的直接父类，用于把 MIR 的 $super$ 标记降级为 INVOKESPECIAL。 */
+    private String currentSuperClass;
     /** 当前方法已发射的最后一行号（避免重复 visitLineNumber） */
     private int lastEmittedLine;
 
@@ -270,6 +272,7 @@ public class MirCodeGenerator {
         String desc = func.getOverrideDescriptor() != null
                 ? func.getOverrideDescriptor() : buildMethodDescriptor(func);
         this.currentMethodDesc = desc;
+        this.currentSuperClass = superClass;
 
         // 接口抽象方法：无实际方法体（仅含单条 RETURN_VOID 指令的方法视为抽象）
         if (classKind == ClassKind.INTERFACE && !isStatic
@@ -1007,18 +1010,28 @@ public class MirCodeGenerator {
                     break;
                 }
 
+                boolean superInvoke = owner.startsWith("$super$");
+                String invokeOwner = owner;
+                if (superInvoke) {
+                    invokeOwner = owner.substring("$super$".length());
+                    if (invokeOwner.isEmpty()) {
+                        invokeOwner = currentSuperClass;
+                    }
+                }
+
                 // 加载 receiver
                 int receiver = inst.operand(0);
                 loadObject(mv, receiver);
                 // 确保 receiver 类型匹配 owner（全 Object 装箱策略下 JVM 可能只知道是 Object）
-                if (!"java/lang/Object".equals(owner)) {
-                    mv.visitTypeInsn(CHECKCAST, owner);
+                if (!superInvoke && !"java/lang/Object".equals(invokeOwner)) {
+                    mv.visitTypeInsn(CHECKCAST, invokeOwner);
                 }
 
                 // 加载参数（根据描述符自动拆箱原始类型）
                 loadAndUnboxParams(mv, inst.getOperands(), 1, descriptor);
 
-                mv.visitMethodInsn(INVOKEVIRTUAL, owner, methodName, descriptor, false);
+                int invokeOpcode = superInvoke ? INVOKESPECIAL : INVOKEVIRTUAL;
+                mv.visitMethodInsn(invokeOpcode, invokeOwner, methodName, descriptor, false);
 
                 // 存储结果（void 方法不存储）
                 if (inst.getDest() >= 0 && !descriptor.endsWith(")V")) {

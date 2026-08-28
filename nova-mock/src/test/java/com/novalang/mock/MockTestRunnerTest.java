@@ -50,7 +50,7 @@ class MockTestRunnerTest {
                 file, Collections.<Path>emptyList(), Collections.<String, Path>emptyMap(),
                 Collections.<String, Object>emptyMap(), new TestHost(), null);
         assertEquals(1, report.getTotal());
-        assertEquals(1, report.getPassed());
+        assertEquals(1, report.getPassed(), report.getCases().get(0).getError());
         assertEquals(2, report.getCases().get(0).getAssertions());
     }
 
@@ -103,6 +103,42 @@ class MockTestRunnerTest {
 
         assertEquals(1, report.getFailed());
         assertTrue(report.getCases().get(0).getError().contains("不得覆盖保留映射"));
+    }
+
+    @Test
+    void shouldDiscoverBusinessWorkspaceAliasesFromServerConfigs() throws Exception {
+        Path serverRoot = temporaryDirectory.resolve("server");
+        Path businessRoot = serverRoot.resolve("plugins").resolve("SamplePlugin").resolve("script");
+        Path testRoot = serverRoot.resolve("tests").resolve("nova");
+        Files.createDirectories(serverRoot);
+        Files.write(serverRoot.resolve("server.properties"), new byte[0]);
+        Files.createDirectories(businessRoot);
+        Files.createDirectories(serverRoot.resolve("plugins").resolve("NovaLang").resolve("libs"));
+        Files.createDirectories(testRoot);
+        Files.write(businessRoot.resolve("business.api.nova"),
+                "fun businessValue(): Int { return 42 }\n".getBytes(StandardCharsets.UTF_8));
+        Files.write(businessRoot.resolve("nova.config.yml"),
+                ("version: 1\n"
+                        + "name: sample\n"
+                        + "aliases:\n"
+                        + "  '@sample': .\n"
+                        + "sources:\n"
+                        + "  - .\n"
+                        + "entries:\n"
+                        + "  - '@sample/business.api'\n"
+                        + "runtime:\n"
+                        + "  security: trusted-server\n"
+                        + "  thread: caller\n").getBytes(StandardCharsets.UTF_8));
+        Path file = testRoot.resolve("business.mock.nova");
+        Files.write(file,
+                ("import \"@sample/business.api\"\n"
+                        + "fun test() { assertEquals(42, businessValue(), \"business alias\") }\n")
+                        .getBytes(StandardCharsets.UTF_8));
+
+        MockTestReport report = run(file, new TestHost(), Collections.<String, Path>emptyMap());
+
+        assertEquals(1, report.getPassed());
+        assertEquals(1, report.getCases().get(0).getAssertions());
     }
 
     @Test

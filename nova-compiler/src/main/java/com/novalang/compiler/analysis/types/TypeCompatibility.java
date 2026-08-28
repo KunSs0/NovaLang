@@ -124,7 +124,12 @@ public final class TypeCompatibility {
             return targetDescriptor.isAssignableFrom(sourceDescriptor);
         }
         if (target instanceof JavaClassNovaType) {
-            return target.getName().equals(source.getName());
+            if (target.getName().equals(source.getName())) return true;
+            if (registry == null) return false;
+            if (registry.isSubtype(source.getName(), target.getName())) return true;
+            JavaTypeDescriptor descriptor = ((JavaClassNovaType) target).getDescriptor();
+            return descriptor != null
+                    && registry.isSubtype(source.getName(), descriptor.getQualifiedName());
         }
         if (source instanceof JavaClassNovaType) {
             return target.getName().equals(source.getName())

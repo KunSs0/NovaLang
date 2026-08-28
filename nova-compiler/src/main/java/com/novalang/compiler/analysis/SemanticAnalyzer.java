@@ -2060,15 +2060,24 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
             typeResolver.enterTypeParams(node.getTypeParams());
         }
 
-        // 注册继承关系到 SuperTypeRegistry
+        // 注册继承关系到 SuperTypeRegistry。Java 接口可能出现在第一个父类型位置，
+        // 不能按声明顺序把第一个父类型直接当作父类。
         String superClass = null;
         List<String> ifaceNames = new ArrayList<String>();
-        if (node.getSuperTypes() != null && !node.getSuperTypes().isEmpty()) {
-            superClass = resolveTypeName(node.getSuperTypes().get(0));
-            if (superClass != null) superClass = baseType(superClass);
-            for (int i = 1; i < node.getSuperTypes().size(); i++) {
-                String ifName = resolveTypeName(node.getSuperTypes().get(i));
-                if (ifName != null) ifaceNames.add(baseType(ifName));
+        if (node.getSuperTypes() != null) {
+            for (TypeRef superType : node.getSuperTypes()) {
+                NovaType resolvedSuperType = typeResolver.resolve(superType);
+                String resolvedName = resolvedSuperTypeName(superType, resolvedSuperType);
+                if (resolvedName == null) {
+                    continue;
+                }
+                if (isInterfaceSuperType(superType, resolvedSuperType)) {
+                    ifaceNames.add(resolvedName);
+                } else if (superClass == null) {
+                    superClass = resolvedName;
+                } else {
+                    ifaceNames.add(resolvedName);
+                }
             }
         }
         superTypeRegistry.registerClass(node.getName(), superClass, ifaceNames);
@@ -2098,17 +2107,11 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
             }
         }
 
-        if (node.getSuperTypes() != null && !node.getSuperTypes().isEmpty()) {
-            String superName = resolveTypeName(node.getSuperTypes().get(0));
-            classSym.setSuperClass(superName);
-            if (node.getSuperTypes().size() > 1) {
-                List<String> ifaces = new ArrayList<String>();
-                for (int i = 1; i < node.getSuperTypes().size(); i++) {
-                    String ifName = resolveTypeName(node.getSuperTypes().get(i));
-                    if (ifName != null) ifaces.add(ifName);
-                }
-                classSym.setInterfaces(ifaces);
-            }
+        if (superClass != null) {
+            classSym.setSuperClass(superClass);
+        }
+        if (!ifaceNames.isEmpty()) {
+            classSym.setInterfaces(new ArrayList<String>(ifaceNames));
         }
 
         if (node.getTypeParams() != null && !node.getTypeParams().isEmpty()) {
@@ -2133,6 +2136,24 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
         }
 
         return null;
+    }
+
+    private String resolvedSuperTypeName(TypeRef typeRef, NovaType resolvedType) {
+        if (resolvedType instanceof JavaClassNovaType) {
+            return ((JavaClassNovaType) resolvedType).getName();
+        }
+        String typeName = resolveTypeName(typeRef);
+        return typeName != null ? baseType(typeName) : null;
+    }
+
+    private boolean isInterfaceSuperType(TypeRef typeRef, NovaType resolvedType) {
+        if (resolvedType instanceof JavaClassNovaType) {
+            JavaTypeDescriptor descriptor = ((JavaClassNovaType) resolvedType).getDescriptor();
+            return descriptor != null && descriptor.getKind() == JavaTypeDescriptor.Kind.INTERFACE;
+        }
+        String typeName = resolveTypeName(typeRef);
+        Symbol typeSymbol = typeName != null ? currentScope.resolveType(baseType(typeName)) : null;
+        return typeSymbol != null && typeSymbol.getKind() == SymbolKind.INTERFACE;
     }
 
     @Override

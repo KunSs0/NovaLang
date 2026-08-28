@@ -77,6 +77,9 @@ public class HirToMirLowering {
 
     // Nova 类/接口方法描述符: className → (methodName → typed JVM descriptor)
     private final Map<String, Map<String, String>> novaMethodDescs = new HashMap<>();
+    // Nova 类/接口方法声明返回类型: className → (methodName → MIR type)
+    // JVM 方法描述符会将引用类型统一擦除为 Object，此表保留脚本声明中的精确引用类型。
+    private final Map<String, Map<String, MirType>> novaMethodReturnTypes = new HashMap<>();
     // 继承链方法描述符缓存: "owner#methodName" → descriptor（null 用 "" 标记）
     private final Map<String, String> inheritedDescCache = new HashMap<>();
     // Nova 类继承关系: className → superClassName（仅 Nova 类，非 java/lang/Object）
@@ -257,13 +260,20 @@ public class HirToMirLowering {
                 interfaceNames.add(hc.getName());
             }
             Map<String, String> methodDescs = new HashMap<>();
+            Map<String, MirType> methodReturnTypes = new HashMap<>();
             for (HirFunction m : hc.getMethods()) {
                 if (!m.isExtensionFunction() && !m.getName().startsWith("<")) {
                     methodDescs.put(m.getName(), buildHirMethodDescriptor(m));
+                    if (m.getReturnType() != null) {
+                        methodReturnTypes.put(m.getName(), hirTypeToMir(m.getReturnType()));
+                    }
                 }
             }
             if (!methodDescs.isEmpty()) {
                 novaMethodDescs.put(hc.getName(), methodDescs);
+            }
+            if (!methodReturnTypes.isEmpty()) {
+                novaMethodReturnTypes.put(hc.getName(), methodReturnTypes);
             }
             // 记录字段名（用于 lowerVarRef 区分 this.field 和全局变量）
             // 始终注册（即使为空），使字段保护逻辑能正确区分字段和外部变量
@@ -278,6 +288,19 @@ public class HirToMirLowering {
                 if (classNames.contains(superName) || externalTypeNames.contains(superName)) {
                     classSuperClass.put(hc.getName(), superName);
                 }
+            }
+            List<String> ifaces = new ArrayList<>();
+            if (hc.getSuperClass() != null) {
+                String superName = typeToInternalName(hc.getSuperClass());
+                if (interfaceNames.contains(superName)) {
+                    ifaces.add(superName);
+                }
+            }
+            for (HirType interfaceType : hc.getInterfaces()) {
+                ifaces.add(typeToInternalName(interfaceType));
+            }
+            if (!ifaces.isEmpty()) {
+                classInterfaceMap.put(hc.getName(), ifaces);
             }
         }
     }
@@ -461,9 +484,13 @@ public class HirToMirLowering {
                 }
                 // 预收集方法描述符（调用端查找用）
                 Map<String, String> methodDescs = new HashMap<>();
+                Map<String, MirType> methodReturnTypes = new HashMap<>();
                 for (HirFunction m : hc.getMethods()) {
                     if (!m.isExtensionFunction() && !m.getName().startsWith("<")) {
                         methodDescs.put(m.getName(), buildHirMethodDescriptor(m));
+                        if (m.getReturnType() != null) {
+                            methodReturnTypes.put(m.getName(), hirTypeToMir(m.getReturnType()));
+                        }
                     }
                 }
                 // 枚举类: 注册内置 name()/ordinal() 方法描述符
@@ -472,6 +499,9 @@ public class HirToMirLowering {
                     methodDescs.put("ordinal", "()Ljava/lang/Object;");
                 }
                 novaMethodDescs.put(hc.getName(), methodDescs);
+                if (!methodReturnTypes.isEmpty()) {
+                    novaMethodReturnTypes.put(hc.getName(), methodReturnTypes);
+                }
                 // 记录主构造器（用于默认参数填充）
                 if (!hc.getConstructors().isEmpty()) {
                     classConstructorDecls.put(hc.getName(), hc.getConstructors().get(0));
@@ -3499,7 +3529,7 @@ public class HirToMirLowering {
                 String owner = leftType.getClassName();
                 if (hasNovaMethod(owner, opMethod)) {
                     String desc = lookupNovaMethodDesc(owner, opMethod, 1);
-                    MirType retType = inferReturnType(desc.substring(desc.indexOf(')') + 1), owner);
+                    MirType retType = inferNovaMethodReturnType(owner, opMethod, desc);
                     return builder.emitInvokeVirtualDesc(left, opMethod, new int[]{right},
                             owner, desc, retType, expr.getLocation());
                 }
@@ -3571,7 +3601,7 @@ public class HirToMirLowering {
                 }
                 String owner = operandType.getClassName();
                 String desc = lookupNovaMethodDesc(owner, methodName, 0);
-                MirType retType = inferReturnType(desc.substring(desc.indexOf(')') + 1), owner);
+                MirType retType = inferNovaMethodReturnType(owner, methodName, desc);
                 int newVal = builder.emitInvokeVirtualDesc(operand, methodName, new int[0],
                         owner, desc, retType, loc);
                 builder.emitMoveTo(newVal, operand, loc);
@@ -3633,7 +3663,7 @@ public class HirToMirLowering {
                 String owner = operandType.getClassName();
                 if (hasNovaMethod(owner, "unaryMinus")) {
                     String desc = lookupNovaMethodDesc(owner, "unaryMinus", 0);
-                    MirType retType = inferReturnType(desc.substring(desc.indexOf(')') + 1), owner);
+                    MirType retType = inferNovaMethodReturnType(owner, "unaryMinus", desc);
                     return builder.emitInvokeVirtualDesc(operand, "unaryMinus", new int[0],
                             owner, desc, retType, loc);
                 }
@@ -3947,8 +3977,7 @@ public class HirToMirLowering {
             if (shouldSelfCall) {
                 int[] args = lowerArgs(expr.getArgs(), builder);
                 String desc = lookupNovaMethodDesc(owner, name, args.length);
-                String retDescStr = desc.substring(desc.indexOf(')') + 1);
-                MirType retType = inferReturnType(retDescStr, owner);
+                MirType retType = inferNovaMethodReturnType(owner, name, desc);
                 if (interfaceNames.contains(owner)) {
                     return builder.emitInvokeInterfaceDesc(thisLocal.getIndex(), name, args,
                             owner, desc, retType, expr.getLocation());
@@ -4456,13 +4485,19 @@ public class HirToMirLowering {
         if (fieldAccess.getTarget() instanceof ThisExpr
                 && ((ThisExpr) fieldAccess.getTarget()).isSuper()) {
             String superOwner = "$super$";
+            String parentName = null;
             if (currentEnclosingClassName != null) {
-                String parentName = classSuperClass.get(currentEnclosingClassName);
+                parentName = classSuperClass.get(currentEnclosingClassName);
                 if (parentName != null) superOwner = "$super$" + parentName;
+            }
+            MirType returnType = MirType.ofObject("java/lang/Object");
+            if (parentName != null) {
+                String parentDesc = lookupNovaMethodDesc(parentName, methodName, args.length);
+                returnType = inferNovaMethodReturnType(parentName, methodName, parentDesc);
             }
             return builder.emitInvokeVirtualDesc(target, methodName, args,
                     superOwner, MethodDescriptor.allObjectDesc(args.length),
-                    MirType.ofObject("java/lang/Object"), loc);
+                    returnType, loc);
         }
         { int r = lowerDataCopyCall(target, methodName, args, expr, builder, loc); if (r >= 0) return r; }
         { int r = tryComponentNCall(target, methodName, args, builder, loc); if (r >= 0) return r; }
@@ -4761,8 +4796,7 @@ public class HirToMirLowering {
             }
             // 尝试 Nova 类/接口方法描述符注册表（沿继承链查找）
             desc = lookupNovaMethodDesc(owner, methodName, args.length);
-            String retDescStr = desc.substring(desc.indexOf(')') + 1);
-            returnType = inferReturnType(retDescStr, owner);
+            returnType = inferNovaMethodReturnType(owner, methodName, desc);
             // build() 返回原始类型（去掉 $Builder 后缀）
             if ("build".equals(methodName) && owner.endsWith("$Builder")) {
                 returnType = MirType.ofObject(
@@ -4792,8 +4826,7 @@ public class HirToMirLowering {
                 String ifaceOwner = findMethodInInterfaces(owner, methodName);
                 if (ifaceOwner != null) {
                     desc = lookupNovaMethodDesc(ifaceOwner, methodName, args.length);
-                    String retDescStr2 = desc.substring(desc.indexOf(')') + 1);
-                    returnType = inferReturnType(retDescStr2, ifaceOwner);
+                    returnType = inferNovaMethodReturnType(ifaceOwner, methodName, desc);
                     return builder.emitInvokeInterfaceDesc(target, methodName, args,
                             ifaceOwner, desc, returnType, loc);
                 }
@@ -4857,8 +4890,7 @@ public class HirToMirLowering {
         String extra = className + "|" + methodName + "|" + desc;
 
         // 推断返回类型
-        String retDescStr = desc.substring(desc.indexOf(')') + 1);
-        MirType returnType = inferReturnType(retDescStr, className);
+        MirType returnType = inferNovaMethodReturnType(className, methodName, desc);
         if ("builder".equals(methodName)) {
             returnType = MirType.ofObject(className + "$Builder");
         }
@@ -4884,11 +4916,7 @@ public class HirToMirLowering {
         } else {
             desc = MethodDescriptor.allObjectDesc(args.length);
         }
-        String retDescStr = desc.substring(desc.indexOf(')') + 1);
-        // Object 方法声明为 Any 时，Ljava/lang/Object; 就是其真实返回类型。
-        // 不能沿用 owner 推断，否则实际返回的集合等对象会在后续成员调用时被
-        // CHECKCAST 为 object 单例类型（例如 Routes.rotate(): Any）。
-        MirType returnType = descriptorToMirType(retDescStr);
+        MirType returnType = inferNovaMethodReturnType(className, methodName, desc);
         return builder.emitInvokeVirtualDesc(instance, methodName, args,
                 className, desc, returnType, loc);
     }
@@ -5159,7 +5187,7 @@ public class HirToMirLowering {
                 && hasNovaMethod(targetType.getClassName(), "get")) {
             String owner = targetType.getClassName();
             String desc = lookupNovaMethodDesc(owner, "get", 1);
-            MirType retType = inferReturnType(desc.substring(desc.indexOf(')') + 1), owner);
+            MirType retType = inferNovaMethodReturnType(owner, "get", desc);
             return builder.emitInvokeVirtualDesc(target, "get", new int[]{index},
                     owner, desc, retType, loc);
         }
@@ -5990,6 +6018,52 @@ public class HirToMirLowering {
             current = classSuperClass.get(current);
         }
         return null;
+    }
+
+    /**
+     * 获取 Nova 方法声明中的返回类型。
+     * 引用类型在 JVM 方法描述符中会被擦除为 Object，因此调用端必须从 HIR 声明恢复类型，
+     * 不能把 Object 一律推断成 owner。
+     */
+    private MirType lookupNovaMethodReturnTypeInherited(String owner, String methodName) {
+        String current = owner;
+        while (current != null) {
+            Map<String, MirType> classReturnTypes = novaMethodReturnTypes.get(current);
+            if (classReturnTypes != null) {
+                MirType returnType = classReturnTypes.get(methodName);
+                if (returnType != null) {
+                    return returnType;
+                }
+            }
+            List<String> ifaces = classInterfaceMap.get(current);
+            if (ifaces != null) {
+                for (String iface : ifaces) {
+                    Map<String, MirType> interfaceReturnTypes = novaMethodReturnTypes.get(iface);
+                    if (interfaceReturnTypes != null) {
+                        MirType returnType = interfaceReturnTypes.get(methodName);
+                        if (returnType != null) {
+                            return returnType;
+                        }
+                    }
+                }
+            }
+            current = classSuperClass.get(current);
+        }
+        return null;
+    }
+
+    private MirType inferNovaMethodReturnType(String owner, String methodName, String descriptor) {
+        String returnDescriptor = descriptor.substring(descriptor.indexOf(')') + 1);
+        MirType descriptorReturnType = descriptorToMirType(returnDescriptor);
+        if (descriptorReturnType.getKind() != MirType.Kind.OBJECT
+                || !"java/lang/Object".equals(descriptorReturnType.getClassName())) {
+            return descriptorReturnType;
+        }
+        MirType declaredReturnType = lookupNovaMethodReturnTypeInherited(owner, methodName);
+        if (declaredReturnType != null) {
+            return declaredReturnType;
+        }
+        return inferReturnType(returnDescriptor, owner);
     }
 
     /** 检查继承链是否完整可达（所有父类的方法信息都在当前 lowering 中可用） */

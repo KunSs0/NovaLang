@@ -3,6 +3,8 @@ package com.novalang.mock;
 import com.novalang.runtime.NovaScheduler;
 import com.novalang.runtime.SchedulerHolder;
 import com.novalang.workspace.RuntimeWorkspace;
+import com.novalang.workspace.WorkspaceConfig;
+import com.novalang.workspace.WorkspaceConfigLoader;
 import com.novalang.workspace.WorkspaceException;
 
 import java.io.IOException;
@@ -125,9 +127,12 @@ public final class MockTestRunner {
         actualAliases.put("@mock", testRoot);
         actualAliases.put("@", testRoot);
         if (serverRoot != null) {
-            addAlias(actualAliases, "@nova", serverRoot.resolve("plugins/NovaLang/libs"));
-            addAlias(actualAliases, "@creator", serverRoot.resolve("plugins/Creator/script"));
-            addAlias(actualAliases, "@planners", serverRoot.resolve("plugins/Planners/script/planners"));
+            Path novaLibraries = serverRoot.resolve("plugins").resolve("NovaLang").resolve("libs");
+            if (!Files.isDirectory(novaLibraries)) {
+                throw new WorkspaceException("服务端缺少 NovaLang 全局前置库: " + novaLibraries);
+            }
+            actualAliases.put("@nova", novaLibraries.toAbsolutePath().normalize());
+            discoverWorkspaceConfig(serverRoot, roots, actualAliases);
         }
         for (Map.Entry<String, Path> entry : aliases.entrySet()) {
             String name = entry.getKey();
@@ -159,19 +164,53 @@ public final class MockTestRunner {
 
     private static String moduleEntry(Path file) { return "@mock/" + file.getFileName(); }
     private static String yaml(String value) { return "'" + value.replace("'", "''") + "'"; }
-    private static void addAlias(Map<String, Path> aliases, String name, Path path) {
-        if (Files.isDirectory(path)) { aliases.put(name, path.toAbsolutePath().normalize()); }
-    }
     private static void addPath(List<Path> paths, Path path) {
         if (path != null && Files.isDirectory(path)) {
             Path normalized = path.toAbsolutePath().normalize();
             if (!paths.contains(normalized)) { paths.add(normalized); }
         }
     }
+    private static void discoverWorkspaceConfig(Path serverRoot,
+                                                List<Path> roots,
+                                                Map<String, Path> aliases) {
+        Path pluginsRoot = serverRoot.resolve("plugins");
+        List<Path> configFiles = new ArrayList<Path>();
+        try (java.util.stream.Stream<Path> stream = Files.walk(pluginsRoot)) {
+            stream.filter(Files::isRegularFile)
+                    .filter(path -> "nova.config.yml".equals(path.getFileName().toString()))
+                    .forEach(configFiles::add);
+        } catch (IOException exception) {
+            throw new WorkspaceException("扫描服务端 Workspace 配置失败: " + pluginsRoot, exception);
+        }
+        Collections.sort(configFiles, Comparator.comparing(Path::toString));
+        WorkspaceConfigLoader loader = new WorkspaceConfigLoader();
+        for (Path configFile : configFiles) {
+            WorkspaceConfig config = loader.load(configFile);
+            for (Path sourceRoot : config.getSourceRoots()) {
+                addPath(roots, sourceRoot);
+            }
+            for (Map.Entry<String, Path> entry : config.getAliases().entrySet()) {
+                String alias = entry.getKey();
+                if ("@nova".equals(alias)) {
+                    continue;
+                }
+                Path path = entry.getValue().toAbsolutePath().normalize();
+                Path existing = aliases.get(alias);
+                if (existing != null && !existing.equals(path)) {
+                    throw new WorkspaceException("服务端 Workspace alias 冲突: " + alias
+                            + " -> " + existing + " / " + path);
+                }
+                aliases.put(alias, path);
+            }
+        }
+    }
     private static Path findServerRoot(Path file) {
         Path current = file.toAbsolutePath().normalize().getParent();
         while (current != null) {
-            if (Files.isDirectory(current.resolve("plugins"))) { return current; }
+            boolean hasPlugins = Files.isDirectory(current.resolve("plugins"));
+            boolean hasNovaLibraries = Files.isDirectory(current.resolve("plugins")
+                    .resolve("NovaLang").resolve("libs"));
+            if (hasPlugins && hasNovaLibraries) { return current; }
             current = current.getParent();
         }
         return null;

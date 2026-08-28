@@ -64,6 +64,26 @@ class CompileJavaInheritanceTest {
         }
 
         @Test
+        @DisplayName("Java 接口实现可传给强类型参数")
+        void implementedJavaInterfaceCanBePassedToTypedParameter() throws Exception {
+            String code =
+                "import java java.util.concurrent.Callable\n" +
+                "class ImportedWork : Callable {\n" +
+                "    fun call(): Any { return \"done\" }\n" +
+                "}\n" +
+                "class WorkConsumer {\n" +
+                "    fun accept(work: Callable): Any { return work.call() }\n" +
+                "    fun execute(): Any { return accept(ImportedWork()) }\n" +
+                "}\n";
+            Map<String, Class<?>> loaded = compileAndLoad(code);
+            Class<?> consumerClass = loaded.get("WorkConsumer");
+
+            assertNotNull(consumerClass);
+            Object consumer = consumerClass.getDeclaredConstructor().newInstance();
+            assertEquals("done", invoke(consumer, consumerClass, "execute"));
+        }
+
+        @Test
         @DisplayName("Java import 别名可用于父接口")
         void importedAliasCanBeUsedAsSuperInterface() throws Exception {
             String code =
@@ -506,6 +526,113 @@ class CompileJavaInheritanceTest {
     @Nested
     @DisplayName("Nova 类继承 — 对比验证不受影响")
     class NovaInheritanceUnaffected {
+
+        @Test
+        @DisplayName("显式 Map 返回类型不会被错误推断成声明类")
+        void explicitMapReturnTypeIsPreservedAtCallSite() throws Exception {
+            String code =
+                "class MessageFactory {\n" +
+                "    fun createMessage(): Map {\n" +
+                "        val message = mutableMapOf()\n" +
+                "        message.put(\"text\", \"hello\")\n" +
+                "        return message\n" +
+                "    }\n" +
+                "}\n" +
+                "class MessageConsumer {\n" +
+                "    fun execute(): Any {\n" +
+                "        val message = MessageFactory().createMessage()\n" +
+                "        return message.get(\"text\")\n" +
+                "    }\n" +
+                "}\n";
+            Map<String, Class<?>> loaded = compileAndLoad(code);
+            Class<?> consumerClass = loaded.get("MessageConsumer");
+
+            assertNotNull(consumerClass);
+            Object consumer = consumerClass.getDeclaredConstructor().newInstance();
+            assertEquals("hello", invoke(consumer, consumerClass, "execute"));
+        }
+
+        @Test
+        @DisplayName("object 方法保留 Map 返回类型并保持 Any 为动态值")
+        void objectMethodPreservesDeclaredReferenceReturnTypes() throws Exception {
+            String code =
+                "object ObjectMessageFactory {\n" +
+                "    fun createMap(): Map {\n" +
+                "        val message = mutableMapOf()\n" +
+                "        message.put(\"text\", \"map\")\n" +
+                "        return message\n" +
+                "    }\n" +
+                "    fun createAny(): Any {\n" +
+                "        val message = mutableMapOf()\n" +
+                "        message.put(\"text\", \"any\")\n" +
+                "        return message\n" +
+                "    }\n" +
+                "}\n" +
+                "class ObjectMessageConsumer {\n" +
+                "    fun readMap(): Any { return ObjectMessageFactory.createMap().get(\"text\") }\n" +
+                "    fun readAny(): Any { return ObjectMessageFactory.createAny().get(\"text\") }\n" +
+                "}\n";
+            Map<String, Class<?>> loaded = compileAndLoad(code);
+            Class<?> consumerClass = loaded.get("ObjectMessageConsumer");
+
+            assertNotNull(consumerClass);
+            Object consumer = consumerClass.getDeclaredConstructor().newInstance();
+            assertEquals("map", invoke(consumer, consumerClass, "readMap"));
+            assertEquals("any", invoke(consumer, consumerClass, "readAny"));
+        }
+
+        @Test
+        @DisplayName("接口与继承调用保留集合返回类型")
+        void interfaceAndOverrideCallsPreserveCollectionReturnTypes() throws Exception {
+            String code =
+                "interface MessageSource { fun create(): Map }\n" +
+                "class BaseMessageSource : MessageSource {\n" +
+                "    fun create(): Map {\n" +
+                "        val message = mutableMapOf()\n" +
+                "        message.put(\"text\", \"base\")\n" +
+                "        return message\n" +
+                "    }\n" +
+                "}\n" +
+                "class ChildMessageSource : BaseMessageSource {\n" +
+                "    override fun create(): Map {\n" +
+                "        val message = super.create()\n" +
+                "        message.put(\"text\", \"child\")\n" +
+                "        return message\n" +
+                "    }\n" +
+                "}\n" +
+                "class SourceConsumer {\n" +
+                "    fun read(source: MessageSource): Any { return source.create().get(\"text\") }\n" +
+                "    fun execute(): Any { return read(ChildMessageSource()) }\n" +
+                "}\n";
+            Map<String, Class<?>> loaded = compileAndLoad(code);
+            Class<?> consumerClass = loaded.get("SourceConsumer");
+
+            assertNotNull(consumerClass);
+            Object consumer = consumerClass.getDeclaredConstructor().newInstance();
+            assertEquals("child", invoke(consumer, consumerClass, "execute"));
+        }
+
+        @Test
+        @DisplayName("List 与自定义类返回类型可继续访问成员")
+        void listAndCustomClassReturnTypesRemainUsable() throws Exception {
+            String code =
+                "class Payload(val text: String)\n" +
+                "class TypedFactory {\n" +
+                "    fun createList(): List { return listOf(\"first\") }\n" +
+                "    fun createPayload(): Payload { return Payload(\"payload\") }\n" +
+                "}\n" +
+                "class TypedConsumer {\n" +
+                "    fun readList(): Any { return TypedFactory().createList().get(0) }\n" +
+                "    fun readPayload(): Any { return TypedFactory().createPayload().text }\n" +
+                "}\n";
+            Map<String, Class<?>> loaded = compileAndLoad(code);
+            Class<?> consumerClass = loaded.get("TypedConsumer");
+
+            assertNotNull(consumerClass);
+            Object consumer = consumerClass.getDeclaredConstructor().newInstance();
+            assertEquals("first", invoke(consumer, consumerClass, "readList"));
+            assertEquals("payload", invoke(consumer, consumerClass, "readPayload"));
+        }
 
         @Test
         @DisplayName("Nova class : NovaClass — 正常继承不受影响")
