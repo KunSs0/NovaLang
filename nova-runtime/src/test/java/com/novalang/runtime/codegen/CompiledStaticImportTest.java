@@ -115,6 +115,18 @@ class CompiledStaticImportTest {
     }
 
     @Test
+    @DisplayName("compiled Java interface static method uses InterfaceMethodref")
+    void compiledJavaInterfaceStaticMethodShouldUseInterfaceMethodRef() throws Exception {
+        try (URLClassLoader loader = compileFixture()) {
+            Nova nova = new Nova().setScriptClassLoader(loader);
+            assertEquals(42, nova.compileToBytecode(
+                    "import java dynamic.StaticInterfaceFixture\n" +
+                            "StaticInterfaceFixture.answer(40, 2)",
+                    "external-java-interface-static.nova").run());
+        }
+    }
+
+    @Test
     @DisplayName("generated object keeps static imports after execution context ends")
     void generatedObjectShouldKeepStaticImportsOutsideExecutionContext() throws Exception {
         try (URLClassLoader fixtureLoader = compileFixture();
@@ -251,11 +263,18 @@ class CompiledStaticImportTest {
                         "    }\n" +
                         "    public static int answer() { return 7; }\n" +
                         "}\n").getBytes(StandardCharsets.UTF_8));
+        Path staticInterfaceJavaFile = srcDir.resolve("StaticInterfaceFixture.java");
+        Files.write(staticInterfaceJavaFile,
+                ("package dynamic;\n" +
+                        "public interface StaticInterfaceFixture {\n" +
+                        "    static int answer(int left, int right) { return left + right; }\n" +
+                        "}\n").getBytes(StandardCharsets.UTF_8));
         JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
         assertNotNull(compiler, "测试需要 JDK 编译器");
         int exit = compiler.run(null, null, null,
                 "-encoding", "UTF-8", "-d", classesDir.toString(),
-                javaFile.toString(), covariantJavaFile.toString(), initializationJavaFile.toString());
+                javaFile.toString(), covariantJavaFile.toString(), initializationJavaFile.toString(),
+                staticInterfaceJavaFile.toString());
         assertEquals(0, exit, "静态导入测试夹具应编译成功");
         return new URLClassLoader(new URL[]{classesDir.toUri().toURL()}, null);
     }

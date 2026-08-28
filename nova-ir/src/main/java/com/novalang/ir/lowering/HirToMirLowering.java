@@ -3493,6 +3493,11 @@ public class HirToMirLowering {
     }
 
     private int lowerBinary(BinaryExpr expr, MirBuilder builder) {
+        if (expr.getOperator() == BinaryExpr.BinaryOp.AND
+                || expr.getOperator() == BinaryExpr.BinaryOp.OR) {
+            return lowerLogicalShortCircuit(expr, builder);
+        }
+
         // TO: "a" to 1 → NovaPair.of(left, right)
         if (expr.getOperator() == BinaryExpr.BinaryOp.TO) {
             int left = lowerExpr(expr.getLeft(), builder);
@@ -3569,6 +3574,41 @@ public class HirToMirLowering {
             }
         }
         return builder.emitBinary(op, left, right, resultType, expr.getLocation());
+    }
+
+    /**
+     * && / || 通过 CFG 分支实现短路求值，避免在左侧已决定结果时执行右侧。
+     */
+    private int lowerLogicalShortCircuit(BinaryExpr expr, MirBuilder builder) {
+        SourceLocation loc = expr.getLocation();
+        int left = lowerExpr(expr.getLeft(), builder);
+        boolean isAnd = expr.getOperator() == BinaryExpr.BinaryOp.AND;
+
+        int resultLocal = builder.emitConstBool(!isAnd, loc);
+        BasicBlock rightBlock = builder.newBlock();
+        BasicBlock shortCircuitBlock = builder.newBlock();
+        BasicBlock mergeBlock = builder.newBlock();
+
+        if (isAnd) {
+            builder.emitBranch(left, rightBlock.getId(), shortCircuitBlock.getId(), loc);
+        } else {
+            builder.emitBranch(left, shortCircuitBlock.getId(), rightBlock.getId(), loc);
+        }
+
+        builder.switchToBlock(shortCircuitBlock);
+        int shortCircuitValue = builder.emitConstBool(!isAnd, loc);
+        builder.emitMoveTo(shortCircuitValue, resultLocal, loc);
+        builder.emitGoto(mergeBlock.getId(), loc);
+
+        builder.switchToBlock(rightBlock);
+        int right = lowerExpr(expr.getRight(), builder);
+        if (!builder.getCurrentBlock().hasTerminator()) {
+            builder.emitMoveTo(right, resultLocal, loc);
+            builder.emitGoto(mergeBlock.getId(), loc);
+        }
+
+        builder.switchToBlock(mergeBlock);
+        return resultLocal;
     }
 
     private static String getOperatorMethodName(BinaryExpr.BinaryOp op) {
@@ -4372,6 +4412,9 @@ public class HirToMirLowering {
                 String retDesc = desc.substring(desc.indexOf(')') + 1);
                 MirType retType = descriptorToMirType(retDesc);
                 String extra = javaClass + "|" + methodName + "|" + desc;
+                if (cls.isInterface()) {
+                    extra += "|interface";
+                }
                 int invocation = builder.emitInvokeStatic(extra, args, retType, loc);
                 if (retType.getKind() == MirType.Kind.VOID) {
                     return builder.emitConstNull(loc);

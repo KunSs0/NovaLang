@@ -454,6 +454,18 @@ class CoreSyntaxIntegrationTest {
             dual("var x = 0\nfalse && { x = 1; true }()\nx",
                  wrap("var x = 0\n    false && { x = 1; true }()\n    return x"), 0);
         }
+
+        @Test void testShortCircuitSkipsNullNumberComparison() throws Exception {
+            String code = "val values = mutableMapOf()\n" +
+                    "val deadline = values.get(\"missing\")\n" +
+                    "val now = 42\n" +
+                    "deadline != null && now >= deadline";
+            String body = "val values = mutableMapOf()\n" +
+                    "    val deadline = values.get(\"missing\")\n" +
+                    "    val now = 42\n" +
+                    "    return deadline != null && now >= deadline";
+            dual(code, wrap(body), false);
+        }
     }
 
     // ============ 赋值运算符 ============

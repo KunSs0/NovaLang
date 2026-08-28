@@ -1048,6 +1048,7 @@ public class MirCodeGenerator {
             case INVOKE_STATIC: {
                 String extra = (String) inst.getExtra();
                 String owner, methodName, descriptor;
+                boolean interfaceOwner = false;
 
                 // Java 静态导入：类可能只存在于脚本 ClassLoader，不能生成硬编码 INVOKESTATIC。
                 // 交由 NovaDynamic 使用统一的 Java 重载解析器按实际参数分派。
@@ -1114,10 +1115,11 @@ public class MirCodeGenerator {
                 }
 
                 if (extra.contains("|")) {
-                    String[] parts = extra.split("\\|", 3);
+                    String[] parts = extra.split("\\|", 4);
                     owner = parts[0];
                     methodName = parts[1];
                     descriptor = parts[2];
+                    interfaceOwner = parts.length == 4 && "interface".equals(parts[3]);
                 } else {
                     methodName = extra;
                     owner = "java/lang/Object";
@@ -1130,7 +1132,7 @@ public class MirCodeGenerator {
                     loadAndUnboxParams(mv, inst.getOperands(), 0, descriptor);
                 }
 
-                mv.visitMethodInsn(INVOKESTATIC, owner, methodName, descriptor, false);
+                mv.visitMethodInsn(INVOKESTATIC, owner, methodName, descriptor, interfaceOwner);
 
                 if (inst.getDest() >= 0 && !descriptor.endsWith(")V")) {
                     String retType = descriptor.substring(descriptor.indexOf(')') + 1);
@@ -2415,7 +2417,7 @@ public class MirCodeGenerator {
     private boolean isIntReturningInvoke(MirInst inst) {
         String extra = (String) inst.getExtra();
         if (extra != null && extra.contains("|")) {
-            String[] parts = extra.split("\\|", 3);
+            String[] parts = extra.split("\\|", 4);
             if (parts.length >= 3) {
                 String retDesc = parts[2].substring(parts[2].indexOf(')') + 1);
                 return "I".equals(retDesc);
