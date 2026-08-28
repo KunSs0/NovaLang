@@ -1,6 +1,7 @@
 package com.novalang.bukkit;
 
 import com.novalang.runtime.interpreter.JavaInterop;
+import com.novalang.runtime.Nova;
 import org.bukkit.event.Event;
 import org.bukkit.event.HandlerList;
 import org.junit.jupiter.api.AfterEach;
@@ -9,6 +10,7 @@ import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class BukkitWorkspaceEventsTest {
 
@@ -59,6 +61,24 @@ class BukkitWorkspaceEventsTest {
                 IllegalStateException.class,
                 () -> BukkitWorkspaceEvents.resolveEventType(TestEvent.class.getName())
         );
+    }
+
+    @Test
+    void compilesNamedNovaListenerClass() {
+        Nova nova = new Nova();
+        nova.setScriptClassLoader(BukkitWorkspaceEventsTest.class.getClassLoader());
+        Object result = nova.compileToBytecode(
+                "import java com.novalang.bukkit.BukkitEventListener\n"
+                        + "import java org.bukkit.event.Event\n"
+                        + "class ScriptListener : BukkitEventListener {\n"
+                        + "    override fun handle(event: Event) { }\n"
+                        + "}\n"
+                        + "val listener = ScriptListener()\n"
+                        + "listener is BukkitEventListener",
+                "bukkit-listener.nova"
+        ).run();
+
+        assertTrue(result instanceof Boolean && ((Boolean) result).booleanValue());
     }
 
     static final class TestEvent extends Event {

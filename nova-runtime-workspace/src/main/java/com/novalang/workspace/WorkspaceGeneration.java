@@ -270,6 +270,62 @@ public final class WorkspaceGeneration implements AutoCloseable {
     }
 
     /**
+     * 创建保存显式接口实例的稳定回调。
+     */
+    WorkspaceDirectCallback createDirectCallback(Map<String, Object> capturedBindings,
+                                                 ResourceScope scope,
+                                                 WorkspaceEventCallback callback) {
+        lifecycleLock.readLock().lock();
+        try {
+            requireCallbackCreationState();
+            ResourceScope actualScope = scope == null ? rootScope : scope;
+            requireOwnedScope(actualScope);
+            return new WorkspaceDirectCallback(this, actualScope, capturedBindings,
+                    defaultPolicy, callback);
+        } finally {
+            lifecycleLock.readLock().unlock();
+        }
+    }
+
+    /**
+     * 在捕获的 Workspace 上下文中执行显式接口回调。
+     */
+    Object invokeDirectCallback(ResourceScope scope,
+                                Map<String, Object> bindings,
+                                ExecutionPolicy policy,
+                                final WorkspaceEventCallback callback,
+                                final Object value) {
+        lifecycleLock.readLock().lock();
+        try {
+            requireActive();
+            requireOwnedScope(scope);
+            if (callback == null) {
+                throw new IllegalArgumentException("callback must not be null");
+            }
+            final Map<String, Object> actualBindings = bindings == null
+                    ? Collections.<String, Object>emptyMap()
+                    : new LinkedHashMap<String, Object>(bindings);
+            final ExecutionPolicy actualPolicy = policy == null ? defaultPolicy : policy;
+            Callable<Object> action = new Callable<Object>() {
+                @Override
+                public Object call() {
+                    requireActive();
+                    WorkspaceExecutionContext.ContextHandle handle = WorkspaceExecutionContext.install(
+                            WorkspaceGeneration.this, scope, actualBindings);
+                    try {
+                        return callback.invoke(value);
+                    } finally {
+                        handle.close();
+                    }
+                }
+            };
+            return WorkspaceExecutionDispatcher.execute(actualPolicy, scope, action);
+        } finally {
+            lifecycleLock.readLock().unlock();
+        }
+    }
+
+    /**
      * 判断当前代际是否仍可接受调度回调。
      *
      * @return 代际处于 ACTIVE 状态时返回 {@code true}

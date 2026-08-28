@@ -4,6 +4,8 @@ import com.novalang.runtime.interpreter.JavaInterop;
 import com.novalang.workspace.ExecutionPolicy;
 import com.novalang.workspace.NovaCallback;
 import com.novalang.workspace.ResourceScope;
+import com.novalang.workspace.WorkspaceDirectCallback;
+import com.novalang.workspace.WorkspaceEventCallback;
 import com.novalang.workspace.WorkspaceCallbacks;
 import com.novalang.workspace.WorkspaceExecutionContext;
 import com.novalang.workspace.WorkspaceResource;
@@ -66,8 +68,57 @@ public final class BukkitWorkspaceEvents {
         }
         ResourceScope scope = WorkspaceExecutionContext.requireScope();
         NovaCallback callback = WorkspaceCallbacks.create(entryName, functionName, policy);
+        return register(eventType, priority, ignoreCancelled, scope,
+                new NovaCallbackInvocation(callback));
+    }
+
+    /**
+     * 使用由 Nova 编译类实现的单方法监听器订阅 Bukkit 事件。
+     *
+     * <p>监听器实例直接持有业务需要的不可变状态，例如副本上下文；事件对象作为
+     * {@link BukkitEventListener#handle(Event)} 的唯一参数传入。该入口不创建
+     * 函数名回调，也不注入隐式事件绑定。</p>
+     *
+     * @param eventClassName Bukkit 事件类的全限定名
+     * @param priority 监听优先级
+     * @param ignoreCancelled 是否忽略已经取消的事件
+     * @param listener 由 Nova 字节码类实现的监听器实例
+     * @return 已登记到当前作用域的监听资源
+     */
+    public static WorkspaceResource listen(String eventClassName,
+                                           EventPriority priority,
+                                           boolean ignoreCancelled,
+                                           BukkitEventListener listener) {
+        if (listener == null) {
+            throw new IllegalArgumentException("listener must not be null");
+        }
+        Class<? extends Event> eventType = resolveEventType(eventClassName);
+        if (priority == null) {
+            throw new IllegalArgumentException("priority must not be null");
+        }
+        ResourceScope scope = WorkspaceExecutionContext.requireScope();
+        WorkspaceDirectCallback callback = WorkspaceCallbacks.createDirect(
+                new WorkspaceEventCallback() {
+                    @Override
+                    public Object invoke(Object value) {
+                        listener.handle((Event) value);
+                        return null;
+                    }
+                });
+        return register(eventType, priority, ignoreCancelled, scope,
+                new DirectListenerInvocation(callback));
+    }
+
+    /**
+     * 将已经解析的事件类型实际登记到 Bukkit 与当前资源作用域。
+     */
+    private static WorkspaceResource register(Class<? extends Event> eventType,
+                                              EventPriority priority,
+                                              boolean ignoreCancelled,
+                                              ResourceScope scope,
+                                              EventInvocation invocation) {
         NovaBukkitPlugin plugin = NovaBukkitPlugin.requireInstance();
-        Subscription subscription = new Subscription(scope, callback);
+        Subscription subscription = new Subscription(scope, invocation);
         EventExecutor executor = (listener, event) -> {
             if (!eventType.isInstance(event)) {
                 return;
@@ -121,13 +172,13 @@ public final class BukkitWorkspaceEvents {
      */
     private static final class Subscription implements Listener, WorkspaceResource {
         private final ResourceScope scope;
-        private final NovaCallback callback;
+        private final EventInvocation invocation;
         private boolean registered;
         private boolean disposed;
 
-        Subscription(ResourceScope scope, NovaCallback callback) {
+        Subscription(ResourceScope scope, EventInvocation invocation) {
             this.scope = scope;
-            this.callback = callback;
+            this.invocation = invocation;
         }
 
         /**
@@ -147,11 +198,11 @@ public final class BukkitWorkspaceEvents {
          */
         void invoke(Event event) {
             synchronized (this) {
-                if (disposed || !callback.isValid()) {
+                if (disposed || !invocation.isValid()) {
                     return;
                 }
             }
-            callback.invoke(event);
+            invocation.invoke(event);
         }
 
         /**
@@ -167,6 +218,58 @@ public final class BukkitWorkspaceEvents {
             if (registered) {
                 scope.unregister(this);
             }
+        }
+    }
+
+    /**
+     * 统一 Nova 稳定回调与编译监听器实例的生命周期判断和调用。
+     */
+    private interface EventInvocation {
+
+        boolean isValid();
+
+        void invoke(Event event);
+    }
+
+    /**
+     * 具名 Workspace 函数回调入口；显式监听器实例不使用该路径。
+     */
+    private static final class NovaCallbackInvocation implements EventInvocation {
+        private final NovaCallback callback;
+
+        NovaCallbackInvocation(NovaCallback callback) {
+            this.callback = callback;
+        }
+
+        @Override
+        public boolean isValid() {
+            return callback.isValid();
+        }
+
+        @Override
+        public void invoke(Event event) {
+            callback.invoke(event);
+        }
+    }
+
+    /**
+     * 直接调用 Nova 编译监听器；资源作用域失效后不再进入业务代码。
+     */
+    private static final class DirectListenerInvocation implements EventInvocation {
+        private final WorkspaceDirectCallback callback;
+
+        DirectListenerInvocation(WorkspaceDirectCallback callback) {
+            this.callback = callback;
+        }
+
+        @Override
+        public boolean isValid() {
+            return callback.isValid();
+        }
+
+        @Override
+        public void invoke(Event event) {
+            callback.invoke(event);
         }
     }
 }

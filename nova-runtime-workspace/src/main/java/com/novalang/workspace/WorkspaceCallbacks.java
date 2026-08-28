@@ -51,4 +51,23 @@ public final class WorkspaceCallbacks {
         return generation.createCallback(entryName, functionName,
                 capturedBindings, scope, policy);
     }
+
+    /**
+     * 捕获当前 Workspace 上下文，并包装一个由 Nova 字节码类实现的回调实例。
+     *
+     * @param callback 显式接口回调
+     * @return 可安全由宿主长期持有的直接回调
+     */
+    public static WorkspaceDirectCallback createDirect(WorkspaceEventCallback callback) {
+        if (callback == null) {
+            throw new IllegalArgumentException("callback must not be null");
+        }
+        WorkspaceGeneration generation = WorkspaceExecutionContext.currentGeneration();
+        if (generation == null) {
+            throw new WorkspaceException("The current thread has no Workspace Generation");
+        }
+        ResourceScope scope = WorkspaceExecutionContext.requireScope();
+        Map<String, Object> capturedBindings = WorkspaceExecutionContext.currentBindings();
+        return generation.createDirectCallback(capturedBindings, scope, callback);
+    }
 }
