@@ -402,6 +402,7 @@ class NovaSchedulerTest {
         @Test
         @DisplayName("未配置 scheduler 时 schedule 抛异常")
         void scheduleWithoutSchedulerThrows() {
+            Interpreter.resetGlobalSchedulerState();
             Interpreter clean = new Interpreter();
             clean.setReplMode(true);
             assertThatThrownBy(() -> clean.evalRepl("schedule(100) { }"))
@@ -412,6 +413,7 @@ class NovaSchedulerTest {
         @Test
         @DisplayName("未配置 scheduler 时 scheduleRepeat 抛异常")
         void scheduleRepeatWithoutSchedulerThrows() {
+            Interpreter.resetGlobalSchedulerState();
             Interpreter clean = new Interpreter();
             clean.setReplMode(true);
             assertThatThrownBy(() -> clean.evalRepl("scheduleRepeat(100, 50) { }"))

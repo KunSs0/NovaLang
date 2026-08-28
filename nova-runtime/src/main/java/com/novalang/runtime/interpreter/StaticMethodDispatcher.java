@@ -763,9 +763,19 @@ final class StaticMethodDispatcher {
             if (userExt != null) {
                 return dispatcher.bindAndExecute(receiver, userExt, methodArgs);
             }
+            List<NovaValue> effectiveMethodArgs = methodArgs;
+            Object receiverValue = receiver.toJavaValue();
+            if (receiverValue != null) {
+                StdlibRegistry.ExtensionMethodInfo extension = StdlibRegistry.findExtensionMethod(
+                        receiverValue.getClass(), methodName, -1);
+                if (extension != null && extension.isVarargs
+                        && methodArgs.size() == 1 && methodArgs.get(0) instanceof NovaList) {
+                    effectiveMethodArgs = ((NovaList) methodArgs.get(0)).getElements();
+                }
+            }
             NovaValue stdlibMethod = resolver.tryStdlibFallback(receiver, methodName);
-            if (stdlibMethod instanceof NovaCallable) return ((NovaCallable) stdlibMethod).call(interp, methodArgs);
-            return virtualDispatcher.invokeVirtualMethod(receiver, methodName, null, methodArgs);
+            if (stdlibMethod instanceof NovaCallable) return ((NovaCallable) stdlibMethod).call(interp, effectiveMethodArgs);
+            return virtualDispatcher.invokeVirtualMethod(receiver, methodName, null, effectiveMethodArgs);
         }
         // NovaCollections 拦截
         if (NOVA_COLLECTIONS.equals(owner)) {

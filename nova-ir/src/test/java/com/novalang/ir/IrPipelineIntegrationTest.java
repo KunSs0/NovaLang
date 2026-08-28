@@ -73,6 +73,38 @@ class IrPipelineIntegrationTest {
         }
     }
 
+    @Nested
+    @DisplayName("逻辑短路")
+    class LogicalShortCircuit {
+
+        @Test
+        @DisplayName("类方法中的 || 不访问 nullable 右值")
+        void testOrSkipsNullableMemberAccessInClassMethod() throws Exception {
+            String code = "class Snapshot(val visible: Boolean) { }\n" +
+                "class Component {\n" +
+                "  fun hidden(snapshot: Snapshot?): Boolean {\n" +
+                "    return snapshot == null || !snapshot.visible\n" +
+                "  }\n" +
+                "}\n" +
+                "object Test {\n" +
+                "  fun run(): Any {\n" +
+                "    return Component().hidden(null)\n" +
+                "  }\n" +
+                "}";
+            PassPipeline pipeline = PassPipeline.createDefault();
+            pipeline.setEnableSemanticAnalysis(true);
+            pipeline.setStrictSemanticMode(true);
+            NovaIrCompiler strictCompiler = new NovaIrCompiler(pipeline);
+            Map<String, Class<?>> loaded = strictCompiler.compileAndLoad(code, "short-circuit.nova");
+            Class<?> testClass = loaded.get("Test");
+            assertNotNull(testClass, "编译后应生成 Test 类");
+            Object instance = testClass.getField("INSTANCE").get(null);
+            Method method = testClass.getDeclaredMethod("run");
+            method.setAccessible(true);
+            assertEquals(true, method.invoke(instance));
+        }
+    }
+
     // ============ 死代码消除 (HirDeadCodeElimination / DeadBlockElimination) ============
 
     @Nested

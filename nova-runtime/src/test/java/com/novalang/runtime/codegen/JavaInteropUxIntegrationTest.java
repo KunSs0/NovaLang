@@ -202,6 +202,19 @@ class JavaInteropUxIntegrationTest {
         }
 
         @Test
+        @DisplayName("getter — Java 接口 List.size 属性读取")
+        void testInterfaceListSizeGetter() throws Exception {
+            String code = wrapWithImport(
+                "import java com.novalang.runtime.codegen.UiHostFixture.LifecycleLog",
+                "    val log = LifecycleLog()\n" +
+                "    log.add(\"a\")\n" +
+                "    log.add(\"b\")\n" +
+                "    return log.entries.size");
+            Object result = compile(code);
+            assertEquals(2, ((Number) result).intValue());
+        }
+
+        @Test
         @DisplayName("setter + getter 组合 — 编译器路径")
         void testSetGetCombination() throws Exception {
             String code = wrapWithImport(

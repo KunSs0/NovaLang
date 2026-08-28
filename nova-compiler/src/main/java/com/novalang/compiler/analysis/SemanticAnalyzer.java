@@ -3150,12 +3150,17 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
 
     @Override
     public Void visitBinaryExpr(BinaryExpr node, Void ctx) {
+        BinaryExpr.BinaryOp op = node.getOperator();
+        if (op == BinaryExpr.BinaryOp.AND || op == BinaryExpr.BinaryOp.OR) {
+            analyzeConditionExpression(node, java.util.Collections.<String, NovaType>emptyMap(), ctx);
+            return null;
+        }
+
         node.getLeft().accept(this, ctx);
         node.getRight().accept(this, ctx);
 
         NovaType leftType = getNovaType(node.getLeft());
         NovaType rightType = getNovaType(node.getRight());
-        BinaryExpr.BinaryOp op = node.getOperator();
 
         NovaType resultType = null;
             switch (op) {

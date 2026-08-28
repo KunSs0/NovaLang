@@ -72,6 +72,11 @@ class StringExtensionsIntegrationTest {
         assertThrows(Exception.class, () -> compile(compileBody), "编译器应抛异常");
     }
 
+    @Test
+    void format_singleArgument() throws Exception {
+        dual("\"#%06X\".format(255)", wrap("return \"#%06X\".format(255)"), "#0000FF");
+    }
+
     // ========== isNotEmpty / isBlank ==========
 
     @Nested

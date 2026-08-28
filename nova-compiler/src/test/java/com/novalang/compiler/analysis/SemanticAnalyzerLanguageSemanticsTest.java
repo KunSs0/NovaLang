@@ -756,6 +756,18 @@ class SemanticAnalyzerLanguageSemanticsTest {
     }
 
     @Test
+    @DisplayName("or expressions should smart-cast nullable subjects outside conditions")
+    void orExpressionShouldSmartCastAfterEqualsNullCheck() {
+        AnalyzedSource analyzed = analyzeSource(
+                "fun hidden(s: String?): Boolean {\n" +
+                "    return s == null || s.length == 0\n" +
+                "}");
+
+        assertNoDiagnostics(analyzed.result,
+                "The right-hand side of a standalone || expression should see the null-check narrowing");
+    }
+
+    @Test
     @DisplayName("elvis expressions should use the common type of the non-null left side and right side")
     void elvisShouldUseCommonTypeOfBothSides() {
         AnalysisResult result = analyze(

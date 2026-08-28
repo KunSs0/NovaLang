@@ -5116,6 +5116,10 @@ public class HirToMirLowering {
                     String desc = buildJavaMethodDescriptor(m);
                     String retDesc = desc.substring(desc.indexOf(')') + 1);
                     MirType retType = descriptorToMirType(retDesc);
+                    if (cls.isInterface()) {
+                        return builder.emitInvokeInterfaceDesc(target, m.getName(), new int[0],
+                                owner, desc, retType, expr.getLocation());
+                    }
                     return builder.emitInvokeVirtualDesc(target, m.getName(), new int[0],
                             owner, desc, retType, expr.getLocation());
                 }
@@ -5963,6 +5967,18 @@ public class HirToMirLowering {
      */
     private int emitStdlibExtensionCall(int target, StdlibRegistry.ExtensionMethodInfo info,
                                          int[] callArgs, MirBuilder builder, SourceLocation loc) {
+        if (info.isVarargs) {
+            int sizeConst = builder.emitConstInt(callArgs.length, loc);
+            int packedArgs = builder.emitNewArray(sizeConst, loc);
+            for (int index = 0; index < callArgs.length; index++) {
+                int indexConst = builder.emitConstInt(index, loc);
+                builder.emitIndexSet(packedArgs, indexConst, callArgs[index], loc);
+            }
+            String extra = info.jvmOwner + "|" + info.jvmMethodName + "|" + info.jvmDescriptor;
+            String retDesc = info.jvmDescriptor.substring(info.jvmDescriptor.indexOf(')') + 1);
+            MirType retType = descriptorToMirType(retDesc);
+            return builder.emitInvokeStatic(extra, new int[]{target, packedArgs}, retType, loc);
+        }
         // 参数: [receiver, ...callArgs]
         int[] allArgs = new int[1 + callArgs.length];
         allArgs[0] = target;
