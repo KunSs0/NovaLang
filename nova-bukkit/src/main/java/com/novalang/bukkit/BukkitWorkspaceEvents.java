@@ -1,5 +1,6 @@
 package com.novalang.bukkit;
 
+import com.novalang.runtime.interpreter.JavaInterop;
 import com.novalang.workspace.ExecutionPolicy;
 import com.novalang.workspace.NovaCallback;
 import com.novalang.workspace.ResourceScope;
@@ -27,25 +28,25 @@ public final class BukkitWorkspaceEvents {
     /**
      * 使用 Workspace 默认执行策略订阅 Bukkit 事件。
      *
-     * @param eventType Bukkit 事件类型
+     * @param eventClassName Bukkit 事件类的全限定名
      * @param priority 监听优先级
      * @param ignoreCancelled 是否忽略已经取消的事件
      * @param entryName Nova 回调所属入口名称
      * @param functionName Nova 回调函数名称
      * @return 已登记到当前作用域的监听资源
      */
-    public static WorkspaceResource listen(Class<? extends Event> eventType,
+    public static WorkspaceResource listen(String eventClassName,
                                            EventPriority priority,
                                            boolean ignoreCancelled,
                                            String entryName,
                                            String functionName) {
-        return listen(eventType, priority, ignoreCancelled, entryName, functionName, null);
+        return listen(eventClassName, priority, ignoreCancelled, entryName, functionName, null);
     }
 
     /**
      * 使用指定执行策略订阅 Bukkit 事件。
      *
-     * @param eventType Bukkit 事件类型
+     * @param eventClassName Bukkit 事件类的全限定名
      * @param priority 监听优先级
      * @param ignoreCancelled 是否忽略已经取消的事件
      * @param entryName Nova 回调所属入口名称
@@ -53,15 +54,13 @@ public final class BukkitWorkspaceEvents {
      * @param policy 固定执行策略；传 {@code null} 时使用 Workspace 默认策略
      * @return 已登记到当前作用域的监听资源
      */
-    public static WorkspaceResource listen(Class<? extends Event> eventType,
+    public static WorkspaceResource listen(String eventClassName,
                                            EventPriority priority,
                                            boolean ignoreCancelled,
                                            String entryName,
                                            String functionName,
                                            ExecutionPolicy policy) {
-        if (eventType == null) {
-            throw new IllegalArgumentException("eventType must not be null");
-        }
+        Class<? extends Event> eventType = resolveEventType(eventClassName);
         if (priority == null) {
             throw new IllegalArgumentException("priority must not be null");
         }
@@ -69,10 +68,15 @@ public final class BukkitWorkspaceEvents {
         NovaCallback callback = WorkspaceCallbacks.create(entryName, functionName, policy);
         NovaBukkitPlugin plugin = NovaBukkitPlugin.requireInstance();
         Subscription subscription = new Subscription(scope, callback);
-        EventExecutor executor = (listener, event) -> subscription.invoke(event);
+        EventExecutor executor = (listener, event) -> {
+            if (!eventType.isInstance(event)) {
+                return;
+            }
+            subscription.invoke(event);
+        };
         PluginManager pluginManager = plugin.getServer().getPluginManager();
 
-        // Bukkit 只接收强类型 Class，不解析类名，也不建立反射事件映射。
+        // 类名只在 Nova 宿主边界解析一次，Bukkit 始终接收经过验证的强类型 Class。
         pluginManager.registerEvent(eventType, subscription, priority,
                 executor, plugin, ignoreCancelled);
         try {
@@ -83,6 +87,33 @@ public final class BukkitWorkspaceEvents {
             subscription.dispose();
             throw exception;
         }
+    }
+
+    /**
+     * 使用当前 Workspace 类加载器解析并验证 Bukkit 事件类。
+     *
+     * @param eventClassName 事件类的全限定名
+     * @return 已验证的 Bukkit 事件类
+     */
+    @SuppressWarnings("unchecked")
+    static Class<? extends Event> resolveEventType(String eventClassName) {
+        if (eventClassName == null || eventClassName.trim().isEmpty()) {
+            throw new IllegalArgumentException("eventClassName must not be blank");
+        }
+        ClassLoader scriptClassLoader = JavaInterop.getScriptClassLoader();
+        if (scriptClassLoader == null) {
+            throw new IllegalStateException("No active Nova Workspace class loader");
+        }
+        Class<?> rawType;
+        try {
+            rawType = Class.forName(eventClassName, false, scriptClassLoader);
+        } catch (ClassNotFoundException exception) {
+            throw new IllegalArgumentException("Bukkit event class was not found: " + eventClassName, exception);
+        }
+        if (!Event.class.isAssignableFrom(rawType)) {
+            throw new IllegalArgumentException("Bukkit event class must extend org.bukkit.event.Event: " + eventClassName);
+        }
+        return (Class<? extends Event>) rawType;
     }
 
     /**

@@ -29,6 +29,8 @@ final class StaticMethodDispatcher {
     private static final String MARKER_MODULE = "$Module";
     private static final String MARKER_LAMBDA = "$Lambda$";
     private static final String MARKER_METHOD_REF = "$MethodRef$";
+    private static final String MARKER_JAVA_STATIC_IMPORT = "$JavaStaticImport|";
+    private static final String MARKER_JAVA_STATIC_FIELD = "$JavaStaticField|";
 
     // ===== 特殊方法名 =====
     private static final String SPECIAL_INIT = "<init>";
@@ -106,6 +108,14 @@ final class StaticMethodDispatcher {
         // SK_NORMAL: 惰性解析调用站点（首次解析后缓存在 inst.cache）
         // 防御性回退：MIR Pass 重建指令可能丢失 specialKind，这里惰性修复
         String extra = inst.extraAs();
+        if (extra.startsWith(MARKER_JAVA_STATIC_IMPORT)) {
+            executeJavaStaticImport(frame, inst, extra, false);
+            return;
+        }
+        if (extra.startsWith(MARKER_JAVA_STATIC_FIELD)) {
+            executeJavaStaticImport(frame, inst, extra, true);
+            return;
+        }
         if (extra.length() > 0 && extra.charAt(0) == '$') {
             if (MARKER_SCOPE_CALL.equals(extra)) { inst.specialKind = MirInst.SK_SCOPE_CALL; executeScopeCall(frame, inst); return; }
             if (extra.startsWith(MARKER_PARTIAL_APP)) { inst.specialKind = MirInst.SK_PARTIAL_APP; executePartialApp(frame, inst); return; }
@@ -159,6 +169,85 @@ final class StaticMethodDispatcher {
         NovaValue result = invokeStaticMethod(owner, methodName, args);
         if (inst.getDest() >= 0) {
             frame.locals[inst.getDest()] = result != null ? result : NovaNull.UNIT;
+        }
+    }
+
+    /** 解释器路径的 Java 静态导入分派，和字节码路径共用 MethodHandleCache 重载解析。 */
+    private void executeJavaStaticImport(MirFrame frame, MirInst inst,
+                                         String extra, boolean field) {
+        String prefix = field ? MARKER_JAVA_STATIC_FIELD : MARKER_JAVA_STATIC_IMPORT;
+        String payload = extra.substring(prefix.length());
+        int separator = payload.lastIndexOf('|');
+        if (separator <= 0 || separator == payload.length() - 1) {
+            throw new NovaRuntimeException(NovaException.ErrorKind.JAVA_INTEROP,
+                    "Invalid Java static import marker: " + extra, null);
+        }
+        String[] classNames = payload.substring(0, separator).split(",");
+        String memberName = payload.substring(separator + 1);
+        for (int index = classNames.length - 1; index >= 0; index--) {
+            String candidate = classNames[index];
+            String className = candidate.trim();
+            if (className.isEmpty()) {
+                continue;
+            }
+            Class<?> javaClass;
+            try {
+                javaClass = JavaInterop.loadClass(className.replace('/', '.'));
+            } catch (ClassNotFoundException exception) {
+                continue;
+            }
+            if (!interp.getSecurityPolicy().isClassAllowed(javaClass.getName())) {
+                throw NovaSecurityPolicy.denied("Cannot access class: " + javaClass.getName());
+            }
+            try {
+                if (field) {
+                    java.lang.reflect.Field javaField = javaClass.getField(memberName);
+                    if (!java.lang.reflect.Modifier.isStatic(javaField.getModifiers())) {
+                        continue;
+                    }
+                    Object value = javaField.get(null);
+                    setResult(frame, inst, AbstractNovaValue.fromJava(value));
+                    return;
+                }
+                List<NovaValue> args = new ArrayList<>();
+                for (int operand : inst.getOperands()) {
+                    args.add(frame.get(operand));
+                }
+                if (!interp.getSecurityPolicy().isMethodAllowed(javaClass.getName(), memberName)) {
+                    throw NovaSecurityPolicy.denied(
+                            "Cannot call method '" + memberName + "' on " + javaClass.getName());
+                }
+                Object[] javaArgs = new Object[args.size()];
+                for (int i = 0; i < args.size(); i++) {
+                    javaArgs[i] = args.get(i).toJavaValue();
+                }
+                Object value = MethodHandleCache.getInstance().invokeStatic(javaClass, memberName, javaArgs);
+                setResult(frame, inst, AbstractNovaValue.fromJava(value));
+                return;
+            } catch (NoSuchFieldException exception) {
+                continue;
+            } catch (IllegalAccessException exception) {
+                throw new NovaRuntimeException(NovaException.ErrorKind.JAVA_INTEROP,
+                        "Cannot access Java static field '" + javaClass.getName() + "." + memberName + "'",
+                        null, exception);
+            } catch (NovaRuntimeException exception) {
+                if (!exception.getMessage().startsWith("Static method not found:")) {
+                    throw exception;
+                }
+            } catch (Throwable exception) {
+                throw new NovaRuntimeException(NovaException.ErrorKind.JAVA_INTEROP,
+                        "Java static import '" + javaClass.getName() + "." + memberName + "' failed",
+                        null, exception);
+            }
+        }
+        throw new NovaRuntimeException(NovaException.ErrorKind.JAVA_INTEROP,
+                "Cannot find Java static member '" + payload + "'",
+                "Check the imported class, member name, and argument types");
+    }
+
+    private void setResult(MirFrame frame, MirInst inst, NovaValue value) {
+        if (inst.getDest() >= 0) {
+            frame.locals[inst.getDest()] = value != null ? value : NovaNull.UNIT;
         }
     }
 

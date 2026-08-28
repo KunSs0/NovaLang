@@ -57,15 +57,25 @@ public final class JavaTypeOracle {
     }
 
     private Class<?> loadClass(String qualifiedName) {
-        try {
-            ClassLoader contextLoader = Thread.currentThread().getContextClassLoader();
-            if (contextLoader != null) {
-                return Class.forName(qualifiedName, false, contextLoader);
+        ClassLoader contextLoader = Thread.currentThread().getContextClassLoader();
+        ClassLoader loader = contextLoader != null
+                ? contextLoader
+                : JavaTypeOracle.class.getClassLoader();
+        String candidate = qualifiedName;
+        while (candidate != null) {
+            try {
+                return Class.forName(candidate, false, loader);
+            } catch (ClassNotFoundException ignored) {
+                int separator = candidate.lastIndexOf('.');
+                if (separator < 0) {
+                    candidate = null;
+                } else {
+                    candidate = candidate.substring(0, separator)
+                            + '$' + candidate.substring(separator + 1);
+                }
             }
-            return Class.forName(qualifiedName);
-        } catch (ClassNotFoundException e) {
-            return null;
         }
+        return null;
     }
 
     public NovaType toNovaType(Class<?> javaClass, boolean nullable) {
@@ -96,7 +106,10 @@ public final class JavaTypeOracle {
     }
 
     public Class<?> toJavaArgumentType(NovaType type) {
-        if (type == null) return null;
+        // A missing inferred type is an unknown expression, not a null literal.
+        // Keep the call available for runtime overload selection; an explicit
+        // nullable Nothing type below continues to represent a null literal.
+        if (type == null) return Object.class;
         if (type instanceof NothingType && type.isNullable()) return null;
         if (NovaTypes.isDynamicType(type)) return Object.class;
         String typeName = type.getTypeName();

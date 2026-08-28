@@ -91,6 +91,17 @@ tasks.register('jmhInterop') {
     finalizedBy tasks.named('jmh')
 }
 
+tasks.register('jmhCompiledInterop') {
+    group = 'verification'
+    description = 'Runs compiled Nova Java interop business benchmarks (10000 calls per scenario).'
+    doFirst {
+        jmh.includes = ['CompiledJavaInteropJmhBenchmark']
+        jmh.resultsFile = resolveOptionalPath('compiledInteropJmhResultFile', "$buildDir/benchmarks/compiled-java-interop-jmh.json")
+        jmh.humanOutputFile = resolveOptionalPath('compiledInteropJmhHumanFile', "$buildDir/benchmarks/compiled-java-interop-jmh.txt")
+    }
+    finalizedBy tasks.named('jmh')
+}
+
 tasks.register('jmhScript') {
     group = 'verification'
     description = 'Runs the script computation JMH benchmarks only (~15 min).'

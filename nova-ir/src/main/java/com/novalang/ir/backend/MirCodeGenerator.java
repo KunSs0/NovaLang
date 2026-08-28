@@ -1036,6 +1036,17 @@ public class MirCodeGenerator {
                 String extra = (String) inst.getExtra();
                 String owner, methodName, descriptor;
 
+                // Java 静态导入：类可能只存在于脚本 ClassLoader，不能生成硬编码 INVOKESTATIC。
+                // 交由 NovaDynamic 使用统一的 Java 重载解析器按实际参数分派。
+                if (extra.startsWith("$JavaStaticImport|")) {
+                    emitJavaStaticImport(mv, inst, extra, false);
+                    break;
+                }
+                if (extra.startsWith("$JavaStaticField|")) {
+                    emitJavaStaticImport(mv, inst, extra, true);
+                    break;
+                }
+
                 // $PipeCall|funcName: 运行时分派 → NovaScriptContext.call(name, args)
                 if (extra.startsWith("$PipeCall|")) {
                     String funcName = extra.substring("$PipeCall|".length());
@@ -1399,6 +1410,60 @@ public class MirCodeGenerator {
                     mv.visitVarInsn(ASTORE, inst.getDest());
                 }
                 break;
+        }
+    }
+
+    /** 生成 Java 静态导入调用/字段读取的运行时桥接。 */
+    private void emitJavaStaticImport(MethodVisitor mv, MirInst inst, String extra, boolean field) {
+        String prefix = field ? "$JavaStaticField|" : "$JavaStaticImport|";
+        String payload = extra.substring(prefix.length());
+        int separator = payload.lastIndexOf('|');
+        if (separator <= 0 || separator == payload.length() - 1) {
+            throw new IllegalArgumentException("Invalid Java static import marker: " + extra);
+        }
+        String classNames = payload.substring(0, separator);
+        String memberName = payload.substring(separator + 1);
+        emitJavaClassArray(mv, classNames);
+        mv.visitLdcInsn(memberName);
+        if (field) {
+            mv.visitMethodInsn(INVOKESTATIC, "com/novalang/runtime/NovaDynamic",
+                    "getStaticFieldByClasses",
+                    "([Ljava/lang/Class;Ljava/lang/String;)Ljava/lang/Object;", false);
+        } else {
+            int argCount = inst.getOperands() != null ? inst.getOperands().length : 0;
+            pushInt(mv, argCount);
+            mv.visitTypeInsn(ANEWARRAY, "java/lang/Object");
+            if (inst.getOperands() != null) {
+                for (int i = 0; i < inst.getOperands().length; i++) {
+                    mv.visitInsn(DUP);
+                    pushInt(mv, i);
+                    loadObject(mv, inst.getOperands()[i]);
+                    mv.visitInsn(AASTORE);
+                }
+            }
+            mv.visitMethodInsn(INVOKESTATIC, "com/novalang/runtime/NovaDynamic",
+                    "invokeStaticByClasses",
+                    "([Ljava/lang/Class;Ljava/lang/String;[Ljava/lang/Object;)Ljava/lang/Object;", false);
+        }
+        if (inst.getDest() >= 0) {
+            mv.visitVarInsn(ASTORE, inst.getDest());
+        }
+    }
+
+    /** 将静态导入候选类写入生成类的常量池，绑定到生成类自身的 ClassLoader。 */
+    private void emitJavaClassArray(MethodVisitor mv, String classNames) {
+        String[] candidates = classNames.split(",");
+        pushInt(mv, candidates.length);
+        mv.visitTypeInsn(ANEWARRAY, "java/lang/Class");
+        for (int index = 0; index < candidates.length; index++) {
+            String internalName = candidates[index].trim().replace('.', '/');
+            if (internalName.isEmpty()) {
+                throw new IllegalArgumentException("Java static import class name must not be blank");
+            }
+            mv.visitInsn(DUP);
+            pushInt(mv, index);
+            mv.visitLdcInsn(Type.getObjectType(internalName));
+            mv.visitInsn(AASTORE);
         }
     }
 
@@ -1952,7 +2017,7 @@ public class MirCodeGenerator {
                             "doubleValue", "()D", false);
                     mv.visitInsn(DRETURN);
                 } else {
-                    loadObject(mv, value);
+                    emitReferenceReturn(mv, value, retType);
                     mv.visitInsn(ARETURN);
                 }
             } else {
@@ -2021,6 +2086,23 @@ public class MirCodeGenerator {
                 mv.visitLabel(next);
             }
             mv.visitJumpInsn(GOTO, blockLabels.get(sw.getDefaultBlock()));
+        }
+    }
+
+    /**
+     * 发射引用类型返回值。Nova 局部变量通常以 Object 保存，但 Java override
+     * 方法的返回描述符可能是具体接口、类或枚举；返回前必须补齐 JVM 的引用类型
+     * 约束，否则生成的 ARETURN 会在类加载时触发 VerifyError。
+     */
+    private void emitReferenceReturn(MethodVisitor mv, int value, String returnDescriptor) {
+        loadObject(mv, value);
+        if (returnDescriptor.startsWith("L") && returnDescriptor.endsWith(";")) {
+            String internalName = returnDescriptor.substring(1, returnDescriptor.length() - 1);
+            if (!"java/lang/Object".equals(internalName)) {
+                mv.visitTypeInsn(CHECKCAST, internalName);
+            }
+        } else if (returnDescriptor.startsWith("[")) {
+            mv.visitTypeInsn(CHECKCAST, returnDescriptor);
         }
     }
 
@@ -2579,7 +2661,8 @@ public class MirCodeGenerator {
         // 反射回退：外部类（如 NovaClassInfo）的字段
         if (!"java/lang/Object".equals(owner)) {
             try {
-                Class<?> cls = Class.forName(owner.replace('/', '.'));
+                Class<?> cls = Class.forName(owner.replace('/', '.'), false,
+                        MirCodeGenerator.class.getClassLoader());
                 java.lang.reflect.Field f = findFieldReflect(cls, fieldName);
                 if (f != null) return getDescriptor(f.getType());
             } catch (Exception ignored) { }
@@ -3427,7 +3510,8 @@ public class MirCodeGenerator {
      */
     private String resolveJavaCtorDesc(String internalName, int argCount) {
         try {
-            Class<?> cls = Class.forName(internalName.replace('/', '.'));
+            Class<?> cls = Class.forName(internalName.replace('/', '.'), false,
+                    MirCodeGenerator.class.getClassLoader());
             for (java.lang.reflect.Constructor<?> ctor : cls.getConstructors()) {
                 if (ctor.getParameterCount() == argCount) {
                     StringBuilder desc = new StringBuilder("(");

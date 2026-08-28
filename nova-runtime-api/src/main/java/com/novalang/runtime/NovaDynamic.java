@@ -1,6 +1,7 @@
 package com.novalang.runtime;
 
 import com.novalang.runtime.resolution.MethodNameCanonicalizer;
+import com.novalang.runtime.resolution.PublicMethodResolver;
 import com.novalang.runtime.resolution.StdlibMethodResolver;
 import com.novalang.runtime.stdlib.StdlibRegistry;
 
@@ -164,6 +165,58 @@ public final class NovaDynamic {
             cache.put(memberName, setter);
         }
         invokeSetter(setter, target, value, memberName);
+    }
+
+    /** 按已绑定的类调用 Java 静态方法，供编译后的 import static 使用。 */
+    public static Object invokeStaticByClasses(Class<?>[] classes, String methodName, Object[] args) {
+        for (int index = classes.length - 1; index >= 0; index--) {
+            Class<?> javaClass = classes[index];
+            if (javaClass == null) {
+                continue;
+            }
+            NovaSecurityPolicy.checkClass(javaClass.getName());
+            NovaSecurityPolicy.checkMethod(javaClass.getName(), methodName);
+            MethodHandle handle = resolveStaticMethod(javaClass, methodName,
+                    args != null ? args : EMPTY_ARGS);
+            if (handle == null) {
+                continue;
+            }
+            return invokeStaticVarArgs(handle, methodName,
+                    args != null ? args : EMPTY_ARGS);
+        }
+        throw new NovaException(NovaException.ErrorKind.JAVA_INTEROP,
+                "Cannot find Java static method: " + staticImportClassNames(classes) + "." + methodName,
+                "Check the imported class, member name, and argument types");
+    }
+
+    /** 按已绑定的类读取 Java 静态字段，供编译后的 import static 使用。 */
+    public static Object getStaticFieldByClasses(Class<?>[] classes, String fieldName) {
+        for (int index = classes.length - 1; index >= 0; index--) {
+            Class<?> javaClass = classes[index];
+            if (javaClass == null) {
+                continue;
+            }
+            NovaSecurityPolicy.checkClass(javaClass.getName());
+            MethodHandle getter = resolveStaticGetter(javaClass, fieldName);
+            if (getter == null) {
+                continue;
+            }
+            return invokeStatic0(getter, fieldName);
+        }
+        throw new NovaException(NovaException.ErrorKind.JAVA_INTEROP,
+                "Cannot find Java static field: " + staticImportClassNames(classes) + "." + fieldName,
+                "Check the imported class and field name");
+    }
+
+    private static String staticImportClassNames(Class<?>[] classes) {
+        StringBuilder names = new StringBuilder();
+        for (Class<?> javaClass : classes) {
+            if (names.length() > 0) {
+                names.append(',');
+            }
+            names.append(javaClass != null ? javaClass.getName() : "null");
+        }
+        return names.toString();
     }
 
     /**
@@ -938,7 +991,11 @@ public final class NovaDynamic {
             return member;
         }
         if (args.length == 0) {
-            return member.dynamicInvoke(EMPTY_NOVA_ARGS);
+            Object result = member.dynamicInvoke(EMPTY_NOVA_ARGS);
+            if (result instanceof NovaValue && !((NovaValue) result).isCallable()) {
+                return ((NovaValue) result).toJavaValue();
+            }
+            return result;
         }
         NovaValue[] novaArgs = new NovaValue[args.length];
         for (int i = 0; i < args.length; i++) {
@@ -946,7 +1003,11 @@ public final class NovaDynamic {
                     ? (NovaValue) args[i]
                     : AbstractNovaValue.fromJava(args[i]);
         }
-        return member.dynamicInvoke(novaArgs);
+        Object result = member.dynamicInvoke(novaArgs);
+        if (result instanceof NovaValue && !((NovaValue) result).isCallable()) {
+            return ((NovaValue) result).toJavaValue();
+        }
+        return result;
     }
 
     /**
@@ -1691,7 +1752,7 @@ public final class NovaDynamic {
         Field field = getFieldIndex(cls).get(memberName);
         if (field != null && java.lang.reflect.Modifier.isStatic(field.getModifiers())) {
             try {
-                return LOOKUP.unreflectGetter(field).asType(STATIC0_TYPE);
+                return MethodHandles.publicLookup().unreflectGetter(field).asType(STATIC0_TYPE);
             } catch (Exception e) {
                 return null;
             }
@@ -1906,7 +1967,7 @@ public final class NovaDynamic {
             return null;
         }
         try {
-            return handle.asType(type);
+            return adaptInstanceHandle(handle, type);
         } catch (Exception e) {
             // asType 失败：记录详情以便调试
             System.err.println("[NovaDynamic] resolveMethodHandle: asType failed for " +
@@ -1914,6 +1975,22 @@ public final class NovaDynamic {
                     " handle=" + handle.type() + " target=" + type + " error=" + e);
             return null;
         }
+    }
+
+    /**
+     * 将实例调用句柄统一成包含 receiver 的调用点类型。
+     *
+     * Kotlin object 的 @JvmStatic bridge，以及部分已经绑定对象的句柄，已经消费了
+     * receiver，参数数量会比实例调用点少一个。先补回一个仅用于调用约定的 receiver
+     * 参数，再做 Object/void 的通用适配；否则直接 asType 会抛 WrongMethodTypeException。
+     */
+    static MethodHandle adaptInstanceHandle(MethodHandle handle, MethodType targetType) {
+        MethodType sourceType = handle.type();
+        if (!handle.isVarargsCollector()
+                && sourceType.parameterCount() == targetType.parameterCount() - 1) {
+            handle = MethodHandles.dropArguments(handle, 0, Object.class);
+        }
+        return handle.asType(targetType);
     }
 
     private static MethodHandle resolveStaticMethod(Class<?> cls, String methodName, Object[] args) {
@@ -2000,6 +2077,19 @@ public final class NovaDynamic {
     }
 
     private static MethodHandle unreflectAsGetter(Method method) {
+        MethodHandle handle = unreflectGetterMethod(method);
+        if (handle != null) {
+            return handle;
+        }
+
+        Method publicMethod = PublicMethodResolver.resolvePublicDeclaration(method);
+        if (publicMethod == null || publicMethod.equals(method)) {
+            return null;
+        }
+        return unreflectGetterMethod(publicMethod);
+    }
+
+    private static MethodHandle unreflectGetterMethod(Method method) {
         try {
             return LOOKUP.unreflect(method).asType(GETTER_TYPE);
         } catch (IllegalAccessException e) {
@@ -2026,16 +2116,32 @@ public final class NovaDynamic {
             String setterName = "set" + Character.toUpperCase(memberName.charAt(0)) + memberName.substring(1);
             Method setter = findOneArgMethod(getMethodIndex(clazz), setterName);
             if (setter != null) {
-                try {
-                    return LOOKUP.unreflect(setter).asType(SETTER_TYPE);
-                } catch (IllegalAccessException e) {
-                    try { return MethodHandles.publicLookup().unreflect(setter).asType(SETTER_TYPE); }
-                    catch (Exception ignored) {}
-                } catch (Exception ignored) {}
+                MethodHandle setterHandle = unreflectSetterMethod(setter);
+                if (setterHandle != null) {
+                    return setterHandle;
+                }
+
+                Method publicSetter = PublicMethodResolver.resolvePublicDeclaration(setter);
+                if (publicSetter != null && !publicSetter.equals(setter)) {
+                    setterHandle = unreflectSetterMethod(publicSetter);
+                    if (setterHandle != null) {
+                        return setterHandle;
+                    }
+                }
             }
         }
 
         throw NovaErrors.undefinedMember(clazz.getSimpleName(), memberName, collectAvailableNames(clazz));
+    }
+
+    private static MethodHandle unreflectSetterMethod(Method method) {
+        try {
+            return LOOKUP.unreflect(method).asType(SETTER_TYPE);
+        } catch (IllegalAccessException e) {
+            try { return MethodHandles.publicLookup().unreflect(method).asType(SETTER_TYPE); }
+            catch (Exception ignored) {}
+        } catch (Exception ignored) {}
+        return null;
     }
 
     private static java.util.Collection<String> collectAvailableNames(Class<?> clazz) {
@@ -2125,6 +2231,14 @@ public final class NovaDynamic {
     private static MethodHandle toMethodHandle(Method best) {
         com.novalang.runtime.stdlib.LambdaUtils.trySetAccessible(best);
         MethodHandle handle = unreflectWithFallback(best);
+        if (handle == null && !java.lang.reflect.Modifier.isStatic(best.getModifiers())) {
+            Method publicMethod = PublicMethodResolver.resolvePublicDeclaration(best);
+            if (publicMethod != null && !publicMethod.equals(best)) {
+                best = publicMethod;
+                com.novalang.runtime.stdlib.LambdaUtils.trySetAccessible(best);
+                handle = unreflectWithFallback(best);
+            }
+        }
         if (handle == null) return null;
         try {
             if (best.isVarArgs()) {

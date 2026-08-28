@@ -1,11 +1,13 @@
 package com.novalang.compiler.analysis;
 
 import com.novalang.compiler.ast.decl.Program;
+import com.novalang.compiler.analysis.types.JavaTypeOracle;
 import com.novalang.compiler.lexer.Lexer;
 import com.novalang.compiler.parser.Parser;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 
 @DisplayName("Java type resolution semantics")
@@ -138,5 +140,11 @@ class JavaTypeResolutionSemanticsTest {
 
         assertFalse(hasError(result),
                 "A Nova wildcard import should make matching external types visible by simple name");
+    }
+
+    @Test
+    @DisplayName("unknown Java call argument types should defer to runtime overload resolution")
+    void unknownJavaArgumentTypeShouldBeRepresentedAsObject() {
+        assertEquals(Object.class, JavaTypeOracle.get().toJavaArgumentType(null));
     }
 }

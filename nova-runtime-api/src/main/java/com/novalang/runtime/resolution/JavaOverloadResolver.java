@@ -112,12 +112,54 @@ public final class JavaOverloadResolver {
     private static Method selectMostSpecific(List<Method> methods) {
         Method best = methods.get(0);
         for (int i = 1; i < methods.size(); i++) {
-            if (isMoreSpecific(methods.get(i).getParameterTypes(), methods.get(i).isVarArgs(),
+            Method candidate = methods.get(i);
+            if (isMoreSpecific(candidate.getParameterTypes(), candidate.isVarArgs(),
                     best.getParameterTypes(), best.isVarArgs())) {
-                best = methods.get(i);
+                best = candidate;
+                continue;
+            }
+            if (Arrays.equals(candidate.getParameterTypes(), best.getParameterTypes())
+                    && isPreferredMethod(candidate, best)) {
+                best = candidate;
             }
         }
         return best;
+    }
+
+    /**
+     * javac 为协变返回值生成的 bridge 方法与真实方法拥有相同参数签名。
+     * 反射枚举顺序不稳定，必须明确偏向真实、非 synthetic 方法，再比较返回值和声明类。
+     */
+    private static boolean isPreferredMethod(Method candidate, Method incumbent) {
+        if (candidate.isBridge() != incumbent.isBridge()) {
+            return !candidate.isBridge();
+        }
+        if (candidate.isSynthetic() != incumbent.isSynthetic()) {
+            return !candidate.isSynthetic();
+        }
+
+        Class<?> candidateReturn = candidate.getReturnType();
+        Class<?> incumbentReturn = incumbent.getReturnType();
+        if (!candidateReturn.equals(incumbentReturn)) {
+            if (incumbentReturn.isAssignableFrom(candidateReturn)) {
+                return true;
+            }
+            if (candidateReturn.isAssignableFrom(incumbentReturn)) {
+                return false;
+            }
+        }
+
+        Class<?> candidateOwner = candidate.getDeclaringClass();
+        Class<?> incumbentOwner = incumbent.getDeclaringClass();
+        if (!candidateOwner.equals(incumbentOwner)) {
+            if (incumbentOwner.isAssignableFrom(candidateOwner)) {
+                return true;
+            }
+            if (candidateOwner.isAssignableFrom(incumbentOwner)) {
+                return false;
+            }
+        }
+        return false;
     }
 
     private static Constructor<?> selectMostSpecificCtor(List<Constructor<?>> ctors) {
@@ -165,6 +207,10 @@ public final class JavaOverloadResolver {
             return !target.isPrimitive();
         }
         if (target.isAssignableFrom(source)) return true;
+        // Nova Any/dynamic arguments are represented as Object at compile time.
+        // Their concrete class is available to the runtime resolver, so retain
+        // the call for runtime overload selection instead of rejecting it here.
+        if (source == Object.class) return true;
         if (target == Object.class) return true;
         if (target == int.class || target == Integer.class) {
             return source == Integer.class || source == int.class

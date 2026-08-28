@@ -76,6 +76,23 @@ class RuntimeWorkspaceTest {
     }
 
     @Test
+    @DisplayName("编译前使用 WorkspaceHost 的定义类加载器")
+    void shouldInstallWorkspaceHostClassLoaderBeforeHostBindings() throws Exception {
+        WorkspaceTestSupport.write(tempDirectory, "main.nova", "fun value(): Int = 1");
+        Path config = WorkspaceTestSupport.writeConfig(tempDirectory, "caller", "  - \"main\"\n");
+        ClassLoader expected = RuntimeWorkspaceTest.class.getClassLoader();
+        WorkspaceHost host = nova -> assertEquals(expected, nova.getScriptClassLoader());
+        RuntimeWorkspace workspace = new RuntimeWorkspace(config, host);
+        try {
+            workspace.load();
+            assertEquals(1, ((Number) workspace.invoke("main", "value",
+                    Collections.<String, Object>emptyMap(), null)).intValue());
+        } finally {
+            workspace.dispose();
+        }
+    }
+
+    @Test
     @DisplayName("每次调用使用隔离绑定且不回写输入 Map")
     void shouldIsolateInvocationBindings() throws Exception {
         WorkspaceTestSupport.write(tempDirectory, "main.nova",
@@ -251,8 +268,9 @@ class RuntimeWorkspaceTest {
         try {
             WorkspaceException exception = assertThrows(WorkspaceException.class, workspace::load);
 
-            assertTrue(exception.getMessage().contains(dependency.toAbsolutePath().normalize() + ":2"),
-                    describeFailure(exception));
+            String expectedLocation = dependency.toRealPath() + ":2";
+            assertTrue(exception.getMessage().contains(expectedLocation),
+                    "Expected location: " + expectedLocation + "\n" + describeFailure(exception));
         } finally {
             workspace.dispose();
         }

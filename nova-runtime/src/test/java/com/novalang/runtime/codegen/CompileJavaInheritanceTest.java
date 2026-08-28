@@ -47,6 +47,96 @@ class CompileJavaInheritanceTest {
     class NamedClassImplementsInterface {
 
         @Test
+        @DisplayName("Java import 原类名可直接用于父接口")
+        void directJavaImportCanBeUsedAsSuperInterface() throws Exception {
+            String code =
+                "import java java.util.concurrent.Callable\n" +
+                "class DirectImportedWork : Callable {\n" +
+                "    fun call(): Any { return \"done\" }\n" +
+                "}\n";
+            Map<String, Class<?>> loaded = compileAndLoad(code);
+            Class<?> clazz = loaded.get("DirectImportedWork");
+
+            assertNotNull(clazz);
+            assertTrue(java.util.concurrent.Callable.class.isAssignableFrom(clazz));
+            Object instance = clazz.getDeclaredConstructor().newInstance();
+            assertEquals("done", ((java.util.concurrent.Callable<?>) instance).call());
+        }
+
+        @Test
+        @DisplayName("Java import 别名可用于父接口")
+        void importedAliasCanBeUsedAsSuperInterface() throws Exception {
+            String code =
+                "import java java.util.concurrent.Callable as WorkContract\n" +
+                "class ImportedWork : WorkContract {\n" +
+                "    fun call(): Any { return \"done\" }\n" +
+                "}\n";
+            Map<String, Class<?>> loaded = compileAndLoad(code);
+            Class<?> clazz = loaded.get("ImportedWork");
+
+            assertNotNull(clazz);
+            assertTrue(java.util.concurrent.Callable.class.isAssignableFrom(clazz));
+            Object instance = clazz.getDeclaredConstructor().newInstance();
+            assertEquals("done", ((java.util.concurrent.Callable<?>) instance).call());
+        }
+
+        @Test
+        @DisplayName("Java import 别名经 typealias 后可用于父接口")
+        void importedAliasCanBeReExportedThroughTypeAlias() throws Exception {
+            String code =
+                "import java java.util.concurrent.Callable as WorkContractType\n" +
+                "typealias WorkContract = WorkContractType\n" +
+                "class TypeAliasedWork : WorkContract {\n" +
+                "    fun call(): Any { return \"done\" }\n" +
+                "}\n";
+            Map<String, Class<?>> loaded = compileAndLoad(code);
+            Class<?> clazz = loaded.get("TypeAliasedWork");
+
+            assertNotNull(clazz);
+            assertTrue(java.util.concurrent.Callable.class.isAssignableFrom(clazz));
+            Object instance = clazz.getDeclaredConstructor().newInstance();
+            assertEquals("done", ((java.util.concurrent.Callable<?>) instance).call());
+        }
+
+        @Test
+        @DisplayName("嵌套 Java 类型 import 别名可用于方法签名")
+        void nestedImportedAliasCanBeUsedInMethodSignature() throws Exception {
+            String code =
+                "import java java.util.Map.Entry as EntryType\n" +
+                "typealias ImportedEntry = EntryType\n" +
+                "class EntryReader {\n" +
+                "    fun read(entry: ImportedEntry): Any { return entry.getKey() }\n" +
+                "}\n";
+            Map<String, Class<?>> loaded = compileAndLoad(code);
+            Class<?> clazz = loaded.get("EntryReader");
+
+            assertNotNull(clazz);
+            Method method = clazz.getDeclaredMethod("read", Object.class);
+            assertEquals(Object.class, method.getReturnType());
+            Object instance = clazz.getDeclaredConstructor().newInstance();
+            Object entry = new java.util.AbstractMap.SimpleEntry<String, String>("key", "value");
+            assertEquals("key", method.invoke(instance, entry));
+        }
+
+        @Test
+        @DisplayName("嵌套 Java 类型可按原类名直接导入")
+        void nestedJavaTypeCanBeImportedWithoutAlias() throws Exception {
+            String code =
+                "import java java.util.Map.Entry\n" +
+                "class DirectEntryReader {\n" +
+                "    fun read(entry: Entry): Any { return entry.getKey() }\n" +
+                "}\n";
+            Map<String, Class<?>> loaded = compileAndLoad(code);
+            Class<?> clazz = loaded.get("DirectEntryReader");
+
+            assertNotNull(clazz);
+            Method method = clazz.getDeclaredMethod("read", Object.class);
+            Object instance = clazz.getDeclaredConstructor().newInstance();
+            Object entry = new java.util.AbstractMap.SimpleEntry<String, String>("key", "value");
+            assertEquals("key", method.invoke(instance, entry));
+        }
+
+        @Test
         @DisplayName("class : Runnable — 生成的类实现 Runnable 接口")
         void testClassImplementsRunnable() throws Exception {
             String code =

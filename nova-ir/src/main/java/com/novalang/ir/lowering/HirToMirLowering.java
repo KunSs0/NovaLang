@@ -16,6 +16,7 @@ import com.novalang.compiler.hirtype.*;
 import com.novalang.ir.mir.*;
 import com.novalang.runtime.resolution.MethodNameCanonicalizer;
 import com.novalang.runtime.resolution.MethodSemantics;
+import com.novalang.runtime.resolution.JavaOverloadResolver;
 import com.novalang.runtime.resolution.StdlibMethodResolver;
 import com.novalang.runtime.stdlib.BuiltinModuleExports;
 import com.novalang.runtime.stdlib.StdlibRegistry;
@@ -95,6 +96,11 @@ public class HirToMirLowering {
 
     // Java import 映射: 简单名 → JVM 内部名（如 "System" → "java/lang/System"）
     private final Map<String, String> javaImports = new HashMap<>();
+
+    // Java static import 映射: 简单名 → 全限定成员名（如 "max" → "java.lang.Math.max"）
+    private final Map<String, String> staticImports = new HashMap<>();
+    // Java static wildcard import 类名（点分格式）
+    private final List<String> staticWildcardImports = new ArrayList<>();
 
     // javaClass() 常量传播: 变量名 → JVM 内部名（如 "Integer" → "java/lang/Integer"）
     // val X = javaClass("java.lang.Integer") 时记录，后续 X.FIELD/X.method() 直接静态解析
@@ -195,13 +201,31 @@ public class HirToMirLowering {
 
     private Class<?> resolveJavaClass(String name) {
         if (javaTypeCache.containsKey(name)) return javaTypeCache.get(name);
-        String javaName = name.replace('/', '.');
+        String importedName = javaImports.get(name);
+        String javaName = importedName != null
+                ? importedName.replace('/', '.')
+                : name.replace('/', '.');
+        ClassLoader contextLoader = Thread.currentThread().getContextClassLoader();
         for (String prefix : JAVA_PREFIXES) {
-            try {
-                Class<?> cls = Class.forName(prefix + javaName);
-                javaTypeCache.put(name, cls);
-                return cls;
-            } catch (ClassNotFoundException e) { /* continue */ }
+            ClassLoader loader = contextLoader != null
+                    ? contextLoader
+                    : HirToMirLowering.class.getClassLoader();
+            String candidate = prefix + javaName;
+            while (candidate != null) {
+                try {
+                    Class<?> cls = Class.forName(candidate, false, loader);
+                    javaTypeCache.put(name, cls);
+                    return cls;
+                } catch (ClassNotFoundException ignored) {
+                    int separator = candidate.lastIndexOf('.');
+                    if (separator < prefix.length()) {
+                        candidate = null;
+                    } else {
+                        candidate = candidate.substring(0, separator)
+                                + '$' + candidate.substring(separator + 1);
+                    }
+                }
+            }
         }
         javaTypeCache.put(name, null);
         return null;
@@ -282,7 +306,10 @@ public class HirToMirLowering {
                 } else {
                     String simpleName = imp.hasAlias() ? imp.getAlias()
                             : qn.substring(qn.lastIndexOf('.') + 1);
-                    String internalName = qn.replace('.', '/');
+                    Class<?> importedClass = resolveJavaClass(qn);
+                    String internalName = importedClass != null
+                            ? importedClass.getName().replace('.', '/')
+                            : qn.replace('.', '/');
                     javaImports.put(simpleName, internalName);
                     javaImportsMeta.put(simpleName, qn);
                 }
@@ -290,10 +317,27 @@ public class HirToMirLowering {
                 String qn = imp.getQualifiedName();
                 if (imp.isWildcard()) {
                     staticWildcardImportsMeta.add(qn);
+                    Class<?> importedClass = resolveJavaClass(qn);
+                    if (importedClass == null) {
+                        throw new IllegalArgumentException(
+                                "Cannot resolve Java static import owner: " + qn);
+                    }
+                    String internalName = importedClass.getName().replace('.', '/');
+                    staticWildcardImports.add(internalName);
                 } else {
                     String simpleName = imp.hasAlias() ? imp.getAlias()
                             : qn.substring(qn.lastIndexOf('.') + 1);
                     staticImportsMeta.put(simpleName, qn);
+                    int memberSeparator = qn.lastIndexOf('.');
+                    String ownerName = qn.substring(0, memberSeparator);
+                    String memberName = qn.substring(memberSeparator + 1);
+                    Class<?> importedClass = resolveJavaClass(ownerName);
+                    if (importedClass == null) {
+                        throw new IllegalArgumentException(
+                                "Cannot resolve Java static import owner: " + ownerName);
+                    }
+                    String internalName = importedClass.getName().replace('.', '/');
+                    staticImports.put(simpleName, internalName + "." + memberName);
                 }
             } else {
                 String qn = imp.getQualifiedName();
@@ -301,7 +345,11 @@ public class HirToMirLowering {
                 // 自动识别 Java 包导入（Parser 未标记 isJava 时的回退）
                 if (qn.startsWith("java.") || qn.startsWith("javax.") || qn.startsWith("org.") || qn.startsWith("com.")) {
                     try {
-                        Class.forName(qn);
+                        ClassLoader loader = Thread.currentThread().getContextClassLoader();
+                        if (loader == null) {
+                            loader = HirToMirLowering.class.getClassLoader();
+                        }
+                        Class.forName(qn, false, loader);
                         // 确认是 Java 类，按 Java import 处理
                         String simpleName = imp.hasAlias() ? imp.getAlias()
                                 : qn.substring(qn.lastIndexOf('.') + 1);
@@ -3332,6 +3380,23 @@ public class HirToMirLowering {
                 return fieldVal;
             }
         }
+        // Java 静态字段导入必须在编译期生成运行时标记，不能落到脚本 Bindings 查找。
+        String staticQualifiedName = staticImports.get(ref.getName());
+        if (staticQualifiedName != null) {
+            int lastDot = staticQualifiedName.lastIndexOf('.');
+            if (lastDot > 0 && lastDot < staticQualifiedName.length() - 1) {
+                String className = staticQualifiedName.substring(0, lastDot);
+                String memberName = staticQualifiedName.substring(lastDot + 1);
+                String extra = "$JavaStaticField|" + className + "|" + memberName;
+                return builder.emitInvokeStatic(extra, new int[0],
+                        MirType.ofObject("java/lang/Object"), ref.getLocation());
+            }
+        }
+        if (!staticWildcardImports.isEmpty()) {
+            String extra = "$JavaStaticField|" + joinStaticImportClasses() + "|" + ref.getName();
+            return builder.emitInvokeStatic(extra, new int[0],
+                    MirType.ofObject("java/lang/Object"), ref.getLocation());
+        }
         // 脚本模式: 未解析变量通过 NovaScriptContext.get(name) 读取 Bindings
         if (scriptMode) {
             int nameConst = builder.emitConstString(ref.getName(), ref.getLocation());
@@ -3547,6 +3612,8 @@ public class HirToMirLowering {
             }
             // 用户定义的顶层函数优先于同名 stdlib 函数
             if (topLevelFunctionNames.contains(name)) return lowerTopLevelFunctionCall(name, expr, builder);
+            // 显式/别名静态导入优先于 stdlib，且不依赖编译期 ClassLoader 可见性
+            { int r = lowerStaticImportCall(name, expr, builder); if (r >= 0) return r; }
             { int r = lowerStdlibNativeFunctionCall(name, expr, builder); if (r >= 0) return r; }
             { int r = lowerStdlibSupplierLambdaCall(name, expr, builder); if (r >= 0) return r; }
             { int r = tryStdlibReceiverLambdaCall(name, expr, builder); if (r >= 0) return r; }
@@ -3555,10 +3622,47 @@ public class HirToMirLowering {
                 return lowerArrayConstructorCall(name, expr, builder);
             { int r = lowerClassConstructorAndReceiverCall(name, expr, builder); if (r >= 0) return r; }
             { int r = trySelfMethodCall(name, expr, builder); if (r >= 0) return r; }
-            return lowerPipeCallExpr(name, expr, builder);
-        }
+        return lowerPipeCallExpr(name, expr, builder);
+    }
+
         { int r = tryJavaTypeOrQualifiedCall(expr, builder); if (r >= 0) return r; }
         return lowerFunctionTypeInvocation(expr, builder);
+    }
+
+    /** Java 静态导入裸调用（包括 import static C.*）。 */
+    private int lowerStaticImportCall(String name, HirCall expr, MirBuilder builder) {
+        String qualifiedName = staticImports.get(name);
+        String classNamesValue;
+        String memberName = name;
+        if (qualifiedName != null) {
+            int lastDot = qualifiedName.lastIndexOf('.');
+            if (lastDot <= 0 || lastDot == qualifiedName.length() - 1) {
+                return -1;
+            }
+            classNamesValue = qualifiedName.substring(0, lastDot);
+            memberName = qualifiedName.substring(lastDot + 1);
+        } else {
+            if (staticWildcardImports.isEmpty()) {
+                return -1;
+            }
+            classNamesValue = joinStaticImportClasses();
+        }
+
+        int[] args = lowerArgs(expr.getArgs(), builder);
+        String extra = "$JavaStaticImport|" + classNamesValue + "|" + memberName;
+        return builder.emitInvokeStatic(extra, args,
+                MirType.ofObject("java/lang/Object"), expr.getLocation());
+    }
+
+    private String joinStaticImportClasses() {
+        StringBuilder result = new StringBuilder();
+        for (int i = 0; i < staticWildcardImports.size(); i++) {
+            if (i > 0) {
+                result.append(',');
+            }
+            result.append(staticWildcardImports.get(i));
+        }
+        return result.toString();
     }
 
     private boolean hasPlaceholderArg(HirCall expr) {
@@ -3580,12 +3684,12 @@ public class HirToMirLowering {
         String className = moduleClass.replace('/', '.');
         Class<?> cls = null;
         try {
-            cls = Class.forName(className);
+            cls = Class.forName(className, false, HirToMirLowering.class.getClassLoader());
         } catch (ClassNotFoundException ignored) {
             // 尝试上下文 ClassLoader（Bukkit 等插件环境）
             try {
                 ClassLoader tcl = Thread.currentThread().getContextClassLoader();
-                if (tcl != null) cls = Class.forName(className, true, tcl);
+                if (tcl != null) cls = Class.forName(className, false, tcl);
             } catch (ClassNotFoundException ignored2) {}
         }
         if (cls == null) return; // 编译类不在 classpath（纯编译场景），跳过
@@ -4179,29 +4283,66 @@ public class HirToMirLowering {
         // 通过反射查找方法签名
         Class<?> cls = resolveJavaClass(javaClass);
         if (cls != null) {
-            java.lang.reflect.Method found = findJavaStaticMethod(cls, methodName, args.length);
-            if (found != null) {
+            Class<?>[] argTypes = inferJavaArgTypes(args, builder);
+            java.lang.reflect.Method found = findJavaStaticMethod(cls, methodName, argTypes);
+            if (found != null && !found.isVarArgs()) {
                 String desc = buildJavaMethodDescriptor(found);
                 String retDesc = desc.substring(desc.indexOf(')') + 1);
                 MirType retType = descriptorToMirType(retDesc);
                 String extra = javaClass + "|" + methodName + "|" + desc;
-                return builder.emitInvokeStatic(extra, args, retType, loc);
+                int invocation = builder.emitInvokeStatic(extra, args, retType, loc);
+                if (retType.getKind() == MirType.Kind.VOID) {
+                    return builder.emitConstNull(loc);
+                }
+                return invocation;
             }
         }
-        // 兜底: 全 Object 签名
-        String desc = MethodDescriptor.allObjectDesc(args.length);
-        String extra = javaClass + "|" + methodName + "|" + desc;
-        return builder.emitInvokeStatic(extra, args, MirType.ofObject("java/lang/Object"), loc);
+        // 编译期不可见或只能匹配到 varargs 时，交由运行时按真实类加载器和参数重载分派。
+        String className = javaClass.replace('/', '.');
+        String extra = "$JavaStaticImport|" + className + "|" + methodName;
+        return builder.emitInvokeStatic(extra, args,
+                MirType.ofObject("java/lang/Object"), loc);
     }
 
-    private java.lang.reflect.Method findJavaStaticMethod(Class<?> cls, String name, int argCount) {
+    private java.lang.reflect.Method findJavaStaticMethod(Class<?> cls, String name, Class<?>[] argTypes) {
+        List<java.lang.reflect.Method> candidates = new ArrayList<>();
         for (java.lang.reflect.Method m : cls.getMethods()) {
-            if (m.getName().equals(name) && m.getParameterCount() == argCount
-                    && java.lang.reflect.Modifier.isStatic(m.getModifiers())) {
-                return m;
+            if (m.getName().equals(name)) {
+                candidates.add(m);
             }
         }
-        return null;
+        return JavaOverloadResolver.selectBestMethod(candidates, true, argTypes);
+    }
+
+    private Class<?>[] inferJavaArgTypes(int[] args, MirBuilder builder) {
+        Class<?>[] argTypes = new Class<?>[args.length];
+        List<MirLocal> locals = builder.getFunction().getLocals();
+        for (int i = 0; i < args.length; i++) {
+            MirType type = args[i] >= 0 && args[i] < locals.size()
+                    ? locals.get(args[i]).getType() : MirType.ofObject("java/lang/Object");
+            argTypes[i] = mirTypeToJavaClass(type);
+        }
+        return argTypes;
+    }
+
+    private Class<?> mirTypeToJavaClass(MirType type) {
+        switch (type.getKind()) {
+            case INT: return int.class;
+            case LONG: return long.class;
+            case DOUBLE: return double.class;
+            case FLOAT: return float.class;
+            case BOOLEAN: return boolean.class;
+            case CHAR: return char.class;
+            case OBJECT:
+                if (type.getClassName() != null) {
+                    Class<?> resolved = resolveJavaClass(type.getClassName());
+                    if (resolved != null) {
+                        return resolved;
+                    }
+                }
+                return Object.class;
+            default: return Object.class;
+        }
     }
 
     private String buildJavaMethodDescriptor(java.lang.reflect.Method m) {
@@ -4499,17 +4640,25 @@ public class HirToMirLowering {
             }
             // 尝试 Java 反射解析方法描述符
             java.lang.reflect.Method javaMethod = ownerClass != null
-                    ? findJavaMethod(ownerClass, methodName, args.length) : null;
+                    ? findJavaInstanceMethod(ownerClass, methodName, args, builder) : null;
             if (javaMethod != null) {
                 desc = buildJavaMethodDesc(javaMethod);
                 returnType = javaReturnTypeToMir(javaMethod.getReturnType());
                 boolean isInterface = ownerClass.isInterface();
                 if (isInterface) {
-                    return builder.emitInvokeInterfaceDesc(target, methodName, args,
+                    int invocation = builder.emitInvokeInterfaceDesc(target, methodName, args,
                             owner, desc, returnType, loc);
+                    if (returnType.getKind() == MirType.Kind.VOID) {
+                        return builder.emitConstNull(loc);
+                    }
+                    return invocation;
                 }
-                return builder.emitInvokeVirtualDesc(target, methodName, args,
+                int invocation = builder.emitInvokeVirtualDesc(target, methodName, args,
                         owner, desc, returnType, loc);
+                if (returnType.getKind() == MirType.Kind.VOID) {
+                    return builder.emitConstNull(loc);
+                }
+                return invocation;
             }
             // 集合高阶函数路由: list.filter/map/forEach → INVOKESTATIC CollectionOps
             // （Java 反射未找到方法时才走此路径）
@@ -4525,6 +4674,12 @@ public class HirToMirLowering {
             if (MethodSemantics.isScopeFunction(methodName, args.length)
                     && lookupNovaMethodDescInherited(owner, methodName) == null) {
                 return emitScopeFunctionCall(target, methodName, args, builder, loc);
+            }
+            // 显式导入、但仅对脚本 ClassLoader 可见的 Java 类无法在编译期反射方法签名。
+            // 此时不能伪造返回 Object 的 invokevirtual 描述符，否则原始类型返回值会触发
+            // NoSuchMethodError；应保留 Java 对象类型，并交由运行时按真实方法签名分派。
+            if (ownerClass == null && javaImports.containsValue(owner)) {
+                return emitDynamicInvoke(target, methodName, args, builder, loc);
             }
             // Java 类上方法未找到 → 回退动态分派（运行时扩展方法等）
             if (ownerClass != null && lookupNovaMethodDescInherited(owner, methodName) == null) {
@@ -4768,6 +4923,14 @@ public class HirToMirLowering {
                         return builder.emitInvokeStatic(extra, new int[0], retType, expr.getLocation());
                     }
                 }
+            }
+            // import java C 后的 C.FIELD：编译路径不能把类名当作普通变量读取。
+            // 使用与 import static 相同的运行时桥接，以支持脚本 ClassLoader、内部类和安全策略。
+            String importedJavaClass = javaImports.get(targetName);
+            if (importedJavaClass != null) {
+                String extra = "$JavaStaticField|" + importedJavaClass + "|" + expr.getMember();
+                return builder.emitInvokeStatic(extra, new int[0],
+                        MirType.ofObject("java/lang/Object"), expr.getLocation());
             }
             if (classNames.contains(targetName)) {
                 // 拦截 ClassName.annotations → 内联构建注解列表
@@ -5358,6 +5521,38 @@ public class HirToMirLowering {
         }
         javaMethodCache.put(cacheKey, best);
         return best;
+    }
+
+    /**
+     * 按 MIR 实参类型解析 Java 实例方法。参数仍为 Object 时，如果同名同参数数量存在
+     * 多个候选，就必须留给运行时用真实值选择，不能按反射枚举顺序硬编码描述符。
+     */
+    private java.lang.reflect.Method findJavaInstanceMethod(Class<?> clazz, String name,
+                                                             int[] args, MirBuilder builder) {
+        Class<?>[] argTypes = inferJavaArgTypes(args, builder);
+        List<java.lang.reflect.Method> candidates = new ArrayList<java.lang.reflect.Method>();
+        int sameArityCount = 0;
+        for (java.lang.reflect.Method method : clazz.getMethods()) {
+            if (!method.getName().equals(name)
+                    || java.lang.reflect.Modifier.isStatic(method.getModifiers())) {
+                continue;
+            }
+            candidates.add(method);
+            if (!method.isVarArgs() && method.getParameterCount() == argTypes.length) {
+                sameArityCount++;
+            }
+        }
+        boolean hasUnknownArgument = false;
+        for (Class<?> argType : argTypes) {
+            if (argType == Object.class) {
+                hasUnknownArgument = true;
+                break;
+            }
+        }
+        if (hasUnknownArgument && sameArityCount > 1) {
+            return null;
+        }
+        return JavaOverloadResolver.selectBestMethod(candidates, false, argTypes);
     }
 
     /**

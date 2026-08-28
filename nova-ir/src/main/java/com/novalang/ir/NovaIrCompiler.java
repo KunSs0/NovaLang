@@ -133,7 +133,28 @@ public class NovaIrCompiler implements NovaCompilerApi {
      * @return 加载的类（类名 → Class 对象）
      */
     public Map<String, Class<?>> compileAndLoad(String source, String fileName) {
-        Map<String, byte[]> classes = compile(source, fileName);
+        return compileAndLoad(source, fileName, null);
+    }
+
+    /**
+     * 编译并加载类。
+     *
+     * @param source 源代码
+     * @param fileName 文件名
+     * @param scriptClassLoader 脚本级 ClassLoader，用于解析仅在脚本依赖中可见的 Java 类型
+     * @return 加载的类（类名 → Class 对象）
+     */
+    public Map<String, Class<?>> compileAndLoad(String source, String fileName, ClassLoader scriptClassLoader) {
+        ClassLoader previousContextLoader = Thread.currentThread().getContextClassLoader();
+        if (scriptClassLoader != null) {
+            Thread.currentThread().setContextClassLoader(scriptClassLoader);
+        }
+        Map<String, byte[]> classes;
+        try {
+            classes = compile(source, fileName);
+        } finally {
+            Thread.currentThread().setContextClassLoader(previousContextLoader);
+        }
 
         if (relocatePrefix != null) {
             classes = remapBytecode(classes);
@@ -141,7 +162,7 @@ public class NovaIrCompiler implements NovaCompilerApi {
 
         // 先快照类名列表，因为 findClass() 中 remove() 会修改 classes map
         List<String> classNames = new ArrayList<>(classes.keySet());
-        NovaClassLoader loader = new NovaClassLoader(classes);
+        NovaClassLoader loader = new NovaClassLoader(classes, scriptClassLoader);
 
         Map<String, Class<?>> loadedClasses = new HashMap<>();
         for (String className : classNames) {
@@ -187,9 +208,12 @@ public class NovaIrCompiler implements NovaCompilerApi {
     private static class NovaClassLoader extends ClassLoader {
         private final Map<String, byte[]> classes;
 
-        public NovaClassLoader(Map<String, byte[]> classes) {
+        private final ClassLoader scriptClassLoader;
+
+        public NovaClassLoader(Map<String, byte[]> classes, ClassLoader scriptClassLoader) {
             super(NovaClassLoader.class.getClassLoader());
             this.classes = classes;
+            this.scriptClassLoader = scriptClassLoader;
         }
 
         @Override
@@ -198,6 +222,9 @@ public class NovaIrCompiler implements NovaCompilerApi {
             byte[] bytecode = classes.remove(name);
             if (bytecode != null) {
                 return defineClass(name, bytecode, 0, bytecode.length);
+            }
+            if (scriptClassLoader != null) {
+                return scriptClassLoader.loadClass(name);
             }
             throw new ClassNotFoundException(name);
         }

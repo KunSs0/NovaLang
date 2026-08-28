@@ -114,8 +114,9 @@ public final class JavaTypeDescriptor {
     public boolean isAssignableFrom(JavaTypeDescriptor other) {
         if (other == null) return false;
         try {
-            Class<?> target = Class.forName(qualifiedName);
-            Class<?> source = Class.forName(other.qualifiedName);
+            Class<?> target = loadClassWithoutInitialization(qualifiedName);
+            Class<?> source = loadClassWithoutInitialization(other.qualifiedName);
+            if (target == null || source == null) return false;
             return target.isAssignableFrom(source);
         } catch (ClassNotFoundException e) {
             return false;
@@ -201,10 +202,18 @@ public final class JavaTypeDescriptor {
             if (contextLoader != null) {
                 return Class.forName(qualifiedName, false, contextLoader);
             }
-            return Class.forName(qualifiedName);
+            return Class.forName(qualifiedName, false, JavaTypeDescriptor.class.getClassLoader());
         } catch (ClassNotFoundException e) {
             return null;
         }
+    }
+
+    private static Class<?> loadClassWithoutInitialization(String name) throws ClassNotFoundException {
+        ClassLoader contextLoader = Thread.currentThread().getContextClassLoader();
+        if (contextLoader != null) {
+            return Class.forName(name, false, contextLoader);
+        }
+        return Class.forName(name, false, JavaTypeDescriptor.class.getClassLoader());
     }
 
     static Method findSamMethod(Class<?> javaClass) {

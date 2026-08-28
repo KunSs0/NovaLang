@@ -1044,7 +1044,7 @@ public final class Nova {
         compiler.setEnableSemanticAnalysis(true);
         compiler.setStrictSemanticMode(true);
         configureRelocate(compiler);
-        Map<String, Class<?>> classes = compiler.compileAndLoad(actualCode, actualFileName);
+        Map<String, Class<?>> classes = compiler.compileAndLoad(actualCode, actualFileName, scriptClassLoader);
 
         if (cacheKey != null) {
             compilationCache.put(cacheKey, classes);
@@ -1100,7 +1100,7 @@ public final class Nova {
         compiler.setEnableSemanticAnalysis(true);
         compiler.setStrictSemanticMode(true);
         configureRelocate(compiler);
-        Map<String, Class<?>> classes = compiler.compileAndLoad(actualCode, actualFileName);
+        Map<String, Class<?>> classes = compiler.compileAndLoad(actualCode, actualFileName, scriptClassLoader);
 
         if (cacheKey != null) {
             compilationCache.put(cacheKey, classes);

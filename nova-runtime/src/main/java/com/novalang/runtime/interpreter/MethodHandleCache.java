@@ -4,6 +4,7 @@ import com.novalang.runtime.NovaCallable;
 import com.novalang.runtime.interpreter.cache.BoundedCache;
 import com.novalang.runtime.interpreter.cache.CaffeineCache;
 import com.novalang.runtime.resolution.JavaOverloadResolver;
+import com.novalang.runtime.resolution.PublicMethodResolver;
 
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
@@ -204,6 +205,14 @@ public final class MethodHandleCache {
             if (method != null) {
                 trySetAccessible(method);
                 MethodHandle mh = unreflectWithFallback(method);
+                if (mh == null) {
+                    Method publicMethod = PublicMethodResolver.resolvePublicDeclaration(method);
+                    if (publicMethod != null && !publicMethod.equals(method)) {
+                        method = publicMethod;
+                        trySetAccessible(method);
+                        mh = unreflectWithFallback(method);
+                    }
+                }
                 if (mh != null) {
                     if (method.isVarArgs()) {
                         Class<?>[] paramTypes = method.getParameterTypes();

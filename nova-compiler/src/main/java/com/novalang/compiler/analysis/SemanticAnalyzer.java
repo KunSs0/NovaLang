@@ -543,7 +543,17 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
         if (!(receiverType instanceof JavaClassNovaType)) return null;
         JavaTypeDescriptor descriptor = ((JavaClassNovaType) receiverType).getDescriptor();
         if (descriptor == null) return null;
-        return descriptor.resolveMethod(memberExpr.getMember(), analyzedCallArgumentTypes(node), false);
+
+        boolean staticOnly = false;
+        if (memberExpr.getTarget() instanceof Identifier) {
+            String receiverName = ((Identifier) memberExpr.getTarget()).getName();
+            Symbol receiverSymbol = currentScope.resolve(receiverName);
+            if (receiverSymbol != null && receiverSymbol.getKind() == SymbolKind.IMPORT) {
+                staticOnly = true;
+            }
+        }
+
+        return descriptor.resolveMethod(memberExpr.getMember(), analyzedCallArgumentTypes(node), staticOnly);
     }
 
     private FunctionNovaType expectedFunctionType(Expression expression) {

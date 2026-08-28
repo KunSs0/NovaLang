@@ -22,6 +22,7 @@ public final class RuntimeWorkspace implements AutoCloseable {
 
     private final Path configFile;
     private final WorkspaceHost host;
+    private final ClassLoader scriptClassLoader;
     private final WorkspaceConfigLoader configLoader;
     private final WorkspaceModuleResolver moduleResolver;
     private final ReentrantLock lifecycleLock = new ReentrantLock(true);
@@ -35,7 +36,7 @@ public final class RuntimeWorkspace implements AutoCloseable {
      * 创建一次性 Runtime Workspace。
      *
      * @param configFile {@code nova.config.yml} 路径
-     * @param host Host Binding 安装器
+     * @param host Host Binding 安装器；其定义类加载器同时作为脚本类加载器
      * @throws IllegalArgumentException 任一参数为空时抛出
      */
     public RuntimeWorkspace(Path configFile, WorkspaceHost host) {
@@ -47,6 +48,10 @@ public final class RuntimeWorkspace implements AutoCloseable {
         }
         this.configFile = configFile.toAbsolutePath().normalize();
         this.host = host;
+        this.scriptClassLoader = host.getClass().getClassLoader();
+        if (scriptClassLoader == null) {
+            throw new IllegalArgumentException("WorkspaceHost must be defined by a non-bootstrap ClassLoader");
+        }
         this.configLoader = new WorkspaceConfigLoader();
         this.moduleResolver = new WorkspaceModuleResolver();
     }
@@ -141,8 +146,9 @@ public final class RuntimeWorkspace implements AutoCloseable {
                 // 第二步在任何脚本执行前构建完整依赖图并完成路径安全校验。
                 WorkspaceModuleGraph graph = moduleResolver.resolve(
                         loadedConfig, virtualSources, virtualEntries);
-                // 第三步创建本实例独占的编译环境，安装稳定 Host Binding。
+                // 第三步创建本实例独占的编译环境，先安装插件脚本类加载器，再安装稳定 Host Binding。
                 nova = new Nova(loadedConfig.createSecurityPolicy());
+                nova.setScriptClassLoader(scriptClassLoader);
                 nova.setScheduler(scheduler);
                 nova.enableCompilationCache();
                 host.install(nova);
