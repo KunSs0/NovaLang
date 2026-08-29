@@ -93,6 +93,36 @@ class RuntimeWorkspaceTest {
     }
 
     @Test
+    @DisplayName("共享字节码缓存时仍隔离各 Workspace 的模块状态")
+    void shouldReuseBytecodeArtifactWithoutSharingModuleState() throws Exception {
+        WorkspaceTestSupport.write(tempDirectory, "main.nova",
+                "var counter = 0\n"
+                        + "fun next(): Int {\n"
+                        + "    counter++\n"
+                        + "    return counter\n"
+                        + "}");
+        Path config = WorkspaceTestSupport.writeConfig(tempDirectory, "caller", "  - \"main\"\n");
+        WorkspaceBytecodeArtifactCache cache = new WorkspaceBytecodeArtifactCache();
+        RuntimeWorkspace first = new RuntimeWorkspace(config, nova -> { }, cache);
+        RuntimeWorkspace second = new RuntimeWorkspace(config, nova -> { }, cache);
+        try {
+            first.load();
+            second.load();
+
+            assertEquals(1, cache.size());
+            assertEquals(1, ((Number) first.invoke("main", "next",
+                    Collections.<String, Object>emptyMap(), null)).intValue());
+            assertEquals(1, ((Number) second.invoke("main", "next",
+                    Collections.<String, Object>emptyMap(), null)).intValue());
+            assertEquals(2, ((Number) first.invoke("main", "next",
+                    Collections.<String, Object>emptyMap(), null)).intValue());
+        } finally {
+            first.dispose();
+            second.dispose();
+        }
+    }
+
+    @Test
     @DisplayName("每次调用使用隔离绑定且不回写输入 Map")
     void shouldIsolateInvocationBindings() throws Exception {
         WorkspaceTestSupport.write(tempDirectory, "main.nova",

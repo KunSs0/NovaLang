@@ -25,6 +25,7 @@ public final class RuntimeWorkspace implements AutoCloseable {
     private final ClassLoader scriptClassLoader;
     private final WorkspaceConfigLoader configLoader;
     private final WorkspaceModuleResolver moduleResolver;
+    private final WorkspaceBytecodeArtifactCache bytecodeArtifactCache;
     private final ReentrantLock lifecycleLock = new ReentrantLock(true);
     private final List<SourceUnit> virtualSources = new ArrayList<SourceUnit>();
     private final List<String> virtualEntries = new ArrayList<String>();
@@ -40,11 +41,27 @@ public final class RuntimeWorkspace implements AutoCloseable {
      * @throws IllegalArgumentException 任一参数为空时抛出
      */
     public RuntimeWorkspace(Path configFile, WorkspaceHost host) {
+        this(configFile, host, new WorkspaceBytecodeArtifactCache());
+    }
+
+    /**
+     * 创建可与同一宿主代际共享编译产物的 Workspace。
+     *
+     * @param configFile Workspace 配置文件
+     * @param host Host Binding 安装器
+     * @param bytecodeArtifactCache 宿主负责生命周期的字节码缓存
+     */
+    public RuntimeWorkspace(Path configFile,
+                            WorkspaceHost host,
+                            WorkspaceBytecodeArtifactCache bytecodeArtifactCache) {
         if (configFile == null) {
             throw new IllegalArgumentException("configFile must not be null");
         }
         if (host == null) {
             throw new IllegalArgumentException("host must not be null");
+        }
+        if (bytecodeArtifactCache == null) {
+            throw new IllegalArgumentException("Workspace bytecode artifact cache must not be null");
         }
         this.configFile = configFile.toAbsolutePath().normalize();
         this.host = host;
@@ -54,6 +71,7 @@ public final class RuntimeWorkspace implements AutoCloseable {
         }
         this.configLoader = new WorkspaceConfigLoader();
         this.moduleResolver = new WorkspaceModuleResolver();
+        this.bytecodeArtifactCache = bytecodeArtifactCache;
     }
 
     /** @return 当前 Workspace 状态 */
@@ -314,8 +332,17 @@ public final class RuntimeWorkspace implements AutoCloseable {
             WorkspaceModule module = graph.requireModule(entry.getValue());
             WorkspaceBundle bundle = bundleBuilder.build(graph, entry.getValue());
             try {
-                CompiledNova compiled = nova.compileToBytecode(
-                        bundle.getSource(), module.getSourceUnit().getModuleId());
+                WorkspaceBytecodeArtifactCache.CacheKey cacheKey =
+                        new WorkspaceBytecodeArtifactCache.CacheKey(
+                                scriptClassLoader,
+                                configFile.toString(),
+                                module.getSourceUnit().getModuleId(),
+                                bundle.getSource());
+                WorkspaceBytecodeArtifactCache.BytecodeArtifact artifact =
+                        bytecodeArtifactCache.getOrCompile(cacheKey,
+                                () -> nova.compileToBytecodeArtifact(
+                                        bundle.getSource(), module.getSourceUnit().getModuleId()));
+                CompiledNova compiled = nova.createCompiledNova(artifact.load(scriptClassLoader));
                 programs.put(entry.getKey(), new WorkspaceProgram(
                         entry.getKey(), entry.getValue(), compiled, bundle.getSourceMap()));
             } catch (RuntimeException exception) {

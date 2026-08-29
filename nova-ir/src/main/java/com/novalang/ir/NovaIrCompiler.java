@@ -96,6 +96,24 @@ public class NovaIrCompiler implements NovaCompilerApi {
     }
 
     /**
+     * 编译可由其他 ClassLoader 独立加载的字节码产物。
+     *
+     * <p>该方法与 {@link #compileAndLoad(String, String, ClassLoader)} 使用同一套重定位
+     * 规则，但不会定义 Class，适用于跨 Workspace 缓存字节码。</p>
+     *
+     * @param source 源代码
+     * @param fileName 源文件名
+     * @return 已完成重定位的 className 到字节码映射
+     */
+    public Map<String, byte[]> compileArtifact(String source, String fileName) {
+        Map<String, byte[]> classes = compile(source, fileName);
+        if (relocatePrefix != null) {
+            return remapBytecode(classes);
+        }
+        return classes;
+    }
+
+    /**
      * 编译文件。
      */
     public Map<String, byte[]> compileFile(File file) throws IOException {
@@ -151,13 +169,9 @@ public class NovaIrCompiler implements NovaCompilerApi {
         }
         Map<String, byte[]> classes;
         try {
-            classes = compile(source, fileName);
+            classes = compileArtifact(source, fileName);
         } finally {
             Thread.currentThread().setContextClassLoader(previousContextLoader);
-        }
-
-        if (relocatePrefix != null) {
-            classes = remapBytecode(classes);
         }
 
         // 先快照类名列表，因为 findClass() 中 remove() 会修改 classes map

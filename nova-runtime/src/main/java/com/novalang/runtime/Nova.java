@@ -1039,17 +1039,61 @@ public final class Nova {
             }
         }
 
-        NovaIrCompiler compiler = new NovaIrCompiler();
-        compiler.setScriptMode(true);
-        compiler.setEnableSemanticAnalysis(true);
-        compiler.setStrictSemanticMode(true);
-        configureRelocate(compiler);
-        Map<String, Class<?>> classes = compiler.compileAndLoad(actualCode, actualFileName, scriptClassLoader);
+        Map<String, Class<?>> classes = compileAndLoadBytecode(actualCode, actualFileName);
 
         if (cacheKey != null) {
             compilationCache.put(cacheKey, classes);
         }
         return buildCompiledNova(classes);
+    }
+
+    /**
+     * 编译完整脚本源码为可跨 Workspace 复用的字节码产物。
+     *
+     * <p>调用方必须为每个 Workspace 创建独立 ClassLoader 再加载这些字节码，不能直接
+     * 复用已经加载的 Class 对象，否则模块静态状态会跨业务实例泄漏。</p>
+     */
+    public Map<String, byte[]> compileToBytecodeArtifact(String code, String fileName) {
+        Builtins.ensureJavaClassRegistered();
+        String actualFileName = fileName != null ? fileName : "<compiled>";
+        interpreter.registerVirtualModule(actualFileName, code);
+        String actualCode = withPreloads(code, actualFileName);
+        NovaIrCompiler compiler = new NovaIrCompiler();
+        compiler.setScriptMode(true);
+        compiler.setEnableSemanticAnalysis(true);
+        compiler.setStrictSemanticMode(true);
+        configureRelocate(compiler);
+        ClassLoader previousContextLoader = Thread.currentThread().getContextClassLoader();
+        if (scriptClassLoader != null) {
+            Thread.currentThread().setContextClassLoader(scriptClassLoader);
+        }
+        try {
+            return compiler.compileArtifact(actualCode, actualFileName);
+        } finally {
+            Thread.currentThread().setContextClassLoader(previousContextLoader);
+        }
+    }
+
+    /**
+     * 用已经独立加载的字节码类创建当前 Nova 实例的运行包装。
+     *
+     * @param classes 当前 Workspace 独占的已加载类
+     * @return 绑定当前 Nova Host API 的编译程序
+     */
+    public CompiledNova createCompiledNova(Map<String, Class<?>> classes) {
+        if (classes == null || classes.isEmpty()) {
+            throw new IllegalArgumentException("Compiled classes must not be empty");
+        }
+        return buildCompiledNova(classes);
+    }
+
+    private Map<String, Class<?>> compileAndLoadBytecode(String actualCode, String actualFileName) {
+        NovaIrCompiler compiler = new NovaIrCompiler();
+        compiler.setScriptMode(true);
+        compiler.setEnableSemanticAnalysis(true);
+        compiler.setStrictSemanticMode(true);
+        configureRelocate(compiler);
+        return compiler.compileAndLoad(actualCode, actualFileName, scriptClassLoader);
     }
 
     /** 从已编译的类构建 CompiledNova，注入值注册表和 Java 命名空间 */
