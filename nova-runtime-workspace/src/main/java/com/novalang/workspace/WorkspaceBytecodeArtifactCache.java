@@ -1,9 +1,19 @@
 package com.novalang.workspace;
 
+import java.io.ByteArrayInputStream;
+import java.io.FileNotFoundException;
+import java.io.IOException;
+import java.net.MalformedURLException;
+import java.net.URL;
+import java.net.URLClassLoader;
+import java.net.URLConnection;
+import java.net.URLStreamHandler;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.LinkedHashSet;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * 可在多个 Workspace 间复用的 Nova 字节码产物缓存。
@@ -138,61 +148,138 @@ public final class WorkspaceBytecodeArtifactCache {
          * @return 本次独立加载的类
          */
         public Map<String, Class<?>> load(ClassLoader scriptClassLoader) {
-            Map<String, byte[]> loadingBytes = new LinkedHashMap<String, byte[]>();
+            Map<String, byte[]> resources = new LinkedHashMap<String, byte[]>();
             for (Map.Entry<String, byte[]> entry : bytecode.entrySet()) {
-                loadingBytes.put(entry.getKey(), Arrays.copyOf(entry.getValue(), entry.getValue().length));
+                String resourceName = entry.getKey().replace('.', '/') + ".class";
+                resources.put(resourceName, entry.getValue());
             }
-            ArtifactClassLoader loader = new ArtifactClassLoader(loadingBytes, scriptClassLoader);
+            URL classPath = createClassPath(resources);
+            ArtifactParentClassLoader parent = new ArtifactParentClassLoader(scriptClassLoader);
+            ArtifactUrlClassLoader loader = new ArtifactUrlClassLoader(
+                    new URL[]{classPath}, parent, bytecode.keySet());
             Map<String, Class<?>> loaded = new LinkedHashMap<String, Class<?>>();
-            for (String className : bytecode.keySet()) {
-                try {
+            try {
+                for (String className : bytecode.keySet()) {
                     loaded.put(className, loader.loadClass(className));
-                } catch (ClassNotFoundException exception) {
-                    throw new WorkspaceException("Failed to load cached Workspace class: " + className, exception);
                 }
+            } catch (ClassNotFoundException exception) {
+                throw new WorkspaceException("Failed to load cached Workspace class", exception);
+            } finally {
+                try {
+                    loader.close();
+                } catch (IOException exception) {
+                    throw new WorkspaceException("Failed to close cached Workspace class loader", exception);
+                }
+            }
+            return loaded;
+        }
+
+        private URL createClassPath(Map<String, byte[]> resources) {
+            try {
+                return new URL(null, "novalang-cache://workspace/", new ArtifactUrlStreamHandler(resources));
+            } catch (MalformedURLException exception) {
+                throw new WorkspaceException("Failed to create cached Workspace class path", exception);
+            }
+        }
+    }
+
+    /** 优先从 NovaLang 与宿主脚本 ClassLoader 解析依赖，不持有副本脚本类。 */
+    private static final class ArtifactParentClassLoader extends ClassLoader {
+
+        private final ClassLoader scriptClassLoader;
+
+        ArtifactParentClassLoader(ClassLoader scriptClassLoader) {
+            super(ArtifactParentClassLoader.class.getClassLoader());
+            this.scriptClassLoader = scriptClassLoader;
+        }
+
+        @Override
+        protected Class<?> findClass(String name) throws ClassNotFoundException {
+            if (scriptClassLoader != null) {
+                return scriptClassLoader.loadClass(name);
+            }
+            throw new ClassNotFoundException(name);
+        }
+    }
+
+    /** 对副本脚本类使用子优先解析，实际字节码定义仍交由 JDK URLClassLoader 执行。 */
+    private static final class ArtifactUrlClassLoader extends URLClassLoader {
+
+        private final Set<String> artifactClassNames;
+
+        ArtifactUrlClassLoader(URL[] classPath, ClassLoader parent, Set<String> artifactClassNames) {
+            super(classPath, parent);
+            this.artifactClassNames = new LinkedHashSet<String>(artifactClassNames);
+        }
+
+        @Override
+        protected synchronized Class<?> loadClass(String name, boolean resolve) throws ClassNotFoundException {
+            if (!artifactClassNames.contains(name)) {
+                return super.loadClass(name, resolve);
+            }
+            Class<?> existing = findLoadedClass(name);
+            if (existing != null) {
+                return existing;
+            }
+            Class<?> loaded = findClass(name);
+            if (resolve) {
+                resolveClass(loaded);
             }
             return loaded;
         }
     }
 
-    /** 优先装载缓存产物，再回退到宿主脚本 ClassLoader。 */
-    private static final class ArtifactClassLoader extends ClassLoader {
+    /** 向 JDK URLClassLoader 提供一次性内存类路径，避免插件字节码直接调用 defineClass。 */
+    private static final class ArtifactUrlStreamHandler extends URLStreamHandler {
 
-        private final Map<String, byte[]> classes;
-        private final ClassLoader scriptClassLoader;
+        private final Map<String, byte[]> resources;
 
-        ArtifactClassLoader(Map<String, byte[]> classes, ClassLoader scriptClassLoader) {
-            super(ArtifactClassLoader.class.getClassLoader());
-            this.classes = classes;
-            this.scriptClassLoader = scriptClassLoader;
+        ArtifactUrlStreamHandler(Map<String, byte[]> resources) {
+            this.resources = resources;
         }
 
         @Override
-        protected synchronized Class<?> loadClass(String name, boolean resolve) throws ClassNotFoundException {
-            Class<?> existing = findLoadedClass(name);
-            if (existing != null) {
-                return existing;
-            }
-            if (classes.containsKey(name)) {
-                Class<?> loaded = findClass(name);
-                if (resolve) {
-                    resolveClass(loaded);
-                }
-                return loaded;
-            }
-            return super.loadClass(name, resolve);
+        protected URLConnection openConnection(URL url) {
+            return new ArtifactUrlConnection(url, resources);
+        }
+    }
+
+    /** 内存类路径的连接实现。 */
+    private static final class ArtifactUrlConnection extends URLConnection {
+
+        private final Map<String, byte[]> resources;
+
+        ArtifactUrlConnection(URL url, Map<String, byte[]> resources) {
+            super(url);
+            this.resources = resources;
         }
 
         @Override
-        protected Class<?> findClass(String name) throws ClassNotFoundException {
-            byte[] value = classes.remove(name);
-            if (value != null) {
-                return defineClass(name, value, 0, value.length);
+        public void connect() {
+            connected = true;
+        }
+
+        @Override
+        public ByteArrayInputStream getInputStream() throws IOException {
+            String path = url.getPath();
+            String resourceName = path.substring(1);
+            byte[] value = resources.get(resourceName);
+            if (value == null) {
+                throw new FileNotFoundException(resourceName);
             }
-            if (scriptClassLoader != null) {
-                return scriptClassLoader.loadClass(name);
+            connect();
+            return new ByteArrayInputStream(value);
+        }
+
+        @Override
+        public long getContentLengthLong() {
+            String path = url.getPath();
+            String resourceName = path.substring(1);
+            byte[] value = resources.get(resourceName);
+            if (value == null) {
+                return -1;
             }
-            throw new ClassNotFoundException(name);
+            return value.length;
         }
     }
 }
