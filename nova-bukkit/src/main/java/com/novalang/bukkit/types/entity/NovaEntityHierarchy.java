@@ -18,6 +18,7 @@ public final class NovaEntityHierarchy {
         NovaEntityCommon.register(builder);
         NovaDamageable.register(builder);
         NovaProjectile.register(builder);
+        NovaBukkitRegistrar.register(builder, NovaThrownPotion.class, NovaThrownPotion::register);
         NovaVehicle.register(builder);
         NovaBukkitRegistrar.register(builder, NovaCreeper.class, NovaCreeper::register);
         NovaBukkitRegistrar.register(builder, NovaHorse.class, NovaHorse::register);
