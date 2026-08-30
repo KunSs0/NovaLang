@@ -4,6 +4,7 @@ import com.novalang.bukkit.types.value.NovaTypeSupport;
 
 import com.novalang.runtime.host.JavaTypeRef;
 import com.novalang.runtime.host.JavaTypes;
+import org.bukkit.command.CommandSender;
 import org.bukkit.World;
 import org.bukkit.WorldBorder;
 import org.bukkit.WorldCreator;
@@ -44,6 +45,7 @@ public final class NovaWorldObject {
         builder.extension(WorldCreator.class, "type", f -> f.param("type", WorldType.class).returns(WorldCreator.class).invoke(a -> supportCreator(a).type(arg(a, 1, WorldType.class))));
         builder.extension(WorldCreator.class, "generator", f -> f.returns(JavaTypeRef.javaType(org.bukkit.generator.ChunkGenerator.class).nullable()).invoke(a -> supportCreator(a).generator()));
         builder.extension(WorldCreator.class, "generator", f -> f.param("name", String.class).returns(WorldCreator.class).invoke(a -> supportCreator(a).generator(arg(a, 1, String.class))));
+        builder.extension(WorldCreator.class, "generator", f -> f.param("name", String.class).param("output", CommandSender.class).returns(WorldCreator.class).invoke(a -> supportCreator(a).generator(arg(a, 1, String.class), arg(a, 2, CommandSender.class))));
         builder.extension(WorldCreator.class, "generator", f -> f.param("generator", org.bukkit.generator.ChunkGenerator.class).returns(WorldCreator.class).invoke(a -> supportCreator(a).generator(arg(a, 1, org.bukkit.generator.ChunkGenerator.class))));
         builder.extension(WorldCreator.class, "generateStructures", f -> f.returns(Boolean.class).invoke(a -> supportCreator(a).generateStructures()));
         builder.extension(WorldCreator.class, "generateStructures", f -> f.param("generate", Boolean.class).returns(WorldCreator.class).invoke(a -> supportCreator(a).generateStructures(arg(a, 1, Boolean.class))));
