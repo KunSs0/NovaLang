@@ -55,6 +55,11 @@ import org.bukkit.event.player.PlayerInteractAtEntityEvent;
 import org.bukkit.event.player.PlayerPickupItemEvent;
 import org.bukkit.event.player.PlayerRespawnEvent;
 import org.bukkit.inventory.EntityEquipment;
+import org.bukkit.inventory.meta.BookMeta;
+import org.bukkit.inventory.meta.FireworkMeta;
+import org.bukkit.inventory.meta.LeatherArmorMeta;
+import org.bukkit.inventory.meta.PotionMeta;
+import org.bukkit.inventory.meta.SkullMeta;
 import org.bukkit.plugin.Plugin;
 import org.bukkit.plugin.PluginDescriptionFile;
 import org.bukkit.scheduler.BukkitScheduler;
@@ -107,7 +112,7 @@ class NovaBukkitTest {
     @DisplayName("完整领域注册器不会生成重复扩展签名")
     void shouldExposeExpandedBukkitExtensionsWithoutDuplicates() {
         JavaTypes types = NovaBukkit.create();
-        assertEquals(1569, types.extensions().size());
+        assertEquals(1615, types.extensions().size());
         assertTrue(types.extensionProperties().size() > 100);
         assertTrue(hasProperty(types, Location.class, "x", true));
         assertTrue(hasProperty(types, Player.class, "name", false));
@@ -138,6 +143,11 @@ class NovaBukkitTest {
         assertTrue(hasExtension(types, EntityPickupItemEvent.class, "remaining"));
         assertTrue(hasExtension(types, CreatureSpawnEvent.class, "spawnReason"));
         assertTrue(hasExtension(types, EntityBreedEvent.class, "setExperience"));
+        assertTrue(hasExtension(types, SkullMeta.class, "setOwningPlayer"));
+        assertTrue(hasExtension(types, BookMeta.class, "setPages"));
+        assertTrue(hasExtension(types, PotionMeta.class, "addCustomEffect"));
+        assertTrue(hasExtension(types, FireworkMeta.class, "setPower"));
+        assertTrue(hasExtension(types, LeatherArmorMeta.class, "setColor"));
         assertTrue(hasExtension(types, PlayerRespawnEvent.class, "setRespawnLocation"));
 
         Set<String> signatures = new LinkedHashSet<String>();

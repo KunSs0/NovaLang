@@ -1,5 +1,6 @@
 package com.novalang.bukkit.types.inventory;
 
+import com.novalang.bukkit.NovaBukkitRegistrar;
 import com.novalang.bukkit.types.value.NovaVector;
 import com.novalang.bukkit.types.world.NovaChunkSnapshot;
 import com.novalang.bukkit.types.world.NovaWorldObject;
@@ -18,6 +19,11 @@ public final class NovaWorldInventory {
         NovaPlayerInventory.register(builder);
         NovaItemStack.register(builder);
         NovaItemMeta.register(builder);
+        NovaBukkitRegistrar.register(builder, NovaSkullMeta.class, NovaSkullMeta::register);
+        NovaBukkitRegistrar.register(builder, NovaBookMeta.class, NovaBookMeta::register);
+        NovaBukkitRegistrar.register(builder, NovaPotionMeta.class, NovaPotionMeta::register);
+        NovaBukkitRegistrar.register(builder, NovaFireworkMeta.class, NovaFireworkMeta::register);
+        NovaBukkitRegistrar.register(builder, NovaLeatherArmorMeta.class, NovaLeatherArmorMeta::register);
         NovaMaterial.register(builder);
         NovaVector.register(builder);
         NovaChunkSnapshot.register(builder);
