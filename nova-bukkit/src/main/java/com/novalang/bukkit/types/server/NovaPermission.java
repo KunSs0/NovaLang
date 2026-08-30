@@ -12,8 +12,10 @@ import org.bukkit.permissions.ServerOperator;
 import org.bukkit.plugin.Plugin;
 import java.util.Map;
 import java.util.Set;
+import java.util.List;
 
 /** Spigot 1.12.2 权限对象与 Permissible 别名。 */
+@SuppressWarnings("unchecked")
 final class NovaPermission {
 
     private NovaPermission() {
@@ -43,6 +45,9 @@ final class NovaPermission {
         b.extension(Permission.class, "recalculatePermissibles", f -> f.invoke(a -> { NovaTypeSupport.argument(a, 0, Permission.class).recalculatePermissibles(); return null; }));
         b.extension(Permission.class, "addParent", f -> f.param("name", String.class).param("value", Boolean.class).invoke(a -> { NovaTypeSupport.argument(a, 0, Permission.class).addParent(NovaTypeSupport.argument(a, 1, String.class), NovaTypeSupport.argument(a, 2, Boolean.class)); return null; }));
         b.extension(Permission.class, "addParent", f -> f.param("parent", Permission.class).param("value", Boolean.class).invoke(a -> { NovaTypeSupport.argument(a, 0, Permission.class).addParent(NovaTypeSupport.argument(a, 1, Permission.class), NovaTypeSupport.argument(a, 2, Boolean.class)); return null; }));
+        b.extension(Permission.class, "loadPermissions", f -> f.param("data", Map.class).param("name", String.class).param("defaultValue", org.bukkit.permissions.PermissionDefault.class).returns(JavaTypeRef.listOf(JavaTypeRef.javaType(Permission.class))).invoke(a -> Permission.loadPermissions(NovaTypeSupport.argument(a, 1, Map.class), NovaTypeSupport.argument(a, 2, String.class), NovaTypeSupport.argument(a, 3, org.bukkit.permissions.PermissionDefault.class))));
+        b.extension(Permission.class, "loadPermission", f -> f.param("name", String.class).param("data", Map.class).returns(JavaTypeRef.javaType(Permission.class).nullable()).invoke(a -> Permission.loadPermission(NovaTypeSupport.argument(a, 1, String.class), NovaTypeSupport.argument(a, 2, Map.class))));
+        b.extension(Permission.class, "loadPermission", f -> f.param("name", String.class).param("data", Map.class).param("defaultValue", org.bukkit.permissions.PermissionDefault.class).param("output", List.class).returns(JavaTypeRef.javaType(Permission.class).nullable()).invoke(a -> Permission.loadPermission(NovaTypeSupport.argument(a, 1, String.class), NovaTypeSupport.argument(a, 2, Map.class), NovaTypeSupport.argument(a, 3, org.bukkit.permissions.PermissionDefault.class), NovaTypeSupport.argument(a, 4, List.class))));
         b.extension(PermissionAttachment.class, "plugin", f -> f.returns(Plugin.class).invoke(a -> NovaTypeSupport.argument(a, 0, PermissionAttachment.class).getPlugin()));
         b.extension(PermissionAttachment.class, "permissible", f -> f.returns(Permissible.class).invoke(a -> NovaTypeSupport.argument(a, 0, PermissionAttachment.class).getPermissible()));
         b.extension(PermissionAttachment.class, "permissions", f -> f.returns(Map.class).invoke(a -> NovaTypeSupport.argument(a, 0, PermissionAttachment.class).getPermissions()));

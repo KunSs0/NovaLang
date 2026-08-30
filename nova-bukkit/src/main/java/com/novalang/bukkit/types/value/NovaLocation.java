@@ -69,6 +69,33 @@ public final class NovaLocation {
     }
 
     private static void registerExtensions(JavaTypes.Builder builder) {
+        builder.extension(Location.class, "clone", function -> function
+                .returns(Location.class)
+                .invoke(arguments -> NovaTypeSupport.argument(arguments, 0, Location.class).clone()));
+        builder.extension(Location.class, "blockX", function -> function
+                .returns(Integer.class)
+                .invoke(arguments -> NovaTypeSupport.argument(arguments, 0, Location.class).getBlockX()));
+        builder.extension(Location.class, "blockY", function -> function
+                .returns(Integer.class)
+                .invoke(arguments -> NovaTypeSupport.argument(arguments, 0, Location.class).getBlockY()));
+        builder.extension(Location.class, "blockZ", function -> function
+                .returns(Integer.class)
+                .invoke(arguments -> NovaTypeSupport.argument(arguments, 0, Location.class).getBlockZ()));
+        builder.extension(Location.class, "length", function -> function
+                .returns(Double.class)
+                .invoke(arguments -> NovaTypeSupport.argument(arguments, 0, Location.class).length()));
+        builder.extension(Location.class, "lengthSquared", function -> function
+                .returns(Double.class)
+                .invoke(arguments -> NovaTypeSupport.argument(arguments, 0, Location.class).lengthSquared()));
+        builder.extension(Location.class, "toVector", function -> function
+                .returns(Vector.class)
+                .invoke(arguments -> NovaTypeSupport.argument(arguments, 0, Location.class).toVector()));
+        builder.extension(Location.class, "zero", function -> function
+                .returns(Location.class)
+                .invoke(arguments -> NovaTypeSupport.argument(arguments, 0, Location.class).zero()));
+        builder.extension(Location.class, "serialize", function -> function
+                .returns(java.util.Map.class)
+                .invoke(arguments -> NovaTypeSupport.argument(arguments, 0, Location.class).serialize()));
         builder.extension(Location.class, "x", function -> function
                 .returns(Double.class)
                 .invoke(arguments -> NovaTypeSupport.argument(arguments, 0, Location.class).getX()));
@@ -119,6 +146,72 @@ public final class NovaLocation {
                 .param("value", Object.class)
                 .returns(Location.class)
                 .invoke(NovaLocation::setWorld));
+        builder.extension(Location.class, "add", function -> function
+                .param("location", Location.class)
+                .returns(Location.class)
+                .invoke(arguments -> NovaTypeSupport.argument(arguments, 0, Location.class)
+                        .add(NovaTypeSupport.argument(arguments, 1, Location.class))));
+        builder.extension(Location.class, "add", function -> function
+                .param("vector", Vector.class)
+                .returns(Location.class)
+                .invoke(arguments -> NovaTypeSupport.argument(arguments, 0, Location.class)
+                        .add(NovaTypeSupport.argument(arguments, 1, Vector.class))));
+        builder.extension(Location.class, "add", function -> function
+                .param("x", Double.class)
+                .param("y", Double.class)
+                .param("z", Double.class)
+                .returns(Location.class)
+                .invoke(arguments -> NovaTypeSupport.argument(arguments, 0, Location.class).add(
+                        NovaTypeSupport.argument(arguments, 1, Double.class),
+                        NovaTypeSupport.argument(arguments, 2, Double.class),
+                        NovaTypeSupport.argument(arguments, 3, Double.class))));
+        builder.extension(Location.class, "subtract", function -> function
+                .param("location", Location.class)
+                .returns(Location.class)
+                .invoke(arguments -> NovaTypeSupport.argument(arguments, 0, Location.class)
+                        .subtract(NovaTypeSupport.argument(arguments, 1, Location.class))));
+        builder.extension(Location.class, "subtract", function -> function
+                .param("vector", Vector.class)
+                .returns(Location.class)
+                .invoke(arguments -> NovaTypeSupport.argument(arguments, 0, Location.class)
+                        .subtract(NovaTypeSupport.argument(arguments, 1, Vector.class))));
+        builder.extension(Location.class, "subtract", function -> function
+                .param("x", Double.class)
+                .param("y", Double.class)
+                .param("z", Double.class)
+                .returns(Location.class)
+                .invoke(arguments -> NovaTypeSupport.argument(arguments, 0, Location.class).subtract(
+                        NovaTypeSupport.argument(arguments, 1, Double.class),
+                        NovaTypeSupport.argument(arguments, 2, Double.class),
+                        NovaTypeSupport.argument(arguments, 3, Double.class))));
+        builder.extension(Location.class, "multiply", function -> function
+                .param("location", Location.class)
+                .returns(Location.class)
+                .invoke(NovaLocation::multiplyLocation));
+        builder.extension(Location.class, "multiply", function -> function
+                .param("factor", Double.class)
+                .returns(Location.class)
+                .invoke(arguments -> NovaTypeSupport.argument(arguments, 0, Location.class)
+                        .multiply(NovaTypeSupport.argument(arguments, 1, Double.class))));
+        builder.extension(Location.class, "divide", function -> function
+                .param("location", Location.class)
+                .returns(Location.class)
+                .invoke(NovaLocation::divideLocation));
+        builder.extension(Location.class, "divide", function -> function
+                .param("factor", Double.class)
+                .returns(Location.class)
+                .invoke(arguments -> NovaTypeSupport.argument(arguments, 0, Location.class)
+                        .multiply(1.0 / NovaTypeSupport.argument(arguments, 1, Double.class))));
+        builder.extension(Location.class, "distance", function -> function
+                .param("location", Location.class)
+                .returns(Double.class)
+                .invoke(arguments -> NovaTypeSupport.argument(arguments, 0, Location.class)
+                        .distance(NovaTypeSupport.argument(arguments, 1, Location.class))));
+        builder.extension(Location.class, "distanceSquared", function -> function
+                .param("location", Location.class)
+                .returns(Double.class)
+                .invoke(arguments -> NovaTypeSupport.argument(arguments, 0, Location.class)
+                        .distanceSquared(NovaTypeSupport.argument(arguments, 1, Location.class))));
     }
 
     private static Location setX(Object[] arguments) {
@@ -165,6 +258,24 @@ public final class NovaLocation {
             throw new IllegalArgumentException("参数必须是 World、String 或 Location");
         }
         location.setWorld(world);
+        return location;
+    }
+
+    private static Location multiplyLocation(Object[] arguments) {
+        Location location = NovaTypeSupport.argument(arguments, 0, Location.class);
+        Location value = NovaTypeSupport.argument(arguments, 1, Location.class);
+        location.setX(location.getX() * value.getX());
+        location.setY(location.getY() * value.getY());
+        location.setZ(location.getZ() * value.getZ());
+        return location;
+    }
+
+    private static Location divideLocation(Object[] arguments) {
+        Location location = NovaTypeSupport.argument(arguments, 0, Location.class);
+        Location value = NovaTypeSupport.argument(arguments, 1, Location.class);
+        location.setX(location.getX() / value.getX());
+        location.setY(location.getY() / value.getY());
+        location.setZ(location.getZ() / value.getZ());
         return location;
     }
 }

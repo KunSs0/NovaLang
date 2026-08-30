@@ -14,6 +14,9 @@ public final class NovaValueFactory {
     }
 
     public static void register(JavaTypes.Builder builder) {
+        NovaColor.register(builder);
+        NovaDyeColor.register(builder);
+        NovaFireworkEffect.register(builder);
         builder.globalFunction("vector", function -> function
                 .param("x", Double.class)
                 .param("y", Double.class)

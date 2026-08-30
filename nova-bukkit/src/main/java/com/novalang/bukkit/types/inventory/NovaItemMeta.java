@@ -41,6 +41,8 @@ final class NovaItemMeta {
         builder.extension(ItemMeta.class, "hasItemFlag", f -> f.param("flag", ItemFlag.class).returns(Boolean.class).invoke(a -> meta(a).hasItemFlag(arg(a, 1, ItemFlag.class))));
         builder.extension(ItemMeta.class, "addItemFlags", f -> f.param("flag", ItemFlag.class).invoke(a -> { meta(a).addItemFlags(arg(a, 1, ItemFlag.class)); return null; }));
         builder.extension(ItemMeta.class, "removeItemFlags", f -> f.param("flag", ItemFlag.class).invoke(a -> { meta(a).removeItemFlags(arg(a, 1, ItemFlag.class)); return null; }));
+        builder.extension(ItemMeta.class, "addItemFlags", f -> f.invoke(a -> { meta(a).addItemFlags(); return null; }));
+        builder.extension(ItemMeta.class, "removeItemFlags", f -> f.invoke(a -> { meta(a).removeItemFlags(); return null; }));
         builder.extension(ItemMeta.class, "isUnbreakable", f -> f.returns(Boolean.class).invoke(a -> meta(a).isUnbreakable()));
         builder.extension(ItemMeta.class, "setUnbreakable", f -> f.param("unbreakable", Boolean.class).invoke(a -> { meta(a).setUnbreakable(arg(a, 1, Boolean.class)); return null; }));
         builder.extension(ItemMeta.class, "clone", f -> f.returns(ItemMeta.class).invoke(a -> meta(a).clone()));

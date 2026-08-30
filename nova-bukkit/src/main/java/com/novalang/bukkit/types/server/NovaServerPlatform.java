@@ -15,5 +15,6 @@ public final class NovaServerPlatform {
         NovaMetadata.register(builder);
         NovaHelp.register(builder);
         NovaServices.register(builder);
+        NovaPluginManager.register(builder);
     }
 }

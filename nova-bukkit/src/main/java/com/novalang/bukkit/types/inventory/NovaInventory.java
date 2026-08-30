@@ -33,6 +33,7 @@ final class NovaInventory {
         builder.extension(Inventory.class, "contains", f -> f.param("material", Material.class).returns(Boolean.class).invoke(a -> inv(a).contains(arg(a, 1, Material.class))));
         builder.extension(Inventory.class, "contains", f -> f.param("item", ItemStack.class).returns(Boolean.class).invoke(a -> inv(a).contains(arg(a, 1, ItemStack.class))));
         builder.extension(Inventory.class, "contains", f -> f.param("material", Material.class).param("amount", Integer.class).returns(Boolean.class).invoke(a -> inv(a).contains(arg(a, 1, Material.class), arg(a, 2, Integer.class))));
+        builder.extension(Inventory.class, "contains", f -> f.param("item", ItemStack.class).param("amount", Integer.class).returns(Boolean.class).invoke(a -> inv(a).contains(arg(a, 1, ItemStack.class), arg(a, 2, Integer.class))));
         builder.extension(Inventory.class, "containsAtLeast", f -> f.param("item", ItemStack.class).param("amount", Integer.class).returns(Boolean.class).invoke(a -> inv(a).containsAtLeast(arg(a, 1, ItemStack.class), arg(a, 2, Integer.class))));
         builder.extension(Inventory.class, "first", f -> f.param("material", Material.class).returns(Integer.class).invoke(a -> inv(a).first(arg(a, 1, Material.class))));
         builder.extension(Inventory.class, "first", f -> f.param("item", ItemStack.class).returns(Integer.class).invoke(a -> inv(a).first(arg(a, 1, ItemStack.class))));
