@@ -22,6 +22,7 @@ import com.novalang.bukkit.types.server.NovaServerBanTypes;
 import com.novalang.bukkit.types.value.NovaLocation;
 import com.novalang.bukkit.types.value.NovaValueFactory;
 import com.novalang.bukkit.types.world.NovaWorld;
+import com.novalang.bukkit.types.world.NovaWorldCreator;
 import com.novalang.bukkit.types.world.NovaWorldBlocks;
 import com.novalang.bukkit.types.world.NovaWorldBlockMoreTypes;
 import com.novalang.bukkit.types.world.NovaBlockInventoryMoreTypes;
@@ -60,6 +61,7 @@ public final class NovaBukkit {
         JavaTypes.Builder builder = JavaTypes.builder();
         NovaBukkitRegistrar.register(builder, NovaServer.class, NovaServer::register);
         NovaBukkitRegistrar.register(builder, NovaWorld.class, NovaWorld::register);
+        NovaBukkitRegistrar.register(builder, NovaWorldCreator.class, NovaWorldCreator::register);
         NovaBukkitRegistrar.register(builder, NovaPlayer.class, NovaPlayer::register);
         NovaBukkitRegistrar.register(builder, NovaLocation.class, NovaLocation::register);
         NovaBukkitRegistrar.register(builder, NovaEntity.class, NovaEntity::register);

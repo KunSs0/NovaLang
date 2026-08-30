@@ -107,6 +107,7 @@ class NovaBukkitTest {
         assertEquals(Player.class, returnClass(namespace, "player"));
         assertEquals(Villager.Profession.class, returnClass(namespace, "villagerProfession"));
         assertEquals(Location.class, returnClass(namespace, "location"));
+        assertEquals(org.bukkit.WorldCreator.class, returnClass(namespace, "worldCreator"));
         assertEquals(4, overloads(namespace, "location").size());
         assertEquals(3, overloads(namespace, "color").size());
     }
@@ -422,6 +423,8 @@ class NovaBukkitTest {
         assertDoesNotThrow(() -> nova.compileToBytecode(
                 "world(\"world\")?.time()", "bukkit-world-extra-valid.nova"));
         assertDoesNotThrow(() -> nova.compileToBytecode(
+                "worldCreator(\"nova\").seed(42).name()", "bukkit-world-creator-valid.nova"));
+        assertDoesNotThrow(() -> nova.compileToBytecode(
                 "player(\"Alex\")?.maxHealth()", "bukkit-attribute-valid.nova"));
         assertDoesNotThrow(() -> nova.compileToBytecode(
                 "material(\"STONE\")?.id()", "bukkit-material-valid.nova"));
@@ -497,6 +500,8 @@ class NovaBukkitTest {
         assertThrows(RuntimeException.class, () -> nova.compileToBytecode(
                 "world(\"world\")?.setTime(\"noon\")", "bukkit-world-extension-argument-invalid.nova"));
         assertThrows(RuntimeException.class, () -> nova.compileToBytecode(
+                "worldCreator(42)", "bukkit-world-creator-argument-invalid.nova"));
+        assertThrows(RuntimeException.class, () -> nova.compileToBytecode(
                 "location(1.0, 2.0, 3.0).x = \"bad\"", "bukkit-location-setter-type-invalid.nova"));
         assertThrows(RuntimeException.class, () -> nova.compileToBytecode(
                 "location(1.0, 2.0, 3.0).blockX = 4", "bukkit-location-readonly-property-invalid.nova"));
@@ -526,6 +531,8 @@ class NovaBukkitTest {
         Object setterResult = nova.compileToBytecode(
                 "val point = location(1.0, 2.0, 3.0)\npoint.x = 4.0\npoint.x",
                 "bukkit-location-setter-run.nova").run();
+        Object worldCreatorResult = nova.compileToBytecode(
+                "worldCreator(\"nova-test\").seed(42).name()", "bukkit-world-creator-run.nova").run();
 
         assertTrue(locationResult instanceof Location);
         Location location = (Location) locationResult;
@@ -535,6 +542,7 @@ class NovaBukkitTest {
         assertEquals(Color.fromRGB(255, 128, 0), colorResult);
         assertEquals(1.0, extensionResult);
         assertEquals(4.0, setterResult);
+        assertEquals("nova-test", worldCreatorResult);
     }
 
     @Test
