@@ -26,6 +26,10 @@ import org.bukkit.entity.Player;
 import org.bukkit.entity.Creeper;
 import org.bukkit.entity.Horse;
 import org.bukkit.entity.Minecart;
+import org.bukkit.event.entity.EntityRegainHealthEvent;
+import org.bukkit.event.entity.PlayerDeathEvent;
+import org.bukkit.event.player.AsyncPlayerChatEvent;
+import org.bukkit.event.player.PlayerRespawnEvent;
 import org.bukkit.inventory.EntityEquipment;
 import org.bukkit.plugin.Plugin;
 import org.bukkit.plugin.PluginDescriptionFile;
@@ -78,10 +82,14 @@ class NovaBukkitTest {
     @DisplayName("完整领域注册器不会生成重复扩展签名")
     void shouldExposeExpandedBukkitExtensionsWithoutDuplicates() {
         JavaTypes types = NovaBukkit.create();
-        assertEquals(1489, types.extensions().size());
+        assertEquals(1514, types.extensions().size());
         assertTrue(types.extensionProperties().size() > 100);
         assertTrue(hasProperty(types, Location.class, "x", true));
         assertTrue(hasProperty(types, Player.class, "name", false));
+        assertTrue(hasExtension(types, AsyncPlayerChatEvent.class, "setFormat"));
+        assertTrue(hasExtension(types, EntityRegainHealthEvent.class, "setAmount"));
+        assertTrue(hasExtension(types, PlayerDeathEvent.class, "setKeepInventory"));
+        assertTrue(hasExtension(types, PlayerRespawnEvent.class, "setRespawnLocation"));
 
         Set<String> signatures = new LinkedHashSet<String>();
         for (JavaExtensionDescriptor extension : types.extensions()) {
@@ -366,6 +374,16 @@ class NovaBukkitTest {
             if (extension.getTargetType() == targetType
                     && name.equals(extension.getProperty().getName())
                     && extension.getProperty().isMutable() == mutable) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean hasExtension(JavaTypes types, Class<?> targetType, String name) {
+        for (JavaExtensionDescriptor extension : types.extensions()) {
+            if (extension.getTargetType() == targetType
+                    && name.equals(extension.getFunction().getName())) {
                 return true;
             }
         }

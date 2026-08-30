@@ -1,5 +1,6 @@
 package com.novalang.bukkit.types.event;
 
+import com.novalang.bukkit.NovaBukkitRegistrar;
 import com.novalang.bukkit.types.value.NovaTypeSupport;
 import com.novalang.runtime.host.JavaTypes;
 import org.bukkit.event.Event;
@@ -17,6 +18,10 @@ public final class NovaEventTypes {
         NovaEntityEvent.register(builder);
         NovaInventoryEvent.register(builder);
         NovaPlayerEvent.register(builder);
+        NovaBukkitRegistrar.register(builder, NovaChatEvent.class, NovaChatEvent::register);
+        NovaBukkitRegistrar.register(builder, NovaEntityHealthEvent.class, NovaEntityHealthEvent::register);
+        NovaBukkitRegistrar.register(builder, NovaPlayerDeathEvent.class, NovaPlayerDeathEvent::register);
+        NovaBukkitRegistrar.register(builder, NovaPlayerRespawnEvent.class, NovaPlayerRespawnEvent::register);
         builder.extension(Event.class, "handlerList", function -> function
                 .returns(HandlerList.class)
                 .invoke(arguments -> NovaTypeSupport.argument(arguments, 0, Event.class).getHandlers()));
