@@ -11,6 +11,8 @@ import com.novalang.runtime.host.JavaTypes;
 import org.bukkit.Color;
 import org.bukkit.Location;
 import org.bukkit.Server;
+import org.bukkit.TreeType;
+import org.bukkit.World;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandSender;
@@ -132,7 +134,7 @@ class NovaBukkitTest {
     @DisplayName("完整领域注册器不会生成重复扩展签名")
     void shouldExposeExpandedBukkitExtensionsWithoutDuplicates() {
         JavaTypes types = NovaBukkit.create();
-        assertEquals(2401, types.extensions().size());
+        assertEquals(2415, types.extensions().size());
         assertTrue(types.extensionProperties().size() > 100);
         assertTrue(hasProperty(types, Location.class, "x", true));
         assertTrue(hasProperty(types, Player.class, "name", false));
@@ -330,6 +332,9 @@ class NovaBukkitTest {
         assertTrue(hasExtension(types, InventoryView.Property.class, "id"));
         assertTrue(hasExtension(types, org.bukkit.World.class, "loadChunk"));
         assertTrue(hasExtension(types, org.bukkit.World.class, "unloadChunk"));
+        assertTrue(hasExtension(types, World.class, "dropItemNaturally"));
+        assertTrue(hasExtension(types, World.class, "generateTree"));
+        assertTrue(hasExtension(types, World.class, "entities"));
 
         Set<String> signatures = new LinkedHashSet<String>();
         for (JavaExtensionDescriptor extension : types.extensions()) {
@@ -399,6 +404,10 @@ class NovaBukkitTest {
                 variable -> variable.type(Minecart.class).value(emptyProxy(Minecart.class)));
         builder.globalVariable("testInventoryView",
                 variable -> variable.type(InventoryView.class).value(emptyInventoryView()));
+        builder.globalVariable("testWorld",
+                variable -> variable.type(World.class).value(emptyProxy(World.class)));
+        builder.globalVariable("testTreeType",
+                variable -> variable.type(TreeType.class).value(TreeType.TREE));
         Nova nova = new Nova();
         nova.install(builder.build());
 
@@ -432,6 +441,11 @@ class NovaBukkitTest {
                 "world(\"world\")?.time()", "bukkit-world-extra-valid.nova"));
         assertDoesNotThrow(() -> nova.compileToBytecode(
                 "world(\"world\")?.loadChunk(0, 0, true)", "bukkit-world-load-chunk-valid.nova"));
+        assertDoesNotThrow(() -> nova.compileToBytecode(
+                "testWorld.entities().size()", "bukkit-world-entities-valid.nova"));
+        assertDoesNotThrow(() -> nova.compileToBytecode(
+                "testWorld.generateTree(location(1.0, 2.0, 3.0), testTreeType)",
+                "bukkit-world-generate-tree-valid.nova"));
         assertDoesNotThrow(() -> nova.compileToBytecode(
                 "worldCreator(\"nova\").seed(42).name()", "bukkit-world-creator-valid.nova"));
         assertDoesNotThrow(() -> nova.compileToBytecode(

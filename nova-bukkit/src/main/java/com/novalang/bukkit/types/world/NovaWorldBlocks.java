@@ -11,6 +11,7 @@ public final class NovaWorldBlocks {
 
     public static void register(JavaTypes.Builder builder) {
         NovaWorldExtra.register(builder);
+        NovaWorldEntityOperations.register(builder);
         NovaChunk.register(builder);
         NovaBlock.register(builder);
         NovaBlockFace.register(builder);
