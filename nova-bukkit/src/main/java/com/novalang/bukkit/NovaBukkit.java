@@ -9,6 +9,7 @@ import com.novalang.bukkit.types.enums.NovaEnum;
 import com.novalang.bukkit.types.event.NovaEventTypes;
 import com.novalang.bukkit.types.gameplay.NovaGameplay;
 import com.novalang.bukkit.types.inventory.NovaWorldInventory;
+import com.novalang.bukkit.types.inventory.NovaInventoryMoreTypes;
 import com.novalang.bukkit.types.platform.NovaPlatform;
 import com.novalang.bukkit.types.server.NovaServer;
 import com.novalang.bukkit.types.server.NovaServerPlatform;
@@ -16,6 +17,7 @@ import com.novalang.bukkit.types.value.NovaLocation;
 import com.novalang.bukkit.types.value.NovaValueFactory;
 import com.novalang.bukkit.types.world.NovaWorld;
 import com.novalang.bukkit.types.world.NovaWorldBlocks;
+import com.novalang.bukkit.types.world.NovaWorldBlockMoreTypes;
 
 /**
  * Bukkit 运行时函数及其编译期 Java 类型定义入口。
@@ -54,7 +56,9 @@ public final class NovaBukkit {
         NovaBukkitRegistrar.register(builder, NovaEntity.class, NovaEntity::register);
         NovaBukkitRegistrar.register(builder, NovaEntityHierarchy.class, NovaEntityHierarchy::register);
         NovaBukkitRegistrar.register(builder, NovaWorldInventory.class, NovaWorldInventory::register);
+        NovaBukkitRegistrar.register(builder, NovaInventoryMoreTypes.class, NovaInventoryMoreTypes::register);
         NovaBukkitRegistrar.register(builder, NovaWorldBlocks.class, NovaWorldBlocks::register);
+        NovaBukkitRegistrar.register(builder, NovaWorldBlockMoreTypes.class, NovaWorldBlockMoreTypes::register);
         NovaBukkitRegistrar.register(builder, NovaValueFactory.class, NovaValueFactory::register);
         NovaBukkitRegistrar.register(builder, NovaPlatform.class, NovaPlatform::register);
         NovaBukkitRegistrar.register(builder, NovaServerPlatform.class, NovaServerPlatform::register);

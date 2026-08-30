@@ -114,6 +114,7 @@ public final class NovaEnum {
         NovaGameplayEnum.register(builder);
         NovaEntityEnum.register(builder);
         NovaEventEnum.register(builder);
+        NovaEventExtraEnum.register(builder);
         NovaPlatformEnum.register(builder);
     }
 
