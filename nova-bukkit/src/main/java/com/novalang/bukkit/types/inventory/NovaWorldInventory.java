@@ -24,6 +24,10 @@ public final class NovaWorldInventory {
         NovaBukkitRegistrar.register(builder, NovaPotionMeta.class, NovaPotionMeta::register);
         NovaBukkitRegistrar.register(builder, NovaFireworkMeta.class, NovaFireworkMeta::register);
         NovaBukkitRegistrar.register(builder, NovaLeatherArmorMeta.class, NovaLeatherArmorMeta::register);
+        NovaBukkitRegistrar.register(builder, NovaEnchantmentStorageMeta.class, NovaEnchantmentStorageMeta::register);
+        NovaBukkitRegistrar.register(builder, NovaMapMeta.class, NovaMapMeta::register);
+        NovaBukkitRegistrar.register(builder, NovaBannerMeta.class, NovaBannerMeta::register);
+        NovaBukkitRegistrar.register(builder, NovaSpawnEggMeta.class, NovaSpawnEggMeta::register);
         NovaMaterial.register(builder);
         NovaVector.register(builder);
         NovaChunkSnapshot.register(builder);
