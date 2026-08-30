@@ -12,6 +12,7 @@ import com.novalang.bukkit.types.gameplay.NovaGameplay;
 import com.novalang.bukkit.types.inventory.NovaWorldInventory;
 import com.novalang.bukkit.types.inventory.NovaInventoryMoreTypes;
 import com.novalang.bukkit.types.inventory.NovaInventoryMetaMoreTypes;
+import com.novalang.bukkit.types.inventory.NovaInventoryBlockMoreTypes;
 import com.novalang.bukkit.types.platform.NovaPlatform;
 import com.novalang.bukkit.types.server.NovaServer;
 import com.novalang.bukkit.types.server.NovaServerPlatform;
@@ -64,6 +65,7 @@ public final class NovaBukkit {
         NovaBukkitRegistrar.register(builder, NovaWorldInventory.class, NovaWorldInventory::register);
         NovaBukkitRegistrar.register(builder, NovaInventoryMoreTypes.class, NovaInventoryMoreTypes::register);
         NovaBukkitRegistrar.register(builder, NovaInventoryMetaMoreTypes.class, NovaInventoryMetaMoreTypes::register);
+        NovaBukkitRegistrar.register(builder, NovaInventoryBlockMoreTypes.class, NovaInventoryBlockMoreTypes::register);
         NovaBukkitRegistrar.register(builder, NovaWorldBlocks.class, NovaWorldBlocks::register);
         NovaBukkitRegistrar.register(builder, NovaWorldBlockMoreTypes.class, NovaWorldBlockMoreTypes::register);
         NovaBukkitRegistrar.register(builder, NovaBlockInventoryMoreTypes.class, NovaBlockInventoryMoreTypes::register);

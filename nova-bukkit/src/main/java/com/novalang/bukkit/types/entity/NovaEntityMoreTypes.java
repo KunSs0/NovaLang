@@ -9,5 +9,6 @@ public final class NovaEntityMoreTypes {
     public static void register(JavaTypes.Builder builder) {
         NovaBukkitRegistrar.register(builder, NovaAbstractHorse.class, NovaAbstractHorse::register);
         NovaBukkitRegistrar.register(builder, NovaFishHook.class, NovaFishHook::register);
+        NovaBukkitRegistrar.register(builder, NovaChestedHorse.class, NovaChestedHorse::register);
     }
 }

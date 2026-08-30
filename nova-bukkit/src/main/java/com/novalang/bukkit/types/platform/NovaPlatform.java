@@ -26,5 +26,6 @@ public final class NovaPlatform {
         NovaBukkitRegistrar.register(builder, NovaTeamOptions.class, NovaTeamOptions::register);
         NovaBukkitRegistrar.register(builder, NovaBossBar.class, NovaBossBar::register);
         NovaConfiguration.register(builder);
+        NovaBukkitRegistrar.register(builder, NovaConversable.class, NovaConversable::register);
     }
 }

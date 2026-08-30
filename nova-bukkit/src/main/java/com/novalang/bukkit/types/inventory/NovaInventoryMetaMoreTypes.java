@@ -13,5 +13,6 @@ public final class NovaInventoryMetaMoreTypes {
         NovaBukkitRegistrar.register(builder, NovaBrewerInventory.class, NovaBrewerInventory::register);
         NovaBukkitRegistrar.register(builder, NovaRepairable.class, NovaRepairable::register);
         NovaBukkitRegistrar.register(builder, NovaBlockStateMeta.class, NovaBlockStateMeta::register);
+        NovaBukkitRegistrar.register(builder, NovaBannerMetaMoreTypes.class, NovaBannerMetaMoreTypes::register);
     }
 }
