@@ -14,6 +14,7 @@ public final class NovaWorldInventory {
     public static void register(JavaTypes.Builder builder) {
         NovaWorldObject.register(builder);
         NovaInventory.register(builder);
+        NovaEntityEquipment.register(builder);
         NovaPlayerInventory.register(builder);
         NovaItemStack.register(builder);
         NovaItemMeta.register(builder);

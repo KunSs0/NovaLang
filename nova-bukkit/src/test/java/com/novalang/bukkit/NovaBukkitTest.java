@@ -11,10 +11,18 @@ import com.novalang.runtime.host.JavaTypes;
 import org.bukkit.Color;
 import org.bukkit.Location;
 import org.bukkit.Server;
+import org.bukkit.configuration.file.FileConfiguration;
+import org.bukkit.command.Command;
+import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
+import org.bukkit.inventory.EntityEquipment;
+import org.bukkit.plugin.Plugin;
+import org.bukkit.plugin.PluginDescriptionFile;
+import org.bukkit.scheduler.BukkitScheduler;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.lang.reflect.Proxy;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -44,7 +52,7 @@ class NovaBukkitTest {
     @DisplayName("完整领域注册器不会生成重复扩展签名")
     void shouldExposeExpandedBukkitExtensionsWithoutDuplicates() {
         JavaTypes types = NovaBukkit.create();
-        assertEquals(1159, types.extensions().size());
+        assertEquals(1293, types.extensions().size());
         assertTrue(types.extensionProperties().size() > 100);
         assertTrue(hasProperty(types, Location.class, "x", true));
         assertTrue(hasProperty(types, Player.class, "name", false));
@@ -75,7 +83,26 @@ class NovaBukkitTest {
     @Test
     @DisplayName("Bukkit 返回类型参与后续 Java 成员编译期检查")
     void shouldValidateBukkitMembersDuringCompilation() {
-        Nova nova = NovaBukkit.install(new Nova());
+        JavaTypes.Builder builder = NovaBukkit.builder();
+        builder.globalVariable("testConfig",
+                variable -> variable.type(FileConfiguration.class).value(emptyConfiguration()));
+        builder.globalVariable("testEquipment",
+                variable -> variable.type(EntityEquipment.class).value(emptyProxy(EntityEquipment.class)));
+        builder.globalVariable("testPluginDescription",
+                variable -> variable.type(PluginDescriptionFile.class)
+                        .value(new PluginDescriptionFile("Test", "1.0", "test.Main")));
+        builder.globalVariable("testCommand",
+                variable -> variable.type(Command.class).value(emptyCommand()));
+        builder.globalVariable("testSender",
+                variable -> variable.type(CommandSender.class).value(emptyProxy(CommandSender.class)));
+        builder.globalVariable("testScheduler",
+                variable -> variable.type(BukkitScheduler.class).value(emptyProxy(BukkitScheduler.class)));
+        builder.globalVariable("testPlugin",
+                variable -> variable.type(Plugin.class).value(emptyProxy(Plugin.class)));
+        builder.globalVariable("testRunnable",
+                variable -> variable.type(Runnable.class).value((Runnable) () -> { }));
+        Nova nova = new Nova();
+        nova.install(builder.build());
 
         assertDoesNotThrow(() -> nova.compileToBytecode(
                 "location(1.0, 2.0, 3.0).blockX", "bukkit-location-valid.nova"));
@@ -111,6 +138,20 @@ class NovaBukkitTest {
                 "material(\"STONE\")?.id()", "bukkit-material-valid.nova"));
         assertDoesNotThrow(() -> nova.compileToBytecode(
                 "server().getOfflinePlayer(\"Alex\").isWhitelisted()", "bukkit-offline-player-valid.nova"));
+        assertDoesNotThrow(() -> nova.compileToBytecode(
+                "testConfig.getString(\"path\", \"default\")",
+                "bukkit-configuration-default-valid.nova"));
+        assertDoesNotThrow(() -> nova.compileToBytecode(
+                "testPluginDescription.fullName()",
+                "bukkit-plugin-description-valid.nova"));
+        assertDoesNotThrow(() -> nova.compileToBytecode(
+                "testEquipment.helmet()", "bukkit-equipment-valid.nova"));
+        assertDoesNotThrow(() -> nova.compileToBytecode(
+                "testCommand.execute(testSender, \"label\", [\"one\"])",
+                "bukkit-command-execute-valid.nova"));
+        assertDoesNotThrow(() -> nova.compileToBytecode(
+                "testScheduler.runTask(testPlugin, testRunnable)",
+                "bukkit-scheduler-run-valid.nova"));
         assertThrows(RuntimeException.class, () -> nova.compileToBytecode(
                 "location(1.0, 2.0, 3.0).missingMember", "bukkit-location-invalid.nova"));
         assertThrows(RuntimeException.class, () -> nova.compileToBytecode(
@@ -125,6 +166,15 @@ class NovaBukkitTest {
                 "location(1.0, 2.0, 3.0).x = \"bad\"", "bukkit-location-setter-type-invalid.nova"));
         assertThrows(RuntimeException.class, () -> nova.compileToBytecode(
                 "location(1.0, 2.0, 3.0).blockX = 4", "bukkit-location-readonly-property-invalid.nova"));
+        assertThrows(RuntimeException.class, () -> nova.compileToBytecode(
+                "testConfig.getInt(\"path\", \"bad\")",
+                "bukkit-configuration-default-invalid.nova"));
+        assertThrows(RuntimeException.class, () -> nova.compileToBytecode(
+                "testEquipment.setHelmetDropChance(\"high\")",
+                "bukkit-equipment-setter-invalid.nova"));
+        assertThrows(RuntimeException.class, () -> nova.compileToBytecode(
+                "testScheduler.runTask(testPlugin, \"not runnable\")",
+                "bukkit-scheduler-run-invalid.nova"));
     }
 
     @Test
@@ -151,6 +201,29 @@ class NovaBukkitTest {
         assertEquals(Color.fromRGB(255, 128, 0), colorResult);
         assertEquals(1.0, extensionResult);
         assertEquals(4.0, setterResult);
+    }
+
+    @Test
+    @DisplayName("配置与插件描述别名使用注册时的同一签名执行")
+    void shouldRunConfigurationAndPluginDescriptionAliases() {
+        FileConfiguration configuration = emptyConfiguration();
+        PluginDescriptionFile description = new PluginDescriptionFile("Test", "1.0", "test.Main");
+        JavaTypes.Builder builder = NovaBukkit.builder();
+        builder.globalVariable("testConfig",
+                variable -> variable.type(FileConfiguration.class).value(configuration));
+        builder.globalVariable("testPluginDescription",
+                variable -> variable.type(PluginDescriptionFile.class).value(description));
+        Nova nova = new Nova();
+        nova.install(builder.build());
+
+        Object configResult = nova.compileToBytecode(
+                "testConfig.set(\"answer\", 7)\ntestConfig.getInt(\"answer\", 0)",
+                "bukkit-configuration-run.nova").run();
+        Object descriptionResult = nova.compileToBytecode(
+                "testPluginDescription.fullName()", "bukkit-plugin-description-run.nova").run();
+
+        assertEquals(7, configResult);
+        assertEquals(description.getFullName(), descriptionResult);
     }
 
     private List<JavaFunctionDescriptor> overloads(JavaNamespaceDescriptor namespace, String name) {
@@ -204,5 +277,38 @@ class NovaBukkitTest {
             }
         }
         return false;
+    }
+
+    private <T> T emptyProxy(Class<T> type) {
+        Object proxy = Proxy.newProxyInstance(
+                type.getClassLoader(), new Class<?>[]{type}, (instance, method, arguments) -> null);
+        return type.cast(proxy);
+    }
+
+    private FileConfiguration emptyConfiguration() {
+        return new FileConfiguration() {
+            @Override
+            public String saveToString() {
+                return "";
+            }
+
+            @Override
+            public void loadFromString(String contents) {
+            }
+
+            @Override
+            protected String buildHeader() {
+                return "";
+            }
+        };
+    }
+
+    private Command emptyCommand() {
+        return new Command("test") {
+            @Override
+            public boolean execute(CommandSender sender, String label, String[] arguments) {
+                return true;
+            }
+        };
     }
 }

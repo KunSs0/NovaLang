@@ -27,6 +27,7 @@ final class NovaPlugin {
     }
 
     static void register(JavaTypes.Builder b) {
+        NovaPluginDescription.register(b);
         b.extension(Plugin.class, "name", f -> f.returns(String.class).invoke(a -> NovaTypeSupport.argument(a, 0, Plugin.class).getName()));
         b.extension(Plugin.class, "server", f -> f.returns(Server.class).invoke(a -> NovaTypeSupport.argument(a, 0, Plugin.class).getServer()));
         b.extension(Plugin.class, "description", f -> f.returns(PluginDescriptionFile.class).invoke(a -> NovaTypeSupport.argument(a, 0, Plugin.class).getDescription()));
