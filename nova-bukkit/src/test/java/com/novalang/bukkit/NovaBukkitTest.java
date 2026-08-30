@@ -122,7 +122,7 @@ class NovaBukkitTest {
     @DisplayName("完整领域注册器不会生成重复扩展签名")
     void shouldExposeExpandedBukkitExtensionsWithoutDuplicates() {
         JavaTypes types = NovaBukkit.create();
-        assertEquals(1817, types.extensions().size());
+        assertEquals(1885, types.extensions().size());
         assertTrue(types.extensionProperties().size() > 100);
         assertTrue(hasProperty(types, Location.class, "x", true));
         assertTrue(hasProperty(types, Player.class, "name", false));
@@ -209,6 +209,12 @@ class NovaBukkitTest {
         assertTrue(hasExtension(types, org.bukkit.event.vehicle.VehicleEnterEvent.class, "entered"));
         assertTrue(hasExtension(types, org.bukkit.event.vehicle.VehicleMoveEvent.class, "from"));
         assertTrue(hasExtension(types, org.bukkit.event.vehicle.VehicleEntityCollisionEvent.class, "setCollisionCancelled"));
+        assertTrue(hasExtension(types, org.bukkit.event.hanging.HangingPlaceEvent.class, "blockFace"));
+        assertTrue(hasExtension(types, org.bukkit.event.weather.LightningStrikeEvent.class, "lightning"));
+        assertTrue(hasExtension(types, org.bukkit.event.world.StructureGrowEvent.class, "blocks"));
+        assertTrue(hasExtension(types, org.bukkit.event.world.ChunkUnloadEvent.class, "setSaveChunk"));
+        assertTrue(hasExtension(types, org.bukkit.event.player.PlayerFishEvent.class, "setExpToDrop"));
+        assertTrue(hasExtension(types, org.bukkit.event.player.PlayerVelocityEvent.class, "setVelocity"));
 
         Set<String> signatures = new LinkedHashSet<String>();
         for (JavaExtensionDescriptor extension : types.extensions()) {

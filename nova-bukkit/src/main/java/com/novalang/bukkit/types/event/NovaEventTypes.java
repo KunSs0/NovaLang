@@ -79,6 +79,9 @@ public final class NovaEventTypes {
         NovaBukkitRegistrar.register(builder, NovaBlockDispenseEvent.class, NovaBlockDispenseEvent::register);
         NovaBukkitRegistrar.register(builder, NovaBlockBurnEvent.class, NovaBlockBurnEvent::register);
         NovaBukkitRegistrar.register(builder, NovaNotePlayEvent.class, NovaNotePlayEvent::register);
+        NovaHangingWeatherEvents.register(builder);
+        NovaWorldEventTypes.register(builder);
+        NovaPlayerGameplayEvents.register(builder);
         builder.extension(Event.class, "handlerList", function -> function
                 .returns(HandlerList.class)
                 .invoke(arguments -> NovaTypeSupport.argument(arguments, 0, Event.class).getHandlers()));
