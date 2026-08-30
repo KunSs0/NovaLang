@@ -19,7 +19,14 @@ public final class NovaEventTypes {
         NovaInventoryEvent.register(builder);
         NovaPlayerEvent.register(builder);
         NovaBukkitRegistrar.register(builder, NovaBlockDamageEvent.class, NovaBlockDamageEvent::register);
+        NovaBukkitRegistrar.register(builder, NovaBlockIgniteEvent.class, NovaBlockIgniteEvent::register);
         NovaBukkitRegistrar.register(builder, NovaBlockMultiPlaceEvent.class, NovaBlockMultiPlaceEvent::register);
+        NovaBukkitRegistrar.register(builder, NovaBlockGrowEvent.class, NovaBlockGrowEvent::register);
+        NovaBukkitRegistrar.register(builder, NovaBlockSpreadEvent.class, NovaBlockSpreadEvent::register);
+        NovaBukkitRegistrar.register(builder, NovaBlockPistonEvent.class, NovaBlockPistonEvent::register);
+        NovaBukkitRegistrar.register(builder, NovaBlockPistonExtendEvent.class, NovaBlockPistonExtendEvent::register);
+        NovaBukkitRegistrar.register(builder, NovaBlockPistonRetractEvent.class, NovaBlockPistonRetractEvent::register);
+        NovaBukkitRegistrar.register(builder, NovaSignChangeEvent.class, NovaSignChangeEvent::register);
         NovaBukkitRegistrar.register(builder, NovaChatEvent.class, NovaChatEvent::register);
         NovaBukkitRegistrar.register(builder, NovaEntityHealthEvent.class, NovaEntityHealthEvent::register);
         NovaBukkitRegistrar.register(builder, NovaPlayerDeathEvent.class, NovaPlayerDeathEvent::register);

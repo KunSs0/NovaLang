@@ -29,7 +29,14 @@ import org.bukkit.entity.Minecart;
 import org.bukkit.event.entity.EntityRegainHealthEvent;
 import org.bukkit.event.entity.PlayerDeathEvent;
 import org.bukkit.event.block.BlockDamageEvent;
+import org.bukkit.event.block.BlockIgniteEvent;
 import org.bukkit.event.block.BlockMultiPlaceEvent;
+import org.bukkit.event.block.BlockGrowEvent;
+import org.bukkit.event.block.BlockSpreadEvent;
+import org.bukkit.event.block.BlockPistonEvent;
+import org.bukkit.event.block.BlockPistonExtendEvent;
+import org.bukkit.event.block.BlockPistonRetractEvent;
+import org.bukkit.event.block.SignChangeEvent;
 import org.bukkit.event.player.AsyncPlayerChatEvent;
 import org.bukkit.event.player.PlayerItemBreakEvent;
 import org.bukkit.event.player.PlayerItemConsumeEvent;
@@ -60,6 +67,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @DisplayName("Nova Bukkit 类型资源")
+@SuppressWarnings("deprecation")
 class NovaBukkitTest {
 
     @Test
@@ -92,7 +100,7 @@ class NovaBukkitTest {
     @DisplayName("完整领域注册器不会生成重复扩展签名")
     void shouldExposeExpandedBukkitExtensionsWithoutDuplicates() {
         JavaTypes types = NovaBukkit.create();
-        assertEquals(1533, types.extensions().size());
+        assertEquals(1548, types.extensions().size());
         assertTrue(types.extensionProperties().size() > 100);
         assertTrue(hasProperty(types, Location.class, "x", true));
         assertTrue(hasProperty(types, Player.class, "name", false));
@@ -109,6 +117,13 @@ class NovaBukkitTest {
         assertTrue(hasExtension(types, PlayerItemHeldEvent.class, "previousSlot"));
         assertTrue(hasExtension(types, PlayerDropItemEvent.class, "itemDrop"));
         assertTrue(hasExtension(types, PlayerPickupItemEvent.class, "remaining"));
+        assertTrue(hasExtension(types, SignChangeEvent.class, "setLine"));
+        assertTrue(hasExtension(types, BlockIgniteEvent.class, "ignitingEntity"));
+        assertTrue(hasExtension(types, BlockGrowEvent.class, "newState"));
+        assertTrue(hasExtension(types, BlockSpreadEvent.class, "source"));
+        assertTrue(hasExtension(types, BlockPistonEvent.class, "isSticky"));
+        assertTrue(hasExtension(types, BlockPistonExtendEvent.class, "blocks"));
+        assertTrue(hasExtension(types, BlockPistonRetractEvent.class, "blocks"));
         assertTrue(hasExtension(types, PlayerRespawnEvent.class, "setRespawnLocation"));
 
         Set<String> signatures = new LinkedHashSet<String>();
