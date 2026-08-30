@@ -26,7 +26,10 @@ import org.bukkit.entity.Player;
 import org.bukkit.entity.Creeper;
 import org.bukkit.entity.Horse;
 import org.bukkit.entity.Hanging;
+import org.bukkit.entity.IronGolem;
 import org.bukkit.entity.Minecart;
+import org.bukkit.entity.Slime;
+import org.bukkit.entity.Guardian;
 import org.bukkit.entity.ArmorStand;
 import org.bukkit.entity.Villager;
 import org.bukkit.event.entity.EntityRegainHealthEvent;
@@ -123,7 +126,7 @@ class NovaBukkitTest {
     @DisplayName("完整领域注册器不会生成重复扩展签名")
     void shouldExposeExpandedBukkitExtensionsWithoutDuplicates() {
         JavaTypes types = NovaBukkit.create();
-        assertEquals(2374, types.extensions().size());
+        assertEquals(2380, types.extensions().size());
         assertTrue(types.extensionProperties().size() > 100);
         assertTrue(hasProperty(types, Location.class, "x", true));
         assertTrue(hasProperty(types, Player.class, "name", false));
@@ -304,6 +307,9 @@ class NovaBukkitTest {
         assertTrue(hasExtension(types, org.bukkit.entity.TNTPrimed.class, "fuseTicks"));
         assertTrue(hasExtension(types, org.bukkit.entity.EnderSignal.class, "setDespawnTimer"));
         assertTrue(hasExtension(types, Hanging.class, "setFacingDirection"));
+        assertTrue(hasExtension(types, IronGolem.class, "setPlayerCreated"));
+        assertTrue(hasExtension(types, Slime.class, "setSize"));
+        assertTrue(hasExtension(types, Guardian.class, "setElder"));
 
         Set<String> signatures = new LinkedHashSet<String>();
         for (JavaExtensionDescriptor extension : types.extensions()) {
