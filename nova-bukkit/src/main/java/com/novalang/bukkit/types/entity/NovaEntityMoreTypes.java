@@ -16,6 +16,11 @@ public final class NovaEntityMoreTypes {
         NovaBukkitRegistrar.register(builder, NovaExplosive.class, NovaExplosive::register);
         NovaBukkitRegistrar.register(builder, NovaComplexEntityPart.class, NovaComplexEntityPart::register);
         NovaBukkitRegistrar.register(builder, NovaEnderDragonPart.class, NovaEnderDragonPart::register);
+        NovaBukkitRegistrar.register(builder, NovaAreaEffectCloud.class, NovaAreaEffectCloud::register);
+        NovaBukkitRegistrar.register(builder, NovaEnderDragon.class, NovaEnderDragon::register);
+        NovaBukkitRegistrar.register(builder, NovaEvoker.class, NovaEvoker::register);
+        NovaBukkitRegistrar.register(builder, NovaLlama.class, NovaLlama::register);
+        NovaBukkitRegistrar.register(builder, NovaParrot.class, NovaParrot::register);
         NovaBukkitRegistrar.register(builder, NovaEntityProjectileSource.class, NovaEntityProjectileSource::register);
     }
 }
