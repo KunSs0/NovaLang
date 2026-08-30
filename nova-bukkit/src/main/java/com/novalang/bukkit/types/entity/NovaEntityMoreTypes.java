@@ -13,6 +13,7 @@ public final class NovaEntityMoreTypes {
         NovaBukkitRegistrar.register(builder, NovaEntityType.class, NovaEntityType::register);
         NovaBukkitRegistrar.register(builder, NovaArt.class, NovaArt::register);
         NovaBukkitRegistrar.register(builder, NovaPainting.class, NovaPainting::register);
+        NovaBukkitRegistrar.register(builder, NovaHanging.class, NovaHanging::register);
         NovaBukkitRegistrar.register(builder, NovaExplosive.class, NovaExplosive::register);
         NovaBukkitRegistrar.register(builder, NovaComplexEntityPart.class, NovaComplexEntityPart::register);
         NovaBukkitRegistrar.register(builder, NovaEnderDragonPart.class, NovaEnderDragonPart::register);
