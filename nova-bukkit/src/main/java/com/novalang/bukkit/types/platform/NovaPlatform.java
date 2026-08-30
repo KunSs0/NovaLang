@@ -15,8 +15,11 @@ public final class NovaPlatform {
         NovaScheduler.register(builder);
         NovaPlugin.register(builder);
         NovaCommand.register(builder);
+        NovaBukkitRegistrar.register(builder, NovaCommandHandlers.class, NovaCommandHandlers::register);
+        NovaBukkitRegistrar.register(builder, NovaCommandMapExtra.class, NovaCommandMapExtra::register);
+        NovaBukkitRegistrar.register(builder, NovaPluginCommandExtra.class, NovaPluginCommandExtra::register);
         NovaEvent.register(builder);
-        NovaMessaging.register(builder);
+        NovaBukkitRegistrar.register(builder, NovaMessaging.class, NovaMessaging::register);
         NovaScoreboard.register(builder);
         NovaBukkitRegistrar.register(builder, NovaScoreboardExtra.class, NovaScoreboardExtra::register);
         NovaBukkitRegistrar.register(builder, NovaObjectiveExtra.class, NovaObjectiveExtra::register);

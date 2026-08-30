@@ -1,5 +1,6 @@
 package com.novalang.bukkit.types.server;
 
+import com.novalang.bukkit.Requires;
 import com.novalang.bukkit.types.value.NovaTypeSupport;
 
 import com.novalang.runtime.host.JavaTypeRef;
@@ -17,6 +18,11 @@ import java.util.Collection;
 import java.util.List;
 
 /** Spigot 1.12.2 Services 与 RegisteredListener 别名。 */
+@Requires(classes = {
+        "org.bukkit.plugin.ServicesManager",
+        "org.bukkit.plugin.RegisteredListener",
+        "org.bukkit.plugin.TimedRegisteredListener"
+})
 final class NovaServices {
 
     private NovaServices() {

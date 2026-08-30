@@ -1,5 +1,6 @@
 package com.novalang.bukkit.types.server;
 
+import com.novalang.bukkit.Requires;
 import com.novalang.bukkit.types.value.NovaTypeSupport;
 import com.novalang.runtime.host.JavaTypeRef;
 import com.novalang.runtime.host.JavaTypes;
@@ -15,6 +16,10 @@ import org.bukkit.permissions.Permissible;
 import java.io.File;
 
 /** Spigot 1.12.2 PluginManager 中未由其他类型注册的别名。 */
+@Requires(classes = {
+        "org.bukkit.plugin.PluginManager",
+        "org.bukkit.plugin.EventExecutor"
+})
 @SuppressWarnings("unchecked")
 final class NovaPluginManager {
 

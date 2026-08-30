@@ -1,5 +1,6 @@
 package com.novalang.bukkit.types.server;
 
+import com.novalang.bukkit.NovaBukkitRegistrar;
 import com.novalang.runtime.host.JavaTypes;
 
 /** 第二批 Bukkit 平台类型的独立聚合器，不改 NovaBukkit 总入口。 */
@@ -14,7 +15,7 @@ public final class NovaServerPlatform {
         NovaPermission.register(builder);
         NovaMetadata.register(builder);
         NovaHelp.register(builder);
-        NovaServices.register(builder);
-        NovaPluginManager.register(builder);
+        NovaBukkitRegistrar.register(builder, NovaServices.class, NovaServices::register);
+        NovaBukkitRegistrar.register(builder, NovaPluginManager.class, NovaPluginManager::register);
     }
 }

@@ -1,5 +1,6 @@
 package com.novalang.bukkit.types.platform;
 
+import com.novalang.bukkit.Requires;
 import com.novalang.bukkit.types.value.NovaTypeSupport;
 
 import com.novalang.runtime.host.JavaTypeRef;
@@ -12,6 +13,11 @@ import org.bukkit.plugin.messaging.PluginMessageRecipient;
 import java.util.List;
 
 /** Bukkit plugin messaging 与服务通道别名。 */
+@Requires(classes = {
+        "org.bukkit.plugin.messaging.Messenger",
+        "org.bukkit.plugin.messaging.PluginMessageRecipient",
+        "org.bukkit.plugin.messaging.PluginMessageListenerRegistration"
+})
 final class NovaMessaging {
 
     private NovaMessaging() {
