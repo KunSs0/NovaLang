@@ -1,5 +1,6 @@
 package com.novalang.bukkit.types.value;
 
+import com.novalang.bukkit.NovaBukkitRegistrar;
 import com.novalang.runtime.host.JavaTypeRef;
 import com.novalang.runtime.host.JavaTypes;
 import org.bukkit.Color;
@@ -17,6 +18,7 @@ public final class NovaValueFactory {
         NovaColor.register(builder);
         NovaDyeColor.register(builder);
         NovaFireworkEffect.register(builder);
+        NovaBukkitRegistrar.register(builder, NovaNamespacedKey.class, NovaNamespacedKey::register);
         builder.globalFunction("vector", function -> function
                 .param("x", Double.class)
                 .param("y", Double.class)
