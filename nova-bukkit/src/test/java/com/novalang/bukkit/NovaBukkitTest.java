@@ -16,6 +16,9 @@ import org.bukkit.command.Command;
 import org.bukkit.command.CommandSender;
 import org.bukkit.block.Container;
 import org.bukkit.block.BrewingStand;
+import org.bukkit.block.Beacon;
+import org.bukkit.block.CommandBlock;
+import org.bukkit.block.CreatureSpawner;
 import org.bukkit.block.Furnace;
 import org.bukkit.block.Jukebox;
 import org.bukkit.block.Sign;
@@ -72,7 +75,7 @@ class NovaBukkitTest {
     @DisplayName("完整领域注册器不会生成重复扩展签名")
     void shouldExposeExpandedBukkitExtensionsWithoutDuplicates() {
         JavaTypes types = NovaBukkit.create();
-        assertEquals(1434, types.extensions().size());
+        assertEquals(1462, types.extensions().size());
         assertTrue(types.extensionProperties().size() > 100);
         assertTrue(hasProperty(types, Location.class, "x", true));
         assertTrue(hasProperty(types, Player.class, "name", false));
@@ -131,6 +134,12 @@ class NovaBukkitTest {
                 variable -> variable.type(Jukebox.class).value(emptyProxy(Jukebox.class)));
         builder.globalVariable("testSign",
                 variable -> variable.type(Sign.class).value(emptyProxy(Sign.class)));
+        builder.globalVariable("testBeacon",
+                variable -> variable.type(Beacon.class).value(emptyProxy(Beacon.class)));
+        builder.globalVariable("testCommandBlock",
+                variable -> variable.type(CommandBlock.class).value(emptyProxy(CommandBlock.class)));
+        builder.globalVariable("testSpawner",
+                variable -> variable.type(CreatureSpawner.class).value(emptyProxy(CreatureSpawner.class)));
         Nova nova = new Nova();
         nova.install(builder.build());
 
@@ -200,6 +209,15 @@ class NovaBukkitTest {
         assertDoesNotThrow(() -> nova.compileToBytecode(
                 "testSign.setLine(0, \"Nova\")",
                 "bukkit-sign-extension-valid.nova"));
+        assertDoesNotThrow(() -> nova.compileToBytecode(
+                "testBeacon.tier()",
+                "bukkit-beacon-extension-valid.nova"));
+        assertDoesNotThrow(() -> nova.compileToBytecode(
+                "testCommandBlock.setCommand(\"say Nova\")",
+                "bukkit-command-block-extension-valid.nova"));
+        assertDoesNotThrow(() -> nova.compileToBytecode(
+                "testSpawner.setSpawnCount(4)",
+                "bukkit-spawner-extension-valid.nova"));
         assertThrows(RuntimeException.class, () -> nova.compileToBytecode(
                 "location(1.0, 2.0, 3.0).missingMember", "bukkit-location-invalid.nova"));
         assertThrows(RuntimeException.class, () -> nova.compileToBytecode(
