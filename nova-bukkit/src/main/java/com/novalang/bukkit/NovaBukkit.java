@@ -17,6 +17,7 @@ import com.novalang.bukkit.types.platform.NovaPlatform;
 import com.novalang.bukkit.types.server.NovaServer;
 import com.novalang.bukkit.types.server.NovaServerPlatform;
 import com.novalang.bukkit.types.server.NovaServerMoreTypes;
+import com.novalang.bukkit.types.server.NovaServerBanTypes;
 import com.novalang.bukkit.types.value.NovaLocation;
 import com.novalang.bukkit.types.value.NovaValueFactory;
 import com.novalang.bukkit.types.world.NovaWorld;
@@ -24,6 +25,7 @@ import com.novalang.bukkit.types.world.NovaWorldBlocks;
 import com.novalang.bukkit.types.world.NovaWorldBlockMoreTypes;
 import com.novalang.bukkit.types.world.NovaBlockInventoryMoreTypes;
 import com.novalang.bukkit.types.world.NovaBlockStateMoreTypes;
+import com.novalang.bukkit.types.world.NovaWorldToolMoreTypes;
 
 /**
  * Bukkit 运行时函数及其编译期 Java 类型定义入口。
@@ -70,10 +72,12 @@ public final class NovaBukkit {
         NovaBukkitRegistrar.register(builder, NovaWorldBlockMoreTypes.class, NovaWorldBlockMoreTypes::register);
         NovaBukkitRegistrar.register(builder, NovaBlockInventoryMoreTypes.class, NovaBlockInventoryMoreTypes::register);
         NovaBukkitRegistrar.register(builder, NovaBlockStateMoreTypes.class, NovaBlockStateMoreTypes::register);
+        NovaBukkitRegistrar.register(builder, NovaWorldToolMoreTypes.class, NovaWorldToolMoreTypes::register);
         NovaBukkitRegistrar.register(builder, NovaValueFactory.class, NovaValueFactory::register);
         NovaBukkitRegistrar.register(builder, NovaPlatform.class, NovaPlatform::register);
         NovaBukkitRegistrar.register(builder, NovaServerPlatform.class, NovaServerPlatform::register);
         NovaBukkitRegistrar.register(builder, NovaServerMoreTypes.class, NovaServerMoreTypes::register);
+        NovaBukkitRegistrar.register(builder, NovaServerBanTypes.class, NovaServerBanTypes::register);
         NovaBukkitRegistrar.register(builder, NovaGameplay.class, NovaGameplay::register);
         NovaBukkitRegistrar.register(builder, NovaEnum.class, NovaEnum::register);
         NovaBukkitRegistrar.register(builder, NovaEventTypes.class, NovaEventTypes::register);
