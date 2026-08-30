@@ -11,6 +11,7 @@ import com.novalang.bukkit.types.event.NovaEventTypes;
 import com.novalang.bukkit.types.gameplay.NovaGameplay;
 import com.novalang.bukkit.types.inventory.NovaWorldInventory;
 import com.novalang.bukkit.types.inventory.NovaInventoryMoreTypes;
+import com.novalang.bukkit.types.inventory.NovaInventoryMetaMoreTypes;
 import com.novalang.bukkit.types.platform.NovaPlatform;
 import com.novalang.bukkit.types.server.NovaServer;
 import com.novalang.bukkit.types.server.NovaServerPlatform;
@@ -21,6 +22,7 @@ import com.novalang.bukkit.types.world.NovaWorld;
 import com.novalang.bukkit.types.world.NovaWorldBlocks;
 import com.novalang.bukkit.types.world.NovaWorldBlockMoreTypes;
 import com.novalang.bukkit.types.world.NovaBlockInventoryMoreTypes;
+import com.novalang.bukkit.types.world.NovaBlockStateMoreTypes;
 
 /**
  * Bukkit 运行时函数及其编译期 Java 类型定义入口。
@@ -61,9 +63,11 @@ public final class NovaBukkit {
         NovaBukkitRegistrar.register(builder, NovaEntityMoreTypes.class, NovaEntityMoreTypes::register);
         NovaBukkitRegistrar.register(builder, NovaWorldInventory.class, NovaWorldInventory::register);
         NovaBukkitRegistrar.register(builder, NovaInventoryMoreTypes.class, NovaInventoryMoreTypes::register);
+        NovaBukkitRegistrar.register(builder, NovaInventoryMetaMoreTypes.class, NovaInventoryMetaMoreTypes::register);
         NovaBukkitRegistrar.register(builder, NovaWorldBlocks.class, NovaWorldBlocks::register);
         NovaBukkitRegistrar.register(builder, NovaWorldBlockMoreTypes.class, NovaWorldBlockMoreTypes::register);
         NovaBukkitRegistrar.register(builder, NovaBlockInventoryMoreTypes.class, NovaBlockInventoryMoreTypes::register);
+        NovaBukkitRegistrar.register(builder, NovaBlockStateMoreTypes.class, NovaBlockStateMoreTypes::register);
         NovaBukkitRegistrar.register(builder, NovaValueFactory.class, NovaValueFactory::register);
         NovaBukkitRegistrar.register(builder, NovaPlatform.class, NovaPlatform::register);
         NovaBukkitRegistrar.register(builder, NovaServerPlatform.class, NovaServerPlatform::register);
