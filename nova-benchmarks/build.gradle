@@ -3,7 +3,7 @@ plugins {
     id 'me.champeau.jmh' version '0.7.2'
 }
 
-description = 'Nova vs Nashorn vs GraalJS vs Groovy vs JEXL vs Javet(V8) vs Java performance benchmarks'
+description = 'Nova vs Fluxon vs Nashorn vs GraalJS vs Groovy vs JEXL vs Javet(V8) vs Java performance benchmarks'
 
 def benchmarksEnabled = providers.gradleProperty('enableBenchmarks')
         .map { it.toBoolean() }
@@ -45,6 +45,14 @@ def resolveOptionalPath = { String propertyName, String defaultPath ->
     return explicit.isAbsolute() ? explicit : project.file(value.toString())
 }
 
+def fluxonCoreJar = providers.gradleProperty('fluxonCoreJar')
+        .orElse('F:/minecraft/bukkit/fluxon/core/build/libs/fluxon-core-1.6.31.jar')
+        .get()
+
+if (benchmarksEnabled && !file(fluxonCoreJar).isFile()) {
+    throw new GradleException("Fluxon core JAR not found: ${fluxonCoreJar}. Build F:/minecraft/bukkit/fluxon with :core:jar or pass -PfluxonCoreJar=<path>.")
+}
+
 dependencies {
     implementation project(':nova-runtime')
     implementation 'org.openjdk.nashorn:nashorn-core:15.4'
@@ -54,6 +62,12 @@ dependencies {
     implementation 'org.apache.commons:commons-jexl3:3.4.0'
     implementation 'com.caoccao.javet:javet:5.0.5'
     implementation 'com.caoccao.javet:javet-v8-windows-x86_64:5.0.5'
+    implementation files(fluxonCoreJar)
+    implementation 'org.ow2.asm:asm:9.5'
+    implementation 'it.unimi.dsi:fastutil:8.5.9'
+    implementation 'com.google.code.gson:gson:2.11.0'
+    implementation 'com.google.guava:guava:33.3.1-jre'
+    implementation 'org.jetbrains:annotations:24.0.0'
 
     jmh 'org.openjdk.jmh:jmh-core:1.37'
     jmhAnnotationProcessor 'org.openjdk.jmh:jmh-generator-annprocess:1.37'

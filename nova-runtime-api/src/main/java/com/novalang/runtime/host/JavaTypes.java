@@ -17,39 +17,39 @@ import com.novalang.runtime.Function2;
 import com.novalang.runtime.Function3;
 import com.novalang.runtime.NovaValueConversions;
 
-public final class HostBindingRegistry {
-    private final List<HostSymbolDescriptor> globals;
-    private final Map<String, HostNamespaceDescriptor> namespaces;
+public final class JavaTypes {
+    private final List<JavaSymbolDescriptor> globals;
+    private final Map<String, JavaNamespaceDescriptor> namespaces;
 
-    private HostBindingRegistry(List<HostSymbolDescriptor> globals,
-                                Map<String, HostNamespaceDescriptor> namespaces) {
-        this.globals = Collections.unmodifiableList(new ArrayList<HostSymbolDescriptor>(globals));
-        this.namespaces = Collections.unmodifiableMap(new LinkedHashMap<String, HostNamespaceDescriptor>(namespaces));
+    private JavaTypes(List<JavaSymbolDescriptor> globals,
+                      Map<String, JavaNamespaceDescriptor> namespaces) {
+        this.globals = Collections.unmodifiableList(new ArrayList<JavaSymbolDescriptor>(globals));
+        this.namespaces = Collections.unmodifiableMap(new LinkedHashMap<String, JavaNamespaceDescriptor>(namespaces));
     }
 
     public static Builder builder() {
         return new Builder();
     }
 
-    public List<HostSymbolDescriptor> globals() {
+    public List<JavaSymbolDescriptor> globals() {
         return globals;
     }
 
-    public Map<String, HostNamespaceDescriptor> namespaces() {
+    public Map<String, JavaNamespaceDescriptor> namespaces() {
         return namespaces;
     }
 
-    public HostNamespaceDescriptor namespace(String name) {
+    public JavaNamespaceDescriptor namespace(String name) {
         return namespaces.get(name);
     }
 
-    public HostNamespaceDescriptor resolveNamespace(String name) {
+    public JavaNamespaceDescriptor resolveNamespace(String name) {
         String effectiveName = (name == null || name.trim().isEmpty()) ? "default" : name.trim();
         if (!"default".equals(effectiveName) && !namespaces.containsKey(effectiveName)) {
             throw new IllegalArgumentException("Unknown namespace: " + effectiveName);
         }
 
-        LinkedHashMap<String, HostSymbolDescriptor> merged = new LinkedHashMap<String, HostSymbolDescriptor>();
+        LinkedHashMap<String, List<JavaSymbolDescriptor>> merged = new LinkedHashMap<String, List<JavaSymbolDescriptor>>();
         mergeSymbols(globals, merged);
 
         Set<String> visiting = new LinkedHashSet<String>();
@@ -61,13 +61,17 @@ public final class HostBindingRegistry {
             mergeNamespace(effectiveName, merged, visiting, visited);
         }
 
-        HostNamespaceDescriptor original = namespaces.get(effectiveName);
+        JavaNamespaceDescriptor original = namespaces.get(effectiveName);
         List<String> extendsNamespaces = original != null ? original.getExtendsNamespaces() : Collections.<String>emptyList();
-        return new HostNamespaceDescriptor(effectiveName, extendsNamespaces, new ArrayList<HostSymbolDescriptor>(merged.values()));
+        List<JavaSymbolDescriptor> flattened = new ArrayList<JavaSymbolDescriptor>();
+        for (List<JavaSymbolDescriptor> descriptors : merged.values()) {
+            flattened.addAll(descriptors);
+        }
+        return new JavaNamespaceDescriptor(effectiveName, extendsNamespaces, flattened);
     }
 
     private void mergeNamespace(String namespaceName,
-                                LinkedHashMap<String, HostSymbolDescriptor> merged,
+                                LinkedHashMap<String, List<JavaSymbolDescriptor>> merged,
                                 Set<String> visiting,
                                 Set<String> visited) {
         if (visited.contains(namespaceName)) {
@@ -77,7 +81,7 @@ public final class HostBindingRegistry {
             throw new IllegalStateException("Namespace inheritance cycle detected: " + namespaceName);
         }
 
-        HostNamespaceDescriptor descriptor = namespaces.get(namespaceName);
+        JavaNamespaceDescriptor descriptor = namespaces.get(namespaceName);
         if (descriptor == null) {
             throw new IllegalStateException("Unknown namespace in extends chain: " + namespaceName);
         }
@@ -94,19 +98,29 @@ public final class HostBindingRegistry {
         visited.add(namespaceName);
     }
 
-    private void mergeSymbols(List<HostSymbolDescriptor> symbols,
-                              LinkedHashMap<String, HostSymbolDescriptor> merged) {
-        for (HostSymbolDescriptor symbol : symbols) {
-            merged.put(symbol.getName(), symbol);
+    private void mergeSymbols(List<JavaSymbolDescriptor> symbols,
+                              LinkedHashMap<String, List<JavaSymbolDescriptor>> merged) {
+        for (JavaSymbolDescriptor symbol : symbols) {
+            List<JavaSymbolDescriptor> existing = merged.get(symbol.getName());
+            if (symbol instanceof JavaFunctionDescriptor
+                    && existing != null
+                    && !existing.isEmpty()
+                    && existing.get(0) instanceof JavaFunctionDescriptor) {
+                existing.add(symbol);
+            } else {
+                List<JavaSymbolDescriptor> replacement = new ArrayList<JavaSymbolDescriptor>();
+                replacement.add(symbol);
+                merged.put(symbol.getName(), replacement);
+            }
         }
     }
 
     public static final class Builder {
-        private final List<HostSymbolDescriptor> globals = new ArrayList<HostSymbolDescriptor>();
+        private final List<JavaSymbolDescriptor> globals = new ArrayList<JavaSymbolDescriptor>();
         private final LinkedHashMap<String, NamespaceBuilder> namespaces = new LinkedHashMap<String, NamespaceBuilder>();
 
         public Builder globalVariable(String name, Consumer<VariableBuilder> spec) {
-            VariableBuilder builder = new VariableBuilder(name, HostSymbolKind.VARIABLE);
+            VariableBuilder builder = new VariableBuilder(name, JavaSymbolKind.VARIABLE);
             spec.accept(builder);
             globals.add(builder.build());
             return this;
@@ -132,19 +146,19 @@ public final class HostBindingRegistry {
             return this;
         }
 
-        public HostBindingRegistry build() {
-            LinkedHashMap<String, HostNamespaceDescriptor> builtNamespaces = new LinkedHashMap<String, HostNamespaceDescriptor>();
+        public JavaTypes build() {
+            LinkedHashMap<String, JavaNamespaceDescriptor> builtNamespaces = new LinkedHashMap<String, JavaNamespaceDescriptor>();
             for (Map.Entry<String, NamespaceBuilder> entry : namespaces.entrySet()) {
                 builtNamespaces.put(entry.getKey(), entry.getValue().build());
             }
-            return new HostBindingRegistry(globals, builtNamespaces);
+            return new JavaTypes(globals, builtNamespaces);
         }
     }
 
     public static final class NamespaceBuilder {
         private final String name;
         private final List<String> extendsNamespaces = new ArrayList<String>();
-        private final List<HostSymbolDescriptor> globals = new ArrayList<HostSymbolDescriptor>();
+        private final List<JavaSymbolDescriptor> globals = new ArrayList<JavaSymbolDescriptor>();
 
         private NamespaceBuilder(String name) {
             if (name == null || name.trim().isEmpty()) {
@@ -162,7 +176,7 @@ public final class HostBindingRegistry {
         }
 
         public NamespaceBuilder variable(String name, Consumer<VariableBuilder> spec) {
-            VariableBuilder builder = new VariableBuilder(name, HostSymbolKind.VARIABLE);
+            VariableBuilder builder = new VariableBuilder(name, JavaSymbolKind.VARIABLE);
             spec.accept(builder);
             globals.add(builder.build());
             return this;
@@ -182,8 +196,8 @@ public final class HostBindingRegistry {
             return this;
         }
 
-        private HostNamespaceDescriptor build() {
-            return new HostNamespaceDescriptor(name, extendsNamespaces, globals);
+        private JavaNamespaceDescriptor build() {
+            return new JavaNamespaceDescriptor(name, extendsNamespaces, globals);
         }
     }
 
@@ -237,24 +251,28 @@ public final class HostBindingRegistry {
     }
 
     public static final class VariableBuilder extends BaseSymbolBuilder<VariableBuilder> {
-        private final HostSymbolKind kind;
-        private HostTypeRef type = HostTypes.ANY;
+        private final JavaSymbolKind kind;
+        private JavaTypeRef type = JavaTypeRefs.ANY;
         private boolean mutable;
         private Object value;
         private Supplier<?> supplier;
 
-        private VariableBuilder(String name, HostSymbolKind kind) {
+        private VariableBuilder(String name, JavaSymbolKind kind) {
             super(name);
             this.kind = kind;
         }
 
         public VariableBuilder type(String type) {
-            return type(HostTypeRef.of(type));
+            return type(JavaTypeRef.of(type));
         }
 
-        public VariableBuilder type(HostTypeRef type) {
+        public VariableBuilder type(JavaTypeRef type) {
             this.type = type;
             return this;
+        }
+
+        public VariableBuilder type(Class<?> type) {
+            return type(JavaTypeRef.javaType(type));
         }
 
         public VariableBuilder mutable(boolean mutable) {
@@ -282,11 +300,11 @@ public final class HostBindingRegistry {
             return this;
         }
 
-        private HostSymbolDescriptor build() {
-            if (kind == HostSymbolKind.PROPERTY) {
-                return new HostPropertyDescriptor(name(), type, mutable, documentation(), deprecatedMessage(), examples());
+        private JavaSymbolDescriptor build() {
+            if (kind == JavaSymbolKind.PROPERTY) {
+                return new JavaPropertyDescriptor(name(), type, mutable, documentation(), deprecatedMessage(), examples());
             }
-            return new HostVariableDescriptor(name(), type, mutable, documentation(), deprecatedMessage(), examples(), value, supplier);
+            return new JavaVariableDescriptor(name(), type, mutable, documentation(), deprecatedMessage(), examples(), value, supplier);
         }
 
         @Override
@@ -296,38 +314,51 @@ public final class HostBindingRegistry {
     }
 
     public static final class FunctionBuilder extends BaseSymbolBuilder<FunctionBuilder> {
-        private final List<HostParameterDescriptor> parameters = new ArrayList<HostParameterDescriptor>();
-        private HostTypeRef returnType = HostTypes.UNIT;
-        private HostFunctionInvoker invoker;
+        private final List<JavaParameterDescriptor> parameters = new ArrayList<JavaParameterDescriptor>();
+        private JavaTypeRef returnType = JavaTypeRefs.UNIT;
+        private JavaFunctionInvoker invoker;
 
         private FunctionBuilder(String name) {
             super(name);
         }
 
         public FunctionBuilder param(String name, String type) {
-            return param(name, HostTypeRef.of(type));
+            return param(name, JavaTypeRef.of(type));
         }
 
-        public FunctionBuilder param(String name, HostTypeRef type) {
-            parameters.add(new HostParameterDescriptor(name, type, false));
+        public FunctionBuilder param(String name, JavaTypeRef type) {
+            parameters.add(new JavaParameterDescriptor(name, type, false));
             return this;
         }
 
+        public FunctionBuilder param(String name, Class<?> type) {
+            return param(name, JavaTypeRef.javaType(type));
+        }
+
         public FunctionBuilder vararg(String name, String elementType) {
-            parameters.add(new HostParameterDescriptor(name, HostTypeRef.of(elementType), true));
+            parameters.add(new JavaParameterDescriptor(name, JavaTypeRef.of(elementType), true));
+            return this;
+        }
+
+        public FunctionBuilder vararg(String name, Class<?> elementType) {
+            parameters.add(new JavaParameterDescriptor(name, JavaTypeRef.javaType(elementType), true));
             return this;
         }
 
         public FunctionBuilder returns(String type) {
-            return returns(HostTypeRef.of(type));
+            return returns(JavaTypeRef.of(type));
         }
 
-        public FunctionBuilder returns(HostTypeRef type) {
+        public FunctionBuilder returns(JavaTypeRef type) {
             this.returnType = type;
             return this;
         }
 
-        public FunctionBuilder invoke(HostFunctionInvoker invoker) {
+        public FunctionBuilder returns(Class<?> type) {
+            return returns(JavaTypeRef.javaType(type));
+        }
+
+        public FunctionBuilder invoke(JavaFunctionInvoker invoker) {
             this.invoker = invoker;
             return this;
         }
@@ -408,8 +439,8 @@ public final class HostBindingRegistry {
             });
         }
 
-        private HostFunctionDescriptor build() {
-            return new HostFunctionDescriptor(name(), parameters, returnType, documentation(), deprecatedMessage(), examples(), invoker);
+        private JavaFunctionDescriptor build() {
+            return new JavaFunctionDescriptor(name(), parameters, returnType, documentation(), deprecatedMessage(), examples(), invoker);
         }
 
         @Override
@@ -419,22 +450,26 @@ public final class HostBindingRegistry {
     }
 
     public static final class ObjectBuilder extends BaseSymbolBuilder<ObjectBuilder> {
-        private HostTypeRef type = HostTypes.ANY;
+        private JavaTypeRef type = JavaTypeRefs.ANY;
         private Object value;
         private Supplier<?> supplier;
-        private final List<HostSymbolDescriptor> members = new ArrayList<HostSymbolDescriptor>();
+        private final List<JavaSymbolDescriptor> members = new ArrayList<JavaSymbolDescriptor>();
 
         private ObjectBuilder(String name) {
             super(name);
         }
 
         public ObjectBuilder type(String type) {
-            return type(HostTypeRef.of(type));
+            return type(JavaTypeRef.of(type));
         }
 
-        public ObjectBuilder type(HostTypeRef type) {
+        public ObjectBuilder type(JavaTypeRef type) {
             this.type = type;
             return this;
+        }
+
+        public ObjectBuilder type(Class<?> type) {
+            return type(JavaTypeRef.javaType(type));
         }
 
         public ObjectBuilder value(Object value) {
@@ -450,7 +485,7 @@ public final class HostBindingRegistry {
         }
 
         public ObjectBuilder property(String name, Consumer<VariableBuilder> spec) {
-            VariableBuilder builder = new VariableBuilder(name, HostSymbolKind.PROPERTY);
+            VariableBuilder builder = new VariableBuilder(name, JavaSymbolKind.PROPERTY);
             spec.accept(builder);
             members.add(builder.build());
             return this;
@@ -470,8 +505,8 @@ public final class HostBindingRegistry {
             return this;
         }
 
-        private HostObjectDescriptor build() {
-            return new HostObjectDescriptor(name(), type, documentation(), deprecatedMessage(), examples(), value, supplier, members);
+        private JavaObjectDescriptor build() {
+            return new JavaObjectDescriptor(name(), type, documentation(), deprecatedMessage(), examples(), value, supplier, members);
         }
 
         @Override

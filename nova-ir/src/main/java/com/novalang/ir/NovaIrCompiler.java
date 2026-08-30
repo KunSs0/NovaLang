@@ -4,6 +4,7 @@ import com.novalang.compiler.ast.decl.Program;
 import com.novalang.compiler.lexer.Lexer;
 import com.novalang.compiler.parser.Parser;
 import com.novalang.ir.pass.PassPipeline;
+import com.novalang.runtime.host.JavaTypes;
 
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.ClassWriter;
@@ -68,6 +69,10 @@ public class NovaIrCompiler implements NovaCompilerApi {
      */
     public void setStrictSemanticMode(boolean strict) {
         pipeline.setStrictSemanticMode(strict);
+    }
+
+    public void setJavaTypes(JavaTypes javaTypes, String namespace) {
+        pipeline.setJavaTypes(javaTypes, namespace);
     }
 
     /**

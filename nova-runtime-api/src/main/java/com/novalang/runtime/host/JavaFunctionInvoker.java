@@ -1,6 +1,6 @@
 package com.novalang.runtime.host;
 
 @FunctionalInterface
-public interface HostFunctionInvoker {
+public interface JavaFunctionInvoker {
     Object invoke(Object... args) throws Exception;
 }

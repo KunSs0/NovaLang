@@ -26,6 +26,7 @@ import com.novalang.ir.pass.mir.TailCallElimination;
 import com.novalang.compiler.analysis.AnalysisResult;
 import com.novalang.compiler.analysis.SemanticAnalyzer;
 import com.novalang.compiler.analysis.SemanticDiagnostic;
+import com.novalang.runtime.host.JavaTypes;
 
 import java.util.*;
 
@@ -49,6 +50,8 @@ public class PassPipeline {
     private boolean enableSemanticAnalysis = false;
     /** strict 模式：ERROR 级诊断抛异常中止 */
     private boolean strictSemanticMode = false;
+    private JavaTypes javaTypes;
+    private String javaTypesNamespace = "default";
 
     public void setScriptMode(boolean scriptMode) {
         this.scriptMode = scriptMode;
@@ -64,6 +67,13 @@ public class PassPipeline {
 
     public void setStrictSemanticMode(boolean strict) {
         this.strictSemanticMode = strict;
+    }
+
+    public void setJavaTypes(JavaTypes javaTypes, String namespace) {
+        this.javaTypes = javaTypes;
+        this.javaTypesNamespace = namespace == null || namespace.trim().isEmpty()
+                ? "default"
+                : namespace.trim();
     }
 
     public PassPipeline() {
@@ -177,6 +187,9 @@ public class PassPipeline {
     private void runSemanticAnalysis(Program program) {
         try {
             SemanticAnalyzer analyzer = new SemanticAnalyzer();
+            if (javaTypes != null) {
+                analyzer.registerJavaTypes(javaTypes, javaTypesNamespace);
+            }
             if (externalClassNames != null) {
                 for (String className : externalClassNames) {
                     analyzer.registerKnownType(className);

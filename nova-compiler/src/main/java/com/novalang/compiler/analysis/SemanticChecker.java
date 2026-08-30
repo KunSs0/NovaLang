@@ -98,9 +98,16 @@ public final class SemanticChecker {
             if (arg.isSpread()) return;
         }
 
-        if (actualCount != expectedCount) {
+        int minimumCount = funcSym.isVararg() ? Math.max(expectedCount - 1, 0) : expectedCount;
+        boolean countMismatch = funcSym.isVararg()
+                ? actualCount < minimumCount
+                : actualCount != expectedCount;
+        if (countMismatch) {
+            String expectedDescription = funcSym.isVararg()
+                    ? "至少 " + minimumCount
+                    : String.valueOf(expectedCount);
             addDiagnostic(SemanticDiagnostic.Severity.ERROR,
-                    "函数 '" + funcSym.getName() + "' 需要 " + expectedCount +
+                    "函数 '" + funcSym.getName() + "' 需要 " + expectedDescription +
                             " 个参数，实际传入 " + actualCount + " 个", node);
         }
     }
@@ -112,14 +119,21 @@ public final class SemanticChecker {
 
         List<Symbol> params = funcSym.getParameters();
         List<CallExpr.Argument> args = node.getArgs();
-        int count = Math.min(params.size(), args.size());
+        int count = args.size();
         for (int i = 0; i < count; i++) {
             if (args.get(i).isSpread()) return;
-            NovaType paramType = params.get(i).getResolvedNovaType();
+            int parameterIndex = i;
+            if (parameterIndex >= params.size()) {
+                if (!funcSym.isVararg() || params.isEmpty()) {
+                    break;
+                }
+                parameterIndex = params.size() - 1;
+            }
+            NovaType paramType = params.get(parameterIndex).getResolvedNovaType();
             NovaType argType = exprNovaTypeMap.get(args.get(i).getValue());
             if (paramType != null && argType != null) {
                 checkTypeCompatibility(paramType, argType, args.get(i).getValue(),
-                        "参数 '" + params.get(i).getName() + "'");
+                        "参数 '" + params.get(parameterIndex).getName() + "'");
             }
         }
     }

@@ -4,7 +4,7 @@
 
 ## 测试环境
 
-- **JDK**: OpenJDK 21.0.8+9-LTS (Zulu)
+- **JDK**: 既有引擎数据使用 OpenJDK 21.0.8+9-LTS (Zulu)；Fluxon 1.6.31 数据使用 OpenJDK 21.0.7+8-LTS
 - **JMH**: 1.37
 - **OS**: Windows 11
 - **配置**: Fork=1, Warmup=5×500ms, Measurement=8×500ms, -Xms512m -Xmx512m
@@ -16,6 +16,8 @@
 | **Java Native** | JDK 21 | 纯 Java 基线，JIT 充分优化 |
 | **Nova Compiled** | 0.1.11 | Nova 编译为 JVM 字节码执行 |
 | **Nova Eval** | 0.1.11 | Nova MIR 解释器执行（含循环死存储消除优化） |
+| **Fluxon Compiled** | 1.6.31 | Fluxon 编译为 JVM 字节码执行 |
+| **Fluxon Eval** | 1.6.31 | Fluxon AST 解释器执行 |
 | **Javet (V8)** | 5.0.5 | 嵌入式 V8 JavaScript 引擎 |
 | **Groovy** | 4.0.23 | GroovyShell 解析/执行 |
 | **Nashorn** | 15.4 | OpenJDK Nashorn JavaScript 引擎 |
@@ -42,15 +44,20 @@
 
 > 单位：µs/op（越低越好）
 
-| 场景 | Java Native | Nova Compiled | Javet Warmed | Groovy Parsed | Nashorn Compiled | GraalJS Warmed | JEXL Script |
-|------|----------:|-------------:|------------:|-------------:|----------------:|--------------:|-----------:|
-| arith_loop | **3.6** | **19.2** | 108.6 | 58.1 | 47.3 | 278.8 | 573.9 |
-| call_loop | **9.2** | **45.7** | 170.6 | 143.9 | 970.5 | 2530.3 | 13037.2 |
-| object_loop | **0.9** | **23.1** | 187.5 | 34.3 | 410.0 | 1577.5 | 381.2 |
-| branch_loop | **20.0** | **29.4** | 203.1 | 154.2 | 850.5 | 2187.1 | 5545.4 |
-| string_concat | **11.7** | **15.9** | 79.3 | 13189.0 | 87.3 | 129.5 | 3293.2 |
-| list_sum | **8.7** | **19.4** | 102.8 | 36.5 | 77.8 | 227.2 | 208.5 |
-| fib_recursion | **366.2** | **365.6** | 1007.7 | 804.5 | 4845.4 | 64851.0 | 119969.6 |
+> Fluxon 数据于 2026-08-30 单独执行，JMH 参数与本项目一致（Fork=1、Warmup=5×500ms、Measurement=8×500ms、`-Xms512m -Xmx512m`）。因 JDK 补丁版本不同，仅将其作为同口径的参考数据，不作严苛的亚百分比横向结论。
+
+| 场景 | Java Native | Nova Compiled | Fluxon Compiled | Javet Warmed | Groovy Parsed | Nashorn Compiled | GraalJS Warmed | JEXL Script |
+|------|----------:|-------------:|----------------:|------------:|-------------:|----------------:|--------------:|-----------:|
+| arith_loop | **3.6** | **19.2** | 187.5 | 108.6 | 58.1 | 47.3 | 278.8 | 573.9 |
+| call_loop | **9.2** | **45.7** | 5641.3† | 170.6 | 143.9 | 970.5 | 2530.3 | 13037.2 |
+| object_loop | **0.9** | **23.1** | 131.2‡ | 187.5 | 34.3 | 410.0 | 1577.5 | 381.2 |
+| branch_loop | **20.0** | **29.4** | 449.5 | 203.1 | 154.2 | 850.5 | 2187.1 | 5545.4 |
+| string_concat | **11.7** | **15.9** | 3048.6 | 79.3 | 13189.0 | 87.3 | 129.5 | 3293.2 |
+| list_sum | **8.7** | **19.4** | 105.9 | 102.8 | 36.5 | 77.8 | 227.2 | 208.5 |
+| fib_recursion | **366.2** | **365.6** | 11357.6 | 1007.7 | 804.5 | 4845.4 | 64851.0 | 119969.6 |
+
+> † `call_loop` 波动较大（±6654.4µs），应以多 fork 复测确认。
+> ‡ Fluxon 不支持类定义；该场景使用可变列表的创建和两次索引读取，衡量等价的短生命周期对象分配与成员读取，而不与其他引擎的类方法分派做严格横向排名。
 
 ### Nova Compiled vs Javet(V8) 倍率对比
 
@@ -66,29 +73,29 @@
 
 ### 相对 Java Native 的倍率
 
-| 场景 | Nova Compiled | Javet Warmed | Groovy Parsed | Nashorn Compiled | GraalJS Warmed | JEXL Script |
-|------|-------------:|------------:|-------------:|----------------:|--------------:|-----------:|
-| arith_loop | 5.3x | 30.2x | 16.1x | 13.1x | 77.4x | 159.4x |
-| call_loop | 5.0x | 18.5x | 15.6x | 105.5x | 275.0x | 1417.1x |
-| object_loop | 26.3x | 213.6x | 39.1x | 467.0x | 1796.6x | 434.1x |
-| branch_loop | 1.5x | 10.2x | 7.7x | 42.5x | 109.4x | 277.3x |
-| string_concat | 1.4x | 6.8x | 1127.3x | 7.5x | 11.1x | 281.6x |
-| list_sum | 2.2x | 11.8x | 4.2x | 8.9x | 26.1x | 24.0x |
-| fib_recursion | 1.0x | 2.7x | 2.2x | 13.2x | 176.9x | 327.3x |
+| 场景 | Nova Compiled | Fluxon Compiled | Javet Warmed | Groovy Parsed | Nashorn Compiled | GraalJS Warmed | JEXL Script |
+|------|-------------:|----------------:|------------:|-------------:|----------------:|--------------:|-----------:|
+| arith_loop | 5.3x | 52.1x | 30.2x | 16.1x | 13.1x | 77.4x | 159.4x |
+| call_loop | 5.0x | 613.2x† | 18.5x | 15.6x | 105.5x | 275.0x | 1417.1x |
+| object_loop | 26.3x | 145.8x‡ | 213.6x | 39.1x | 467.0x | 1796.6x | 434.1x |
+| branch_loop | 1.5x | 22.5x | 10.2x | 7.7x | 42.5x | 109.4x | 277.3x |
+| string_concat | 1.4x | 260.6x | 6.8x | 1127.3x | 7.5x | 11.1x | 281.6x |
+| list_sum | 2.2x | 12.2x | 11.8x | 4.2x | 8.9x | 26.1x | 24.0x |
+| fib_recursion | 1.0x | 31.0x | 2.7x | 2.2x | 13.2x | 176.9x | 327.3x |
 
 ## 解释执行 / 冷启动性能
 
 > 单位：µs/op（越低越好）
 
-| 场景 | Nova Eval | Javet Eval | JEXL Eval | Nashorn Eval | GraalJS Eval | Groovy Eval |
-|------|--------:|---------:|---------:|-----------:|-----------:|-----------:|
-| arith_loop | **416** | 761 | 666 | 1073 | 711 | 10152 |
-| call_loop | **2403** | 833 | 16272 | 3573 | 3275 | 16214 |
-| object_loop | **378** | 901 | 466 | 3560 | 1654 | 11294 |
-| branch_loop | **2230** | 874 | 6291 | 2663 | 2954 | 20914 |
-| string_concat | **49** | 805 | 3468 | 1000 | 563 | 19055 |
-| list_sum | **270** | 822 | 292 | 1287 | 706 | 5369 |
-| fib_recursion | 26128 | 1633 | 146715 | **8822** | 51439 | 49029 |
+| 场景 | Nova Eval | Fluxon Eval | Javet Eval | JEXL Eval | Nashorn Eval | GraalJS Eval | Groovy Eval |
+|------|--------:|------------:|---------:|---------:|-----------:|-----------:|-----------:|
+| arith_loop | **416** | 952 | 761 | 666 | 1073 | 711 | 10152 |
+| call_loop | **2403** | 3007 | 833 | 16272 | 3573 | 3275 | 16214 |
+| object_loop | **378** | 531‡ | 901 | 466 | 3560 | 1654 | 11294 |
+| branch_loop | **2230** | 3671 | 874 | 6291 | 2663 | 2954 | 20914 |
+| string_concat | **49** | 3524 | 805 | 3468 | 1000 | 563 | 19055 |
+| list_sum | **270** | 403 | 822 | 292 | 1287 | 706 | 5369 |
+| fib_recursion | 26128 | 29665 | 1633 | 146715 | **8822** | 51439 | 49029 |
 
 > Javet Eval 包含 V8 Runtime 创建开销（~800µs 固定成本），短脚本场景受创建成本主导。
 
@@ -96,15 +103,15 @@
 
 > 单位：µs/op（越低越好）
 
-| 场景 | Nova Compile | Nashorn Compile |
-|------|------------:|---------------:|
-| arith_loop | **67.4** | 530.1 |
-| call_loop | **72.5** | 521.0 |
-| object_loop | **179.5** | 581.9 |
-| branch_loop | **100.6** | 569.2 |
-| string_concat | **84.2** | 503.3 |
-| list_sum | **100.6** | 541.6 |
-| fib_recursion | **98.3** | 543.1 |
+| 场景 | Nova Compile | Fluxon Compile | Nashorn Compile |
+|------|------------:|---------------:|---------------:|
+| arith_loop | 67.4 | **15.7** | 530.1 |
+| call_loop | 72.5 | **21.3** | 521.0 |
+| object_loop | 179.5 | **20.3**‡ | 581.9 |
+| branch_loop | 100.6 | **42.6** | 569.2 |
+| string_concat | 84.2 | **17.1** | 503.3 |
+| list_sum | 100.6 | **30.0** | 541.6 |
+| fib_recursion | 98.3 | **38.9** | 543.1 |
 
 Nova 编译速度比 Nashorn 快 **5~8 倍**。
 
@@ -209,6 +216,12 @@ V8 ↔ JVM 跨进程 proxy 每次调用都有序列化开销：
 - `Math.multi` ×5000：**107ms**（Nova Compiled 仅 39µs，快 2742x）
 - `StringBuilder.append` ×3000：**86ms**（Nova Compiled 仅 12µs，快 7154x）
 
+### Fluxon 纯脚本结果
+
+- **编译速度**：15.7~42.6µs/op，比 Nova Compile 的既有记录快；其中分支和列表场景仍有可见波动。
+- **热执行**：列表构建/索引为 105.9µs/op；函数调用和字符串拼接的热执行开销较高，`call_loop` 的置信区间也较宽，建议增大 fork 数后复测。
+- **范围**：Fluxon 暂只加入纯脚本计算组。其 Java 互操作需要显式配置环境能力，尚未加入本项目的 Java 互操作组，避免将不同宿主安全配置混为一谈。
+
 ## 各引擎特点
 
 | 引擎 | 纯脚本 | Java 互操作 | 适用场景 |
@@ -220,6 +233,7 @@ V8 ↔ JVM 跨进程 proxy 每次调用都有序列化开销：
 | **GraalJS** | 慢（无 Truffle JIT） | 中等 | 需 GraalVM 才能发挥 |
 | **JEXL** | 简单表达式好 | 受限（无 try-catch） | 配置/规则引擎 |
 | **Javet(V8)** | 纯 JS 计算好 | 极差（跨边界开销） | 需要 Node.js 生态 |
+| **Fluxon** | 编译快，列表/索引热路径中等 | 未纳入本轮互操作测试 | 嵌入式脚本、REPL |
 
 ## Nova 优化方向
 
@@ -237,6 +251,13 @@ V8 ↔ JVM 跨进程 proxy 每次调用都有序列化开销：
 
 # 全部 JMH 基准测试（~30 分钟）
 ./gradlew :nova-benchmarks:jmh -PenableBenchmarks=true
+
+# 先构建 Fluxon 1.6.31 core JAR；默认从下列路径读取，也可显式覆盖
+cd F:/minecraft/bukkit/fluxon
+./gradlew :core:jar
+cd F:/minecraft/haider/NovaLang
+./gradlew :nova-benchmarks:jmh -PenableBenchmarks=true \
+  -PfluxonCoreJar=F:/minecraft/bukkit/fluxon/core/build/libs/fluxon-core-1.6.31.jar
 
 # 只跑纯脚本计算（~15 分钟）
 ./gradlew :nova-benchmarks:jmh -PenableBenchmarks=true -PjmhFilter=ScriptEngineComparisonJmhBenchmark

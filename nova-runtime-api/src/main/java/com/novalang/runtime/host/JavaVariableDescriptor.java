@@ -3,28 +3,28 @@ package com.novalang.runtime.host;
 import java.util.List;
 import java.util.function.Supplier;
 
-public final class HostVariableDescriptor extends HostSymbolDescriptor {
-    private final HostTypeRef type;
+public final class JavaVariableDescriptor extends JavaSymbolDescriptor {
+    private final JavaTypeRef type;
     private final boolean mutable;
     private final Object value;
     private final Supplier<?> supplier;
 
-    public HostVariableDescriptor(String name,
-                                  HostTypeRef type,
+    public JavaVariableDescriptor(String name,
+                                  JavaTypeRef type,
                                   boolean mutable,
                                   String documentation,
                                   String deprecatedMessage,
                                   List<String> examples,
                                   Object value,
                                   Supplier<?> supplier) {
-        super(name, HostSymbolKind.VARIABLE, documentation, deprecatedMessage, examples);
-        this.type = type != null ? type : HostTypes.ANY;
+        super(name, JavaSymbolKind.VARIABLE, documentation, deprecatedMessage, examples);
+        this.type = type != null ? type : JavaTypeRefs.ANY;
         this.mutable = mutable;
         this.value = value;
         this.supplier = supplier;
     }
 
-    public HostTypeRef getType() {
+    public JavaTypeRef getType() {
         return type;
     }
 

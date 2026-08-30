@@ -1,16 +1,16 @@
 package com.novalang.runtime.host;
 
-public final class HostParameterDescriptor {
+public final class JavaParameterDescriptor {
     private final String name;
-    private final HostTypeRef type;
+    private final JavaTypeRef type;
     private final boolean vararg;
 
-    public HostParameterDescriptor(String name, HostTypeRef type, boolean vararg) {
+    public JavaParameterDescriptor(String name, JavaTypeRef type, boolean vararg) {
         if (name == null || name.trim().isEmpty()) {
             throw new IllegalArgumentException("Parameter name must not be empty");
         }
         this.name = name;
-        this.type = type != null ? type : HostTypes.ANY;
+        this.type = type != null ? type : JavaTypeRefs.ANY;
         this.vararg = vararg;
     }
 
@@ -18,7 +18,7 @@ public final class HostParameterDescriptor {
         return name;
     }
 
-    public HostTypeRef getType() {
+    public JavaTypeRef getType() {
         return type;
     }
 

@@ -10,7 +10,7 @@ import java.util.Map;
  * <ul>
  *   <li>{@link NovaValue#toJava(Class)} — 方向 D</li>
  *   <li>{@link NovaRuntime#call(String, Object...)} — 方向 A</li>
- *   <li>HostBindingRegistry.FunctionBuilder 的泛型 invoke — 方向 B</li>
+ *   <li>JavaTypes.FunctionBuilder 的泛型 invoke — 方向 B</li>
  * </ul>
  */
 public final class NovaValueConversions {

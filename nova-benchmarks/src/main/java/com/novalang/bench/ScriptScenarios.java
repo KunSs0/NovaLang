@@ -32,6 +32,7 @@ final class ScriptScenarios {
                 jsArithLoop(),
                 groovyArithLoop(),
                 jexlArithLoop(),
+                fluxonArithLoop(),
                 new java.util.function.IntSupplier() {
                     @Override
                     public int getAsInt() {
@@ -45,6 +46,7 @@ final class ScriptScenarios {
                 jsCallLoop(),
                 groovyCallLoop(),
                 jexlCallLoop(),
+                fluxonCallLoop(),
                 new java.util.function.IntSupplier() {
                     @Override
                     public int getAsInt() {
@@ -58,6 +60,7 @@ final class ScriptScenarios {
                 jsObjectLoop(),
                 groovyObjectLoop(),
                 jexlObjectLoop(),
+                fluxonObjectLoop(),
                 new java.util.function.IntSupplier() {
                     @Override
                     public int getAsInt() {
@@ -71,6 +74,7 @@ final class ScriptScenarios {
                 jsBranchLoop(),
                 groovyBranchLoop(),
                 jexlBranchLoop(),
+                fluxonBranchLoop(),
                 new java.util.function.IntSupplier() {
                     @Override
                     public int getAsInt() {
@@ -84,6 +88,7 @@ final class ScriptScenarios {
                 jsStringConcat(),
                 groovyStringConcat(),
                 jexlStringConcat(),
+                fluxonStringConcat(),
                 new java.util.function.IntSupplier() {
                     @Override
                     public int getAsInt() {
@@ -97,6 +102,7 @@ final class ScriptScenarios {
                 jsListSum(),
                 groovyListSum(),
                 jexlListSum(),
+                fluxonListSum(),
                 new java.util.function.IntSupplier() {
                     @Override
                     public int getAsInt() {
@@ -110,6 +116,7 @@ final class ScriptScenarios {
                 jsFibRecursion(),
                 groovyFibRecursion(),
                 jexlFibRecursion(),
+                fluxonFibRecursion(),
                 new java.util.function.IntSupplier() {
                     @Override
                     public int getAsInt() {
@@ -216,6 +223,81 @@ final class ScriptScenarios {
                 + "  return sum\n"
                 + "}\n"
                 + "run()";
+    }
+
+    // ========== Fluxon sources ==========
+
+    private static String fluxonArithLoop() {
+        return "s = 0\n"
+                + "for i in 0..<20000 {\n"
+                + "  s = &s + &i * 2 - 1\n"
+                + "}\n"
+                + "&s";
+    }
+
+    private static String fluxonCallLoop() {
+        return "def inc(n) = &n + 1\n"
+                + "s = 0\n"
+                + "for i in 0..<50000 {\n"
+                + "  s = &s + inc(&i)\n"
+                + "}\n"
+                + "&s";
+    }
+
+    private static String fluxonObjectLoop() {
+        return "total = 0\n"
+                + "for i in 0..<5000 {\n"
+                + "  p = [&i, &i * 2]\n"
+                + "  total = &total + &p[0] + &p[1]\n"
+                + "}\n"
+                + "&total";
+    }
+
+    private static String fluxonBranchLoop() {
+        return "def classify(n) {\n"
+                + "  if &n % 15 == 0 { return 3 }\n"
+                + "  if &n % 5 == 0 { return 2 }\n"
+                + "  if &n % 3 == 0 { return 1 }\n"
+                + "  return 0\n"
+                + "}\n"
+                + "sum = 0\n"
+                + "for i in 1..20000 {\n"
+                + "  sum = &sum + classify(&i)\n"
+                + "}\n"
+                + "&sum";
+    }
+
+    private static String fluxonStringConcat() {
+        return "s = \"\"\n"
+                + "for i in 0..<3000 {\n"
+                + "  s = &s + \"ab\" + &i\n"
+                + "}\n"
+                + "&s :: length()";
+    }
+
+    private static String fluxonListSum() {
+        return "list = mutableList(array([]))\n"
+                + "for i in 0..<3000 {\n"
+                + "  &list :: add(&i)\n"
+                + "}\n"
+                + "sum = 0\n"
+                + "for i in 0..<3000 {\n"
+                + "  sum = &sum + &list[&i]\n"
+                + "}\n"
+                + "&sum";
+    }
+
+    private static String fluxonFibRecursion() {
+        return "def fib(n) {\n"
+                + "  if &n <= 1 { return &n }\n"
+                + "  return fib(&n - 1) + fib(&n - 2)\n"
+                + "}\n"
+                + "sum = 0\n"
+                + "for i in 0..<20 {\n"
+                + "  n = 18 + (&i % 5)\n"
+                + "  sum = &sum + fib(&n)\n"
+                + "}\n"
+                + "&sum";
     }
 
     // ========== JavaScript sources ==========

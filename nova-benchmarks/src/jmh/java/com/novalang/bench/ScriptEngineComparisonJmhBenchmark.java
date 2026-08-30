@@ -43,6 +43,7 @@ public class ScriptEngineComparisonJmhBenchmark {
         Context graalJsContext;
         Script groovyScript;
         JexlScript jexlScript;
+        FluxonCompiledScript fluxonCompiled;
         com.caoccao.javet.interop.V8Runtime javetRuntime;
 
         @Setup(Level.Trial)
@@ -55,6 +56,13 @@ public class ScriptEngineComparisonJmhBenchmark {
             if (novaEval != expectedResult) {
                 throw new IllegalStateException("Nova eval result mismatch for " + scenario + ": expected="
                         + expectedResult + ", actual=" + novaEval);
+            }
+
+            // Fluxon eval 验证
+            int fluxonEval = ScriptBenchSupport.toInt(ScriptBenchSupport.evalFluxon(scriptScenario.getFluxonSource()));
+            if (fluxonEval != expectedResult) {
+                throw new IllegalStateException("Fluxon eval result mismatch for " + scenario + ": expected="
+                        + expectedResult + ", actual=" + fluxonEval);
             }
 
             // Nashorn eval 验证
@@ -71,6 +79,14 @@ public class ScriptEngineComparisonJmhBenchmark {
             if (novaCompiledResult != expectedResult) {
                 throw new IllegalStateException("Nova compiled result mismatch for " + scenario + ": expected="
                         + expectedResult + ", actual=" + novaCompiledResult);
+            }
+
+            // Fluxon 编译 + 验证
+            fluxonCompiled = ScriptBenchSupport.compileFluxon(scriptScenario.getFluxonSource(), "Fluxon" + scenario);
+            int fluxonCompiledResult = ScriptBenchSupport.toInt(fluxonCompiled.run());
+            if (fluxonCompiledResult != expectedResult) {
+                throw new IllegalStateException("Fluxon compiled result mismatch for " + scenario + ": expected="
+                        + expectedResult + ", actual=" + fluxonCompiledResult);
             }
 
             // Nashorn 编译 + 验证
@@ -144,6 +160,23 @@ public class ScriptEngineComparisonJmhBenchmark {
     @Benchmark
     public Object novaCompiledRun(ScenarioState state) {
         return state.novaCompiled.run();
+    }
+
+    // ---- Fluxon ----
+
+    @Benchmark
+    public Object fluxonEval(ScenarioState state) {
+        return ScriptBenchSupport.evalFluxon(state.scriptScenario.getFluxonSource());
+    }
+
+    @Benchmark
+    public Object fluxonCompileOnly(ScenarioState state) {
+        return ScriptBenchSupport.compileFluxonOnly(state.scriptScenario.getFluxonSource(), "FluxonCompile" + state.scenario);
+    }
+
+    @Benchmark
+    public Object fluxonCompiledRun(ScenarioState state) {
+        return state.fluxonCompiled.run();
     }
 
     // ---- Nashorn ----

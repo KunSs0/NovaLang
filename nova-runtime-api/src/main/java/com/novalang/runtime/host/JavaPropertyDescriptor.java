@@ -2,22 +2,22 @@ package com.novalang.runtime.host;
 
 import java.util.List;
 
-public final class HostPropertyDescriptor extends HostSymbolDescriptor {
-    private final HostTypeRef type;
+public final class JavaPropertyDescriptor extends JavaSymbolDescriptor {
+    private final JavaTypeRef type;
     private final boolean mutable;
 
-    public HostPropertyDescriptor(String name,
-                                  HostTypeRef type,
+    public JavaPropertyDescriptor(String name,
+                                  JavaTypeRef type,
                                   boolean mutable,
                                   String documentation,
                                   String deprecatedMessage,
                                   List<String> examples) {
-        super(name, HostSymbolKind.PROPERTY, documentation, deprecatedMessage, examples);
-        this.type = type != null ? type : HostTypes.ANY;
+        super(name, JavaSymbolKind.PROPERTY, documentation, deprecatedMessage, examples);
+        this.type = type != null ? type : JavaTypeRefs.ANY;
         this.mutable = mutable;
     }
 
-    public HostTypeRef getType() {
+    public JavaTypeRef getType() {
         return type;
     }
 

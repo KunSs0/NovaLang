@@ -1,6 +1,6 @@
 package com.novalang.runtime.host;
 
-public enum HostSymbolKind {
+public enum JavaSymbolKind {
     VARIABLE,
     FUNCTION,
     OBJECT,

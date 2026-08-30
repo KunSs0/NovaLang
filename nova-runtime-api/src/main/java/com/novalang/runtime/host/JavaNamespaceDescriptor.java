@@ -4,18 +4,18 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
-public final class HostNamespaceDescriptor {
+public final class JavaNamespaceDescriptor {
     private final String name;
     private final List<String> extendsNamespaces;
-    private final List<HostSymbolDescriptor> globals;
+    private final List<JavaSymbolDescriptor> globals;
 
-    public HostNamespaceDescriptor(String name, List<String> extendsNamespaces, List<HostSymbolDescriptor> globals) {
+    public JavaNamespaceDescriptor(String name, List<String> extendsNamespaces, List<JavaSymbolDescriptor> globals) {
         if (name == null || name.trim().isEmpty()) {
             throw new IllegalArgumentException("Namespace name must not be empty");
         }
         this.name = name;
         this.extendsNamespaces = Collections.unmodifiableList(new ArrayList<String>(extendsNamespaces != null ? extendsNamespaces : Collections.<String>emptyList()));
-        this.globals = Collections.unmodifiableList(new ArrayList<HostSymbolDescriptor>(globals != null ? globals : Collections.<HostSymbolDescriptor>emptyList()));
+        this.globals = Collections.unmodifiableList(new ArrayList<JavaSymbolDescriptor>(globals != null ? globals : Collections.<JavaSymbolDescriptor>emptyList()));
     }
 
     public String getName() {
@@ -26,7 +26,7 @@ public final class HostNamespaceDescriptor {
         return extendsNamespaces;
     }
 
-    public List<HostSymbolDescriptor> getGlobals() {
+    public List<JavaSymbolDescriptor> getGlobals() {
         return globals;
     }
 }

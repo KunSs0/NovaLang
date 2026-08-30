@@ -4,15 +4,15 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
-public abstract class HostSymbolDescriptor {
+public abstract class JavaSymbolDescriptor {
     private final String name;
-    private final HostSymbolKind kind;
+    private final JavaSymbolKind kind;
     private final String documentation;
     private final String deprecatedMessage;
     private final List<String> examples;
 
-    protected HostSymbolDescriptor(String name,
-                                   HostSymbolKind kind,
+    protected JavaSymbolDescriptor(String name,
+                                   JavaSymbolKind kind,
                                    String documentation,
                                    String deprecatedMessage,
                                    List<String> examples) {
@@ -30,7 +30,7 @@ public abstract class HostSymbolDescriptor {
         return name;
     }
 
-    public HostSymbolKind getKind() {
+    public JavaSymbolKind getKind() {
         return kind;
     }
 

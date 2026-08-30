@@ -1,6 +1,8 @@
 package com.novalang.runtime;
 
 import com.novalang.ir.NovaIrCompiler;
+import com.novalang.runtime.host.JavaTypes;
+import com.novalang.runtime.host.JavaTypesInstaller;
 import com.novalang.runtime.interpreter.*;
 import com.novalang.runtime.types.Environment;
 
@@ -56,6 +58,8 @@ public final class Nova {
     private final Map<String, Map<String, Object>> namespaceBindings = new HashMap<>();
     private final List<PreludeSource> preludeSources = new ArrayList<>();
     private int evaluatedPreludeCount = 0;
+    private JavaTypes javaTypes;
+    private String javaTypesNamespace = "default";
 
     private static final class PreludeSource {
         final String source;
@@ -93,6 +97,39 @@ public final class Nova {
 
     public Nova(NovaSecurityPolicy policy) {
         this.interpreter = new Interpreter(policy);
+    }
+
+    public Nova setJavaTypes(JavaTypes javaTypes) {
+        return setJavaTypes(javaTypes, "default");
+    }
+
+    public Nova install(JavaTypes javaTypes) {
+        JavaTypesInstaller.install(this, javaTypes);
+        return this;
+    }
+
+    public Nova install(JavaTypes javaTypes, String namespace) {
+        JavaTypesInstaller.installNamespace(this, javaTypes, namespace);
+        return this;
+    }
+
+    public Nova setJavaTypes(JavaTypes javaTypes, String namespace) {
+        if (javaTypes == null) {
+            throw new IllegalArgumentException("javaTypes must not be null");
+        }
+        String effectiveNamespace = namespace;
+        if (effectiveNamespace == null || effectiveNamespace.trim().isEmpty()) {
+            effectiveNamespace = "default";
+        }
+        javaTypes.resolveNamespace(effectiveNamespace);
+        this.javaTypes = javaTypes;
+        this.javaTypesNamespace = effectiveNamespace;
+        clearCompilationCache();
+        return this;
+    }
+
+    public JavaTypes getJavaTypes() {
+        return javaTypes;
     }
 
     // ── 成员名称解析器 ──────────────────────────────────────
@@ -1062,6 +1099,7 @@ public final class Nova {
         compiler.setScriptMode(true);
         compiler.setEnableSemanticAnalysis(true);
         compiler.setStrictSemanticMode(true);
+        configureJavaTypes(compiler, javaTypesNamespace);
         configureRelocate(compiler);
         ClassLoader previousContextLoader = Thread.currentThread().getContextClassLoader();
         if (scriptClassLoader != null) {
@@ -1078,7 +1116,7 @@ public final class Nova {
      * 用已经独立加载的字节码类创建当前 Nova 实例的运行包装。
      *
      * @param classes 当前 Workspace 独占的已加载类
-     * @return 绑定当前 Nova Host API 的编译程序
+     * @return 绑定当前 Nova Java API 的编译程序
      */
     public CompiledNova createCompiledNova(Map<String, Class<?>> classes) {
         if (classes == null || classes.isEmpty()) {
@@ -1092,6 +1130,7 @@ public final class Nova {
         compiler.setScriptMode(true);
         compiler.setEnableSemanticAnalysis(true);
         compiler.setStrictSemanticMode(true);
+        configureJavaTypes(compiler, javaTypesNamespace);
         configureRelocate(compiler);
         return compiler.compileAndLoad(actualCode, actualFileName, scriptClassLoader);
     }
@@ -1143,6 +1182,7 @@ public final class Nova {
         compiler.setScriptMode(true);
         compiler.setEnableSemanticAnalysis(true);
         compiler.setStrictSemanticMode(true);
+        configureJavaTypes(compiler, namespace);
         configureRelocate(compiler);
         Map<String, Class<?>> classes = compiler.compileAndLoad(actualCode, actualFileName, scriptClassLoader);
 
@@ -1190,6 +1230,17 @@ public final class Nova {
      * 例如 relocate("com.novalang.", "com.foo.novalang.") 后，
      * 包名变为 "com.foo.novalang.runtime"，提取重映射前缀。
      */
+    private void configureJavaTypes(NovaIrCompiler compiler, String namespace) {
+        if (javaTypes == null) {
+            return;
+        }
+        String effectiveNamespace = namespace;
+        if (effectiveNamespace == null || effectiveNamespace.trim().isEmpty()) {
+            effectiveNamespace = javaTypesNamespace;
+        }
+        compiler.setJavaTypes(javaTypes, effectiveNamespace);
+    }
+
     private static void configureRelocate(NovaIrCompiler compiler) {
         String internalName = Nova.class.getName().replace('.', '/');
         // "com/novalang/runtime/Nova" → 正常，idx=4 ("com/")

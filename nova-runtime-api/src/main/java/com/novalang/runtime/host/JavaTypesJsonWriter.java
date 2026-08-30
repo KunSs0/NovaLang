@@ -12,12 +12,12 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
 
-public final class HostBindingJsonWriter {
+public final class JavaTypesJsonWriter {
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
 
-    private HostBindingJsonWriter() {}
+    private JavaTypesJsonWriter() {}
 
-    public static void write(HostBindingRegistry registry, Path path) throws IOException {
+    public static void write(JavaTypes registry, Path path) throws IOException {
         if (registry == null) {
             throw new IllegalArgumentException("registry must not be null");
         }
@@ -35,21 +35,21 @@ public final class HostBindingJsonWriter {
         }
     }
 
-    public static String toJson(HostBindingRegistry registry) {
+    public static String toJson(JavaTypes registry) {
         if (registry == null) {
             throw new IllegalArgumentException("registry must not be null");
         }
         return GSON.toJson(toJsonElement(registry));
     }
 
-    private static JsonObject toJsonElement(HostBindingRegistry registry) {
+    private static JsonObject toJsonElement(JavaTypes registry) {
         JsonObject root = new JsonObject();
         root.addProperty("version", 1);
         root.add("globals", toSymbolsArray(registry.globals()));
 
         JsonObject namespaces = new JsonObject();
-        for (Map.Entry<String, HostNamespaceDescriptor> entry : registry.namespaces().entrySet()) {
-            HostNamespaceDescriptor namespace = entry.getValue();
+        for (Map.Entry<String, JavaNamespaceDescriptor> entry : registry.namespaces().entrySet()) {
+            JavaNamespaceDescriptor namespace = entry.getValue();
             JsonObject namespaceObj = new JsonObject();
 
             JsonArray extendsArray = new JsonArray();
@@ -66,15 +66,15 @@ public final class HostBindingJsonWriter {
         return root;
     }
 
-    private static JsonArray toSymbolsArray(Iterable<HostSymbolDescriptor> symbols) {
+    private static JsonArray toSymbolsArray(Iterable<JavaSymbolDescriptor> symbols) {
         JsonArray array = new JsonArray();
-        for (HostSymbolDescriptor symbol : symbols) {
+        for (JavaSymbolDescriptor symbol : symbols) {
             array.add(toSymbolObject(symbol));
         }
         return array;
     }
 
-    private static JsonObject toSymbolObject(HostSymbolDescriptor symbol) {
+    private static JsonObject toSymbolObject(JavaSymbolDescriptor symbol) {
         JsonObject object = new JsonObject();
         object.addProperty("name", symbol.getName());
         object.addProperty("kind", symbol.getKind().name().toLowerCase());
@@ -93,18 +93,18 @@ public final class HostBindingJsonWriter {
             object.add("examples", examples);
         }
 
-        if (symbol instanceof HostVariableDescriptor) {
-            HostVariableDescriptor variable = (HostVariableDescriptor) symbol;
+        if (symbol instanceof JavaVariableDescriptor) {
+            JavaVariableDescriptor variable = (JavaVariableDescriptor) symbol;
             object.addProperty("type", variable.getType().displayName());
             object.addProperty("mutable", variable.isMutable());
-        } else if (symbol instanceof HostPropertyDescriptor) {
-            HostPropertyDescriptor property = (HostPropertyDescriptor) symbol;
+        } else if (symbol instanceof JavaPropertyDescriptor) {
+            JavaPropertyDescriptor property = (JavaPropertyDescriptor) symbol;
             object.addProperty("type", property.getType().displayName());
             object.addProperty("mutable", property.isMutable());
-        } else if (symbol instanceof HostFunctionDescriptor) {
-            HostFunctionDescriptor function = (HostFunctionDescriptor) symbol;
+        } else if (symbol instanceof JavaFunctionDescriptor) {
+            JavaFunctionDescriptor function = (JavaFunctionDescriptor) symbol;
             JsonArray params = new JsonArray();
-            for (HostParameterDescriptor parameter : function.getParameters()) {
+            for (JavaParameterDescriptor parameter : function.getParameters()) {
                 JsonObject param = new JsonObject();
                 param.addProperty("name", parameter.getName());
                 if (parameter.getType() != null) {
@@ -117,8 +117,8 @@ public final class HostBindingJsonWriter {
             }
             object.add("parameters", params);
             object.addProperty("returnType", function.getReturnType().displayName());
-        } else if (symbol instanceof HostObjectDescriptor) {
-            HostObjectDescriptor hostObject = (HostObjectDescriptor) symbol;
+        } else if (symbol instanceof JavaObjectDescriptor) {
+            JavaObjectDescriptor hostObject = (JavaObjectDescriptor) symbol;
             object.addProperty("type", hostObject.getType().displayName());
             object.add("members", toSymbolsArray(hostObject.getMembers()));
         }

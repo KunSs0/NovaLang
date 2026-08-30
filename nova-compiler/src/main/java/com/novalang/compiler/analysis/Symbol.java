@@ -31,6 +31,8 @@ public final class Symbol {
     private String superClass;            // 如果是类，父类名
     private List<String> interfaces;      // 如果是类，实现的接口名
     private Map<String, Symbol> members;  // 如果是类/对象/enum，其成员
+    private boolean vararg;
+    private List<Symbol> overloads;
 
     public Symbol(String name, SymbolKind kind, String typeName, boolean mutable,
                   SourceLocation location, AstNode declaration, Modifier visibility) {
@@ -57,6 +59,16 @@ public final class Symbol {
 
     public List<Symbol> getParameters() { return parameters; }
     public void setParameters(List<Symbol> parameters) { this.parameters = parameters; }
+    public boolean isVararg() { return vararg; }
+    public void setVararg(boolean vararg) { this.vararg = vararg; }
+    public List<Symbol> getOverloads() { return overloads; }
+
+    public void addOverload(Symbol overload) {
+        if (overloads == null) {
+            overloads = new ArrayList<Symbol>();
+        }
+        overloads.add(overload);
+    }
 
     public String getSuperClass() { return superClass; }
     public void setSuperClass(String superClass) { this.superClass = superClass; }

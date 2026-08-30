@@ -10,16 +10,18 @@ final class ScriptScenario {
     private final String jsSource;
     private final String groovySource;
     private final String jexlSource;
+    private final String fluxonSource;
     private final IntSupplier javaNative;
 
     ScriptScenario(String name, String description, String novaSource, String jsSource,
-                   String groovySource, String jexlSource, IntSupplier javaNative) {
+                   String groovySource, String jexlSource, String fluxonSource, IntSupplier javaNative) {
         this.name = name;
         this.description = description;
         this.novaSource = novaSource;
         this.jsSource = jsSource;
         this.groovySource = groovySource;
         this.jexlSource = jexlSource;
+        this.fluxonSource = fluxonSource;
         this.javaNative = javaNative;
     }
 
@@ -45,6 +47,10 @@ final class ScriptScenario {
 
     String getJexlSource() {
         return jexlSource;
+    }
+
+    String getFluxonSource() {
+        return fluxonSource;
     }
 
     int runJavaNative() {

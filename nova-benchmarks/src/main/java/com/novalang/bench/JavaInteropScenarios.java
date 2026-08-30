@@ -28,61 +28,61 @@ final class JavaInteropScenarios {
         Map<String, ScriptScenario> s = new LinkedHashMap<String, ScriptScenario>();
         s.put("java_static_call", new ScriptScenario(
                 "java_static_call", "Java static method dispatch (Math.abs × 10000)",
-                novaStaticCall(), jsStaticCall(), groovyStaticCall(), jexlStaticCall(),
+                novaStaticCall(), jsStaticCall(), groovyStaticCall(), jexlStaticCall(), null,
                 new java.util.function.IntSupplier() {
                     @Override public int getAsInt() { return javaStaticCall(); }
                 }));
         s.put("java_object_create", new ScriptScenario(
                 "java_object_create", "Java object creation + instance method (ArrayList.add × 5000)",
-                novaObjectCreate(), jsObjectCreate(), groovyObjectCreate(), jexlObjectCreate(),
+                novaObjectCreate(), jsObjectCreate(), groovyObjectCreate(), jexlObjectCreate(), null,
                 new java.util.function.IntSupplier() {
                     @Override public int getAsInt() { return javaObjectCreate(); }
                 }));
         s.put("java_field_access", new ScriptScenario(
                 "java_field_access", "Java static field access (Integer.MAX_VALUE × 10000)",
-                novaFieldAccess(), jsFieldAccess(), groovyFieldAccess(), jexlFieldAccess(),
+                novaFieldAccess(), jsFieldAccess(), groovyFieldAccess(), jexlFieldAccess(), null,
                 new java.util.function.IntSupplier() {
                     @Override public int getAsInt() { return javaFieldAccess(); }
                 }));
         s.put("java_string_builder", new ScriptScenario(
                 "java_string_builder", "Java StringBuilder chain (append × 3000)",
-                novaStringBuilder(), jsStringBuilder(), groovyStringBuilder(), jexlStringBuilder(),
+                novaStringBuilder(), jsStringBuilder(), groovyStringBuilder(), jexlStringBuilder(), null,
                 new java.util.function.IntSupplier() {
                     @Override public int getAsInt() { return javaStringBuilder(); }
                 }));
         s.put("java_collection_sort", new ScriptScenario(
                 "java_collection_sort", "Java Collections.sort with script comparator (1000 elements)",
-                novaCollectionSort(), jsCollectionSort(), groovyCollectionSort(), jexlCollectionSort(),
+                novaCollectionSort(), jsCollectionSort(), groovyCollectionSort(), jexlCollectionSort(), null,
                 new java.util.function.IntSupplier() {
                     @Override public int getAsInt() { return javaCollectionSort(); }
                 }));
         s.put("java_type_convert", new ScriptScenario(
                 "java_type_convert", "Cross-boundary type conversion (Integer.valueOf × 10000)",
-                novaTypeConvert(), jsTypeConvert(), groovyTypeConvert(), jexlTypeConvert(),
+                novaTypeConvert(), jsTypeConvert(), groovyTypeConvert(), jexlTypeConvert(), null,
                 new java.util.function.IntSupplier() {
                     @Override public int getAsInt() { return javaTypeConvert(); }
                 }));
         s.put("java_hashmap_ops", new ScriptScenario(
                 "java_hashmap_ops", "HashMap put/get/containsKey (3000 entries)",
-                novaHashMapOps(), jsHashMapOps(), groovyHashMapOps(), jexlHashMapOps(),
+                novaHashMapOps(), jsHashMapOps(), groovyHashMapOps(), jexlHashMapOps(), null,
                 new java.util.function.IntSupplier() {
                     @Override public int getAsInt() { return javaHashMapOps(); }
                 }));
         s.put("java_string_methods", new ScriptScenario(
                 "java_string_methods", "String method chain (substring/indexOf/replace × 5000)",
-                novaStringMethods(), jsStringMethods(), groovyStringMethods(), jexlStringMethods(),
+                novaStringMethods(), jsStringMethods(), groovyStringMethods(), jexlStringMethods(), null,
                 new java.util.function.IntSupplier() {
                     @Override public int getAsInt() { return javaStringMethods(); }
                 }));
         s.put("java_exception_handle", new ScriptScenario(
                 "java_exception_handle", "Integer.parseInt with try-catch (5000 calls, 50% fail)",
-                novaExceptionHandle(), jsExceptionHandle(), groovyExceptionHandle(), jexlExceptionHandle(),
+                novaExceptionHandle(), jsExceptionHandle(), groovyExceptionHandle(), jexlExceptionHandle(), null,
                 new java.util.function.IntSupplier() {
                     @Override public int getAsInt() { return javaExceptionHandle(); }
                 }));
         s.put("java_mixed_compute", new ScriptScenario(
                 "java_mixed_compute", "Mixed script logic + Java API (2000 iterations)",
-                novaMixedCompute(), jsMixedCompute(), groovyMixedCompute(), jexlMixedCompute(),
+                novaMixedCompute(), jsMixedCompute(), groovyMixedCompute(), jexlMixedCompute(), null,
                 new java.util.function.IntSupplier() {
                     @Override public int getAsInt() { return javaMixedCompute(); }
                 }));

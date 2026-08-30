@@ -21,6 +21,10 @@ class ScriptEngineComparisonSmokeTest {
             int novaEval = ScriptBenchSupport.toInt(ScriptBenchSupport.evalNova(scenario.getNovaSource()));
             assertEquals(expected, novaEval, scenario.getName() + " nova eval");
 
+            // Fluxon eval
+            int fluxonEval = ScriptBenchSupport.toInt(ScriptBenchSupport.evalFluxon(scenario.getFluxonSource()));
+            assertEquals(expected, fluxonEval, scenario.getName() + " fluxon eval");
+
             // Nashorn eval
             int nashornEval = ScriptBenchSupport.toInt(
                     ScriptBenchSupport.newNashornEngine().eval(scenario.getJsSource()));
@@ -30,6 +34,12 @@ class ScriptEngineComparisonSmokeTest {
             CompiledNova novaCompiled = ScriptBenchSupport.compileNova(scenario.getNovaSource());
             int novaCompiledResult = ScriptBenchSupport.toInt(novaCompiled.run());
             assertEquals(expected, novaCompiledResult, scenario.getName() + " nova compiled");
+
+            // Fluxon compiled
+            FluxonCompiledScript fluxonCompiled = ScriptBenchSupport.compileFluxon(
+                    scenario.getFluxonSource(), "Fluxon" + scenario.getName());
+            int fluxonCompiledResult = ScriptBenchSupport.toInt(fluxonCompiled.run());
+            assertEquals(expected, fluxonCompiledResult, scenario.getName() + " fluxon compiled");
 
             // Nashorn compiled
             CompiledScript nashornCompiled = ScriptBenchSupport.compileNashorn(scenario.getJsSource());

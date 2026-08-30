@@ -5,28 +5,28 @@ import java.util.Collections;
 import java.util.List;
 import java.util.function.Supplier;
 
-public final class HostObjectDescriptor extends HostSymbolDescriptor {
-    private final HostTypeRef type;
+public final class JavaObjectDescriptor extends JavaSymbolDescriptor {
+    private final JavaTypeRef type;
     private final Object value;
     private final Supplier<?> supplier;
-    private final List<HostSymbolDescriptor> members;
+    private final List<JavaSymbolDescriptor> members;
 
-    public HostObjectDescriptor(String name,
-                                HostTypeRef type,
+    public JavaObjectDescriptor(String name,
+                                JavaTypeRef type,
                                 String documentation,
                                 String deprecatedMessage,
                                 List<String> examples,
                                 Object value,
                                 Supplier<?> supplier,
-                                List<HostSymbolDescriptor> members) {
-        super(name, HostSymbolKind.OBJECT, documentation, deprecatedMessage, examples);
-        this.type = type != null ? type : HostTypes.ANY;
+                                List<JavaSymbolDescriptor> members) {
+        super(name, JavaSymbolKind.OBJECT, documentation, deprecatedMessage, examples);
+        this.type = type != null ? type : JavaTypeRefs.ANY;
         this.value = value;
         this.supplier = supplier;
-        this.members = Collections.unmodifiableList(new ArrayList<HostSymbolDescriptor>(members != null ? members : Collections.<HostSymbolDescriptor>emptyList()));
+        this.members = Collections.unmodifiableList(new ArrayList<JavaSymbolDescriptor>(members != null ? members : Collections.<JavaSymbolDescriptor>emptyList()));
     }
 
-    public HostTypeRef getType() {
+    public JavaTypeRef getType() {
         return type;
     }
 
@@ -38,7 +38,7 @@ public final class HostObjectDescriptor extends HostSymbolDescriptor {
         return supplier;
     }
 
-    public List<HostSymbolDescriptor> getMembers() {
+    public List<JavaSymbolDescriptor> getMembers() {
         return members;
     }
 }

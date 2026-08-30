@@ -818,10 +818,10 @@ int sum = result.toJava(int.class);  // 7
 
 ### FunctionBuilder 泛型化 invoke
 
-`HostBindingRegistry.FunctionBuilder` 新增类型安全的 invoke 重载，自动转换参数类型：
+`JavaTypes.FunctionBuilder` 新增类型安全的 invoke 重载，自动转换参数类型：
 
 ```java
-HostBindingRegistry registry = HostBindingRegistry.builder()
+JavaTypes registry = JavaTypes.builder()
     .globalFunction("add", fn -> fn
         .invoke2(Integer.class, Integer.class, (a, b) -> a + b))
     .globalFunction("greet", fn -> fn

@@ -5,16 +5,16 @@ import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-@DisplayName("HostBindingRegistry 测试")
-class HostBindingRegistryTest {
+@DisplayName("JavaTypes 测试")
+class JavaTypesTest {
 
     @Test
     @DisplayName("命名空间解析会合并 default 与 extends")
     void resolveNamespaceMergesDefaultAndParents() {
-        HostBindingRegistry registry = HostBindingRegistry.builder()
+        JavaTypes registry = JavaTypes.builder()
                 .globalFunction("log", function -> function
-                        .param("message", HostTypes.STRING)
-                        .returns(HostTypes.UNIT)
+                        .param("message", JavaTypeRefs.STRING)
+                        .returns(JavaTypeRefs.UNIT)
                         .doc("输出日志"))
                 .namespace("default", namespace -> namespace
                         .variable("player", variable -> variable
@@ -22,39 +22,39 @@ class HostBindingRegistryTest {
                                 .readonly()))
                 .namespace("rewardBase", namespace -> namespace
                         .function("grantBase", function -> function
-                                .param("count", HostTypes.INT)
-                                .returns(HostTypes.UNIT)))
+                                .param("count", JavaTypeRefs.INT)
+                                .returns(JavaTypeRefs.UNIT)))
                 .namespace("reward", namespace -> namespace
                         .extendsNamespace("rewardBase")
                         .function("giveItem", function -> function
-                                .param("itemId", HostTypes.STRING)
-                                .param("count", HostTypes.INT)
-                                .returns(HostTypes.UNIT)))
+                                .param("itemId", JavaTypeRefs.STRING)
+                                .param("count", JavaTypeRefs.INT)
+                                .returns(JavaTypeRefs.UNIT)))
                 .build();
 
-        HostNamespaceDescriptor resolved = registry.resolveNamespace("reward");
+        JavaNamespaceDescriptor resolved = registry.resolveNamespace("reward");
 
         assertThat(resolved.getGlobals())
-                .extracting(HostSymbolDescriptor::getName)
+                .extracting(JavaSymbolDescriptor::getName)
                 .containsExactly("log", "player", "grantBase", "giveItem");
     }
 
     @Test
     @DisplayName("JSON 导出包含 globals 与 namespaces")
     void jsonWriterExportsExpectedShape() {
-        HostBindingRegistry registry = HostBindingRegistry.builder()
+        JavaTypes registry = JavaTypes.builder()
                 .globalVariable("player", variable -> variable
                         .type("Player")
                         .doc("当前玩家"))
                 .namespace("reward", namespace -> namespace
                         .function("giveItem", function -> function
-                                .param("itemId", HostTypes.STRING)
-                                .param("count", HostTypes.INT)
-                                .returns(HostTypes.UNIT)
+                                .param("itemId", JavaTypeRefs.STRING)
+                                .param("count", JavaTypeRefs.INT)
+                                .returns(JavaTypeRefs.UNIT)
                                 .doc("发放奖励")))
                 .build();
 
-        String json = HostBindingJsonWriter.toJson(registry);
+        String json = JavaTypesJsonWriter.toJson(registry);
 
         assertThat(json).contains("\"version\": 1");
         assertThat(json).contains("\"globals\"");

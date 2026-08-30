@@ -19,6 +19,8 @@ import org.graalvm.polyglot.Value;
 
 import com.novalang.runtime.CompiledNova;
 import com.novalang.runtime.Nova;
+import org.tabooproject.fluxon.Fluxon;
+import org.tabooproject.fluxon.compiler.CompileResult;
 
 final class ScriptBenchSupport {
 
@@ -35,6 +37,20 @@ final class ScriptBenchSupport {
 
     static CompiledNova compileNova(String source) {
         return new Nova().compileToBytecode(source);
+    }
+
+    // ---- Fluxon ----
+
+    static Object evalFluxon(String source) {
+        return Fluxon.eval(source);
+    }
+
+    static CompileResult compileFluxonOnly(String source, String className) {
+        return Fluxon.compile(source, className);
+    }
+
+    static FluxonCompiledScript compileFluxon(String source, String className) {
+        return FluxonCompiledScript.compile(source, className);
     }
 
     // ---- Nashorn (JSR 223) ----

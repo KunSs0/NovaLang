@@ -5,6 +5,7 @@ import com.novalang.runtime.resolution.JavaOverloadResolver;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.lang.reflect.Constructor;
+import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -176,6 +177,39 @@ public final class JavaTypeDescriptor {
             overloads.add(toExecutableDescriptor(ctor));
         }
         return overloads;
+    }
+
+    public NovaType resolveProperty(String memberName, boolean staticOnly) {
+        Class<?> javaClass = loadJavaClass();
+        if (javaClass == null || memberName == null || memberName.isEmpty()) {
+            return null;
+        }
+        try {
+            Field field = javaClass.getField(memberName);
+            if (Modifier.isStatic(field.getModifiers()) == staticOnly) {
+                return JavaTypeOracle.get().toNovaType(field.getType(), false);
+            }
+        } catch (NoSuchFieldException ignored) {
+        }
+
+        String capitalized = Character.toUpperCase(memberName.charAt(0)) + memberName.substring(1);
+        String[] getterNames = { "get" + capitalized, "is" + capitalized, memberName };
+        for (String getterName : getterNames) {
+            try {
+                Method getter = javaClass.getMethod(getterName);
+                if (Modifier.isStatic(getter.getModifiers()) != staticOnly) {
+                    continue;
+                }
+                if ("is".concat(capitalized).equals(getterName)
+                        && getter.getReturnType() != Boolean.TYPE
+                        && getter.getReturnType() != Boolean.class) {
+                    continue;
+                }
+                return JavaTypeOracle.get().toNovaType(getter.getReturnType(), false);
+            } catch (NoSuchMethodException ignored) {
+            }
+        }
+        return null;
     }
 
     private JavaExecutableDescriptor toExecutableDescriptor(Method method) {
