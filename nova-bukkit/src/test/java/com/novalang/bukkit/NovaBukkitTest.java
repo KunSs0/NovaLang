@@ -14,6 +14,8 @@ import org.bukkit.Server;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandSender;
+import org.bukkit.block.Container;
+import org.bukkit.block.Furnace;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.EntityEquipment;
 import org.bukkit.plugin.Plugin;
@@ -67,7 +69,7 @@ class NovaBukkitTest {
     @DisplayName("完整领域注册器不会生成重复扩展签名")
     void shouldExposeExpandedBukkitExtensionsWithoutDuplicates() {
         JavaTypes types = NovaBukkit.create();
-        assertEquals(1410, types.extensions().size());
+        assertEquals(1421, types.extensions().size());
         assertTrue(types.extensionProperties().size() > 100);
         assertTrue(hasProperty(types, Location.class, "x", true));
         assertTrue(hasProperty(types, Player.class, "name", false));
@@ -116,6 +118,10 @@ class NovaBukkitTest {
                 variable -> variable.type(Plugin.class).value(emptyProxy(Plugin.class)));
         builder.globalVariable("testRunnable",
                 variable -> variable.type(Runnable.class).value((Runnable) () -> { }));
+        builder.globalVariable("testContainer",
+                variable -> variable.type(Container.class).value(emptyProxy(Container.class)));
+        builder.globalVariable("testFurnace",
+                variable -> variable.type(Furnace.class).value(emptyProxy(Furnace.class)));
         Nova nova = new Nova();
         nova.install(builder.build());
 
@@ -167,6 +173,15 @@ class NovaBukkitTest {
         assertDoesNotThrow(() -> nova.compileToBytecode(
                 "testScheduler.runTask(testPlugin, testRunnable)",
                 "bukkit-scheduler-run-valid.nova"));
+        assertDoesNotThrow(() -> nova.compileToBytecode(
+                "testContainer.inventory().size()",
+                "bukkit-container-extension-valid.nova"));
+        assertDoesNotThrow(() -> nova.compileToBytecode(
+                "testContainer.setLock(\"vault\")",
+                "bukkit-lockable-extension-valid.nova"));
+        assertDoesNotThrow(() -> nova.compileToBytecode(
+                "testFurnace.setBurnTime(200)",
+                "bukkit-furnace-extension-valid.nova"));
         assertThrows(RuntimeException.class, () -> nova.compileToBytecode(
                 "location(1.0, 2.0, 3.0).missingMember", "bukkit-location-invalid.nova"));
         assertThrows(RuntimeException.class, () -> nova.compileToBytecode(
