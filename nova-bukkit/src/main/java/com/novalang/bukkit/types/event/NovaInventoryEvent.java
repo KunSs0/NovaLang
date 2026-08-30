@@ -22,6 +22,7 @@ import java.util.Map;
 import java.util.Set;
 
 /** 常用库存事件的 Spigot 1.12.2 别名。 */
+@SuppressWarnings("deprecation")
 public final class NovaInventoryEvent {
     private NovaInventoryEvent() { }
 
@@ -42,10 +43,14 @@ public final class NovaInventoryEvent {
         b.extension(InventoryClickEvent.class, "isRightClick", f -> f.returns(Boolean.class).invoke(a -> click(a).isRightClick()));
         b.extension(InventoryClickEvent.class, "isLeftClick", f -> f.returns(Boolean.class).invoke(a -> click(a).isLeftClick()));
         b.extension(InventoryClickEvent.class, "isShiftClick", f -> f.returns(Boolean.class).invoke(a -> click(a).isShiftClick()));
+        b.extension(InventoryClickEvent.class, "setCursor", f -> f.param("cursor", nullableItem).invoke(a -> { click(a).setCursor(NovaTypeSupport.argument(a, 1, ItemStack.class)); return null; }));
+        b.extension(InventoryClickEvent.class, "setCurrentItem", f -> f.param("item", nullableItem).invoke(a -> { click(a).setCurrentItem(NovaTypeSupport.argument(a, 1, ItemStack.class)); return null; }));
         b.extension(InventoryDragEvent.class, "newItems", f -> f.returns(Map.class).invoke(a -> drag(a).getNewItems()));
         b.extension(InventoryDragEvent.class, "rawSlots", f -> f.returns(Set.class).invoke(a -> drag(a).getRawSlots()));
         b.extension(InventoryDragEvent.class, "inventorySlots", f -> f.returns(Set.class).invoke(a -> drag(a).getInventorySlots()));
         b.extension(InventoryDragEvent.class, "oldCursor", f -> f.returns(nullableItem).invoke(a -> drag(a).getOldCursor()));
+        b.extension(InventoryDragEvent.class, "cursor", f -> f.returns(nullableItem).invoke(a -> drag(a).getCursor()));
+        b.extension(InventoryDragEvent.class, "setCursor", f -> f.param("cursor", nullableItem).invoke(a -> { drag(a).setCursor(NovaTypeSupport.argument(a, 1, ItemStack.class)); return null; }));
         b.extension(InventoryDragEvent.class, "dragType", f -> f.returns(DragType.class).invoke(a -> drag(a).getType()));
         b.extension(InventoryOpenEvent.class, "player", f -> f.returns(HumanEntity.class).invoke(a -> open(a).getPlayer()));
         b.extension(InventoryCloseEvent.class, "player", f -> f.returns(HumanEntity.class).invoke(a -> close(a).getPlayer()));

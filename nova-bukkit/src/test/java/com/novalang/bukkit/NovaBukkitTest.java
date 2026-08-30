@@ -122,7 +122,7 @@ class NovaBukkitTest {
     @DisplayName("完整领域注册器不会生成重复扩展签名")
     void shouldExposeExpandedBukkitExtensionsWithoutDuplicates() {
         JavaTypes types = NovaBukkit.create();
-        assertEquals(1708, types.extensions().size());
+        assertEquals(1727, types.extensions().size());
         assertTrue(types.extensionProperties().size() > 100);
         assertTrue(hasProperty(types, Location.class, "x", true));
         assertTrue(hasProperty(types, Player.class, "name", false));
@@ -179,6 +179,12 @@ class NovaBukkitTest {
         assertTrue(hasExtension(types, org.bukkit.event.server.ServerListPingEvent.class, "setServerIcon"));
         assertTrue(hasExtension(types, org.bukkit.event.server.ServiceEvent.class, "provider"));
         assertTrue(hasExtension(types, org.bukkit.event.server.TabCompleteEvent.class, "setCompletions"));
+        assertTrue(hasExtension(types, org.bukkit.event.inventory.InventoryClickEvent.class, "setCursor"));
+        assertTrue(hasExtension(types, org.bukkit.event.inventory.InventoryMoveItemEvent.class, "setItem"));
+        assertTrue(hasExtension(types, org.bukkit.event.inventory.CraftItemEvent.class, "recipe"));
+        assertTrue(hasExtension(types, org.bukkit.event.inventory.PrepareItemCraftEvent.class, "isRepair"));
+        assertTrue(hasExtension(types, org.bukkit.event.inventory.BrewEvent.class, "fuelLevel"));
+        assertTrue(hasExtension(types, org.bukkit.event.inventory.PrepareAnvilEvent.class, "setResult"));
 
         Set<String> signatures = new LinkedHashSet<String>();
         for (JavaExtensionDescriptor extension : types.extensions()) {
