@@ -6,6 +6,7 @@ import com.novalang.bukkit.types.entity.NovaEntity;
 import com.novalang.bukkit.types.entity.NovaEntityHierarchy;
 import com.novalang.bukkit.types.entity.NovaPlayer;
 import com.novalang.bukkit.types.enums.NovaEnum;
+import com.novalang.bukkit.types.event.NovaEventTypes;
 import com.novalang.bukkit.types.gameplay.NovaGameplay;
 import com.novalang.bukkit.types.inventory.NovaWorldInventory;
 import com.novalang.bukkit.types.platform.NovaPlatform;
@@ -59,6 +60,7 @@ public final class NovaBukkit {
         NovaServerPlatform.register(builder);
         NovaGameplay.register(builder);
         NovaEnum.register(builder);
+        NovaEventTypes.register(builder);
         builder.javaBeanPropertiesFromExtensions();
         return builder;
     }

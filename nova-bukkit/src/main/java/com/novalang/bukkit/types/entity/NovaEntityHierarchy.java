@@ -14,6 +14,8 @@ public final class NovaEntityHierarchy {
         NovaHumanEntity.register(builder);
         NovaPlayerExtra.register(builder);
         NovaCreature.register(builder);
+        NovaEntityCommon.register(builder);
+        NovaDamageable.register(builder);
         NovaProjectile.register(builder);
         NovaVehicle.register(builder);
     }

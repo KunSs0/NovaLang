@@ -43,8 +43,11 @@ public final class NovaWorldObject {
         builder.extension(WorldCreator.class, "type", f -> f.param("type", WorldType.class).returns(WorldCreator.class).invoke(a -> supportCreator(a).type(arg(a, 1, WorldType.class))));
         builder.extension(WorldCreator.class, "generator", f -> f.returns(JavaTypeRef.javaType(org.bukkit.generator.ChunkGenerator.class).nullable()).invoke(a -> supportCreator(a).generator()));
         builder.extension(WorldCreator.class, "generator", f -> f.param("name", String.class).returns(WorldCreator.class).invoke(a -> supportCreator(a).generator(arg(a, 1, String.class))));
+        builder.extension(WorldCreator.class, "generator", f -> f.param("generator", org.bukkit.generator.ChunkGenerator.class).returns(WorldCreator.class).invoke(a -> supportCreator(a).generator(arg(a, 1, org.bukkit.generator.ChunkGenerator.class))));
         builder.extension(WorldCreator.class, "generateStructures", f -> f.returns(Boolean.class).invoke(a -> supportCreator(a).generateStructures()));
         builder.extension(WorldCreator.class, "generateStructures", f -> f.param("generate", Boolean.class).returns(WorldCreator.class).invoke(a -> supportCreator(a).generateStructures(arg(a, 1, Boolean.class))));
+        builder.extension(WorldCreator.class, "generatorSettings", f -> f.returns(String.class).invoke(a -> supportCreator(a).generatorSettings()));
+        builder.extension(WorldCreator.class, "generatorSettings", f -> f.param("settings", String.class).returns(WorldCreator.class).invoke(a -> supportCreator(a).generatorSettings(arg(a, 1, String.class))));
         builder.extension(WorldCreator.class, "createWorld", f -> f.returns(JavaTypeRef.javaType(World.class).nullable()).invoke(a -> supportCreator(a).createWorld()));
     }
 

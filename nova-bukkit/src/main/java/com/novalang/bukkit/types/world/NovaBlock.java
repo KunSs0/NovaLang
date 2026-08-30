@@ -48,7 +48,14 @@ final class NovaBlock {
         builder.extension(Block.class, "pistonMoveReaction", f -> f.returns(PistonMoveReaction.class).invoke(a -> block(a).getPistonMoveReaction()));
         builder.extension(Block.class, "getRelative", f -> f.param("face", BlockFace.class).returns(Block.class).invoke(a -> block(a).getRelative(arg(a, 1, BlockFace.class))));
         builder.extension(Block.class, "getRelative", f -> f.param("face", BlockFace.class).param("distance", Integer.class).returns(Block.class).invoke(a -> block(a).getRelative(arg(a, 1, BlockFace.class), arg(a, 2, Integer.class))));
+        builder.extension(Block.class, "getRelative", f -> f.param("modX", Integer.class).param("modY", Integer.class).param("modZ", Integer.class).returns(Block.class).invoke(a -> block(a).getRelative(arg(a, 1, Integer.class), arg(a, 2, Integer.class), arg(a, 3, Integer.class))));
         builder.extension(Block.class, "getFace", f -> f.param("block", Block.class).returns(JavaTypeRef.javaType(BlockFace.class).nullable()).invoke(a -> block(a).getFace(arg(a, 1, Block.class))));
+        builder.extension(Block.class, "isBlockPowered", f -> f.returns(Boolean.class).invoke(a -> block(a).isBlockPowered()));
+        builder.extension(Block.class, "isBlockIndirectlyPowered", f -> f.returns(Boolean.class).invoke(a -> block(a).isBlockIndirectlyPowered()));
+        builder.extension(Block.class, "isBlockFacePowered", f -> f.param("face", BlockFace.class).returns(Boolean.class).invoke(a -> block(a).isBlockFacePowered(arg(a, 1, BlockFace.class))));
+        builder.extension(Block.class, "isBlockFaceIndirectlyPowered", f -> f.param("face", BlockFace.class).returns(Boolean.class).invoke(a -> block(a).isBlockFaceIndirectlyPowered(arg(a, 1, BlockFace.class))));
+        builder.extension(Block.class, "blockPower", f -> f.returns(Integer.class).invoke(a -> block(a).getBlockPower()));
+        builder.extension(Block.class, "getBlockPower", f -> f.param("face", BlockFace.class).returns(Integer.class).invoke(a -> block(a).getBlockPower(arg(a, 1, BlockFace.class))));
         builder.extension(Block.class, "breakNaturally", f -> f.returns(Boolean.class).invoke(a -> block(a).breakNaturally()));
         builder.extension(Block.class, "breakNaturally", f -> f.param("tool", ItemStack.class).returns(Boolean.class).invoke(a -> block(a).breakNaturally(arg(a, 1, ItemStack.class))));
         builder.extension(Block.class, "drops", f -> f.returns(JavaTypeRef.javaType(Collection.class)).invoke(a -> block(a).getDrops()));

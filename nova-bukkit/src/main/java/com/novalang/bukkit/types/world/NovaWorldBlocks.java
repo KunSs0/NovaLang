@@ -16,5 +16,6 @@ public final class NovaWorldBlocks {
         NovaMaterialData.register(builder);
         NovaMap.register(builder);
         NovaGenerator.register(builder);
+        NovaBlockIterator.register(builder);
     }
 }
