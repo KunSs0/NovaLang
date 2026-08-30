@@ -82,6 +82,9 @@ public final class NovaEventTypes {
         NovaHangingWeatherEvents.register(builder);
         NovaWorldEventTypes.register(builder);
         NovaPlayerGameplayEvents.register(builder);
+        NovaBlockExtraEvents.register(builder);
+        NovaEntityExtraEvents.register(builder);
+        NovaPlayerExtraEvents.register(builder);
         builder.extension(Event.class, "handlerList", function -> function
                 .returns(HandlerList.class)
                 .invoke(arguments -> NovaTypeSupport.argument(arguments, 0, Event.class).getHandlers()));
