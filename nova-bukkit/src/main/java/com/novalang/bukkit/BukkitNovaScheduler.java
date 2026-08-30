@@ -1,6 +1,5 @@
 package com.novalang.bukkit;
 
-import com.novalang.runtime.NovaScheduler;
 import org.bukkit.Bukkit;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitTask;
@@ -8,11 +7,11 @@ import org.bukkit.scheduler.BukkitTask;
 import java.util.concurrent.Executor;
 
 /**
- * Bukkit/Spigot 环境下的 {@link NovaScheduler} 实现。
+ * Bukkit/Spigot 环境下的 {@link com.novalang.runtime.NovaScheduler} 实现。
  *
  * <p>由 NovaLang 平台插件通过 {@link BukkitSchedulers#register(JavaPlugin)} 注册。</p>
  */
-public final class BukkitNovaScheduler implements NovaScheduler {
+public final class BukkitNovaScheduler implements com.novalang.runtime.NovaScheduler {
 
     private final JavaPlugin plugin;
     private final Executor mainExec;

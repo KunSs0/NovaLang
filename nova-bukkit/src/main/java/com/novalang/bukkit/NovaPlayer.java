@@ -11,9 +11,9 @@ import java.util.ArrayList;
 import java.util.UUID;
 
 /** Bukkit Player 全局查询入口和 Fluxon 函数别名。 */
-final class BukkitPlayerJavaTypes {
+final class NovaPlayer {
 
-    private BukkitPlayerJavaTypes() {
+    private NovaPlayer() {
     }
 
     static void register(JavaTypes.Builder builder) {
@@ -39,27 +39,27 @@ final class BukkitPlayerJavaTypes {
     private static void registerExtensions(JavaTypes.Builder builder) {
         builder.extension(Player.class, "name", function -> function
                 .returns(String.class)
-                .invoke(arguments -> BukkitJavaTypeSupport.argument(arguments, 0, Player.class).getName()));
+                .invoke(arguments -> NovaTypeSupport.argument(arguments, 0, Player.class).getName()));
         builder.extension(Player.class, "displayName", function -> function
                 .returns(String.class)
-                .invoke(arguments -> BukkitJavaTypeSupport.argument(arguments, 0, Player.class).getDisplayName()));
+                .invoke(arguments -> NovaTypeSupport.argument(arguments, 0, Player.class).getDisplayName()));
         builder.extension(Player.class, "playerListName", function -> function
                 .returns(String.class)
-                .invoke(arguments -> BukkitJavaTypeSupport.argument(arguments, 0, Player.class).getPlayerListName()));
+                .invoke(arguments -> NovaTypeSupport.argument(arguments, 0, Player.class).getPlayerListName()));
         builder.extension(Player.class, "compassTarget", function -> function
                 .returns(Location.class)
-                .invoke(arguments -> BukkitJavaTypeSupport.argument(arguments, 0, Player.class).getCompassTarget()));
+                .invoke(arguments -> NovaTypeSupport.argument(arguments, 0, Player.class).getCompassTarget()));
         builder.extension(Player.class, "bedSpawnLocation", function -> function
                 .returns(JavaTypeRef.javaType(Location.class).nullable())
-                .invoke(arguments -> BukkitJavaTypeSupport.argument(arguments, 0, Player.class).getBedSpawnLocation()));
+                .invoke(arguments -> NovaTypeSupport.argument(arguments, 0, Player.class).getBedSpawnLocation()));
         builder.extension(Player.class, "playerTime", function -> function
                 .returns(Long.class)
-                .invoke(arguments -> BukkitJavaTypeSupport.argument(arguments, 0, Player.class).getPlayerTime()));
+                .invoke(arguments -> NovaTypeSupport.argument(arguments, 0, Player.class).getPlayerTime()));
         builder.extension(Player.class, "playerWeather", function -> function
                 .returns(JavaTypeRef.javaType(WeatherType.class).nullable())
-                .invoke(arguments -> BukkitJavaTypeSupport.argument(arguments, 0, Player.class).getPlayerWeather()));
+                .invoke(arguments -> NovaTypeSupport.argument(arguments, 0, Player.class).getPlayerWeather()));
         builder.extension(Player.class, "healthScale", function -> function
                 .returns(Double.class)
-                .invoke(arguments -> BukkitJavaTypeSupport.argument(arguments, 0, Player.class).getHealthScale()));
+                .invoke(arguments -> NovaTypeSupport.argument(arguments, 0, Player.class).getHealthScale()));
     }
 }

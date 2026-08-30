@@ -8,9 +8,9 @@ import org.bukkit.World;
 import java.util.UUID;
 
 /** Bukkit World 全局查询入口。 */
-final class BukkitWorldJavaTypes {
+final class NovaWorld {
 
-    private BukkitWorldJavaTypes() {
+    private NovaWorld() {
     }
 
     static void register(JavaTypes.Builder builder) {

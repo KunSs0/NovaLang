@@ -1,6 +1,5 @@
 package com.novalang.bukkit;
 
-import com.novalang.runtime.NovaScheduler;
 import org.bukkit.plugin.java.JavaPlugin;
 
 /**
@@ -14,7 +13,7 @@ public final class NovaBukkitPlugin extends JavaPlugin {
 
     private static volatile NovaBukkitPlugin instance;
 
-    private NovaScheduler scheduler;
+    private com.novalang.runtime.NovaScheduler scheduler;
 
     /**
      * 在业务插件加载前注册全局 Bukkit 调度器。
@@ -38,7 +37,7 @@ public final class NovaBukkitPlugin extends JavaPlugin {
     @Override
     public void onEnable() {
         if (getCommand("nova") != null) {
-            getCommand("nova").setExecutor(new NovaCommand());
+            getCommand("nova").setExecutor(new NovaPluginCommand());
         }
     }
 

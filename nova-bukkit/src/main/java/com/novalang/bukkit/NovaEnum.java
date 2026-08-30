@@ -53,9 +53,9 @@ import org.bukkit.potion.PotionType;
 import org.bukkit.scoreboard.DisplaySlot;
 
 /** Spigot 1.12.2 基础枚举全局查询入口。 */
-final class BukkitEnumJavaTypes {
+final class NovaEnum {
 
-    private BukkitEnumJavaTypes() {
+    private NovaEnum() {
     }
 
     static void register(JavaTypes.Builder builder) {
@@ -117,6 +117,6 @@ final class BukkitEnumJavaTypes {
         builder.globalFunction(functionName, function -> function
                 .param("name", String.class)
                 .returns(JavaTypeRef.javaType(enumClass).nullable())
-                .invoke1(String.class, value -> BukkitJavaTypeSupport.findEnum(enumClass, value)));
+                .invoke1(String.class, value -> NovaTypeSupport.findEnum(enumClass, value)));
     }
 }

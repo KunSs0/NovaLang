@@ -8,9 +8,9 @@ import org.bukkit.Sound;
 import org.bukkit.util.Vector;
 
 /** Bukkit 常用值对象构造和转换入口。 */
-final class BukkitValueJavaTypes {
+final class NovaValueFactory {
 
-    private BukkitValueJavaTypes() {
+    private NovaValueFactory() {
     }
 
     static void register(JavaTypes.Builder builder) {
@@ -23,7 +23,7 @@ final class BukkitValueJavaTypes {
         builder.globalFunction("color", function -> function
                 .param("hex", String.class)
                 .returns(Color.class)
-                .invoke1(String.class, BukkitValueJavaTypes::parseColor));
+                .invoke1(String.class, NovaValueFactory::parseColor));
         builder.globalFunction("color", function -> function
                 .param("rgb", Integer.class)
                 .returns(Color.class)
@@ -45,11 +45,11 @@ final class BukkitValueJavaTypes {
         builder.globalFunction("sound", function -> function
                 .param("name", String.class)
                 .returns(Sound.class)
-                .invoke1(String.class, BukkitValueJavaTypes::requireSound));
+                .invoke1(String.class, NovaValueFactory::requireSound));
         builder.globalFunction("soundOrNull", function -> function
                 .param("name", String.class)
                 .returns(JavaTypeRef.javaType(Sound.class).nullable())
-                .invoke1(String.class, BukkitValueJavaTypes::findSound));
+                .invoke1(String.class, NovaValueFactory::findSound));
     }
 
     private static Color parseColor(String value) {
@@ -66,6 +66,6 @@ final class BukkitValueJavaTypes {
     }
 
     private static Sound findSound(String value) {
-        return BukkitJavaTypeSupport.findEnum(Sound.class, value);
+        return NovaTypeSupport.findEnum(Sound.class, value);
     }
 }

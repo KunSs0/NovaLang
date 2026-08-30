@@ -1,6 +1,5 @@
 package com.novalang.bukkit;
 
-import com.novalang.runtime.NovaScheduler;
 import com.novalang.runtime.SchedulerHolder;
 import com.novalang.runtime.interpreter.Interpreter;
 import org.bukkit.plugin.java.JavaPlugin;
@@ -29,18 +28,18 @@ public final class BukkitSchedulers {
      * @throws IllegalArgumentException 插件实例为空时抛出
      * @throws IllegalStateException 已存在全局调度器时抛出
      */
-    public static NovaScheduler register(JavaPlugin plugin) {
+    public static com.novalang.runtime.NovaScheduler register(JavaPlugin plugin) {
         if (plugin == null) {
             throw new IllegalArgumentException("The Bukkit plugin must not be null.");
         }
 
-        NovaScheduler registered = SchedulerHolder.get();
+        com.novalang.runtime.NovaScheduler registered = SchedulerHolder.get();
         if (registered != null) {
             throw new IllegalStateException("A Nova scheduler has already been registered.");
         }
 
         // 调度器必须在业务 Workspace 加载前完成唯一注册。
-        NovaScheduler scheduler = create(plugin);
+        com.novalang.runtime.NovaScheduler scheduler = create(plugin);
         SchedulerHolder.set(scheduler);
         return scheduler;
     }
@@ -52,12 +51,12 @@ public final class BukkitSchedulers {
      * @throws IllegalArgumentException 调度器为空时抛出
      * @throws IllegalStateException 当前全局调度器不属于调用方时抛出
      */
-    public static void unregister(NovaScheduler scheduler) {
+    public static void unregister(com.novalang.runtime.NovaScheduler scheduler) {
         if (scheduler == null) {
             throw new IllegalArgumentException("The Nova scheduler must not be null.");
         }
 
-        NovaScheduler registered = SchedulerHolder.get();
+        com.novalang.runtime.NovaScheduler registered = SchedulerHolder.get();
         if (registered != scheduler) {
             throw new IllegalStateException("The registered Nova scheduler is not owned by this plugin.");
         }
@@ -73,7 +72,7 @@ public final class BukkitSchedulers {
      * @return 调度器实例
      * @throws IllegalArgumentException 插件实例为空时抛出
      */
-    public static NovaScheduler create(JavaPlugin plugin) {
+    public static com.novalang.runtime.NovaScheduler create(JavaPlugin plugin) {
         if (plugin == null) {
             throw new IllegalArgumentException("The Bukkit plugin must not be null.");
         }

@@ -455,13 +455,13 @@ JavaTypes registry = JavaTypes.builder()
 
 ```java
 // 单体 Nova
-Nova nova = BukkitJavaTypes.install(new Nova());
+Nova nova = NovaBukkit.install(new Nova());
 
 // Workspace：在每次创建 Workspace 独占 Nova 时安装
-RuntimeWorkspace workspace = new RuntimeWorkspace(configFile, BukkitJavaTypes::install);
+RuntimeWorkspace workspace = new RuntimeWorkspace(configFile, NovaBukkit::install);
 ```
 
-业务插件还要增加自己的 API 时，应使用 `BukkitJavaTypes.builder()` 继续追加后一次性
+业务插件还要增加自己的 API 时，应使用 `NovaBukkit.builder()` 继续追加后一次性
 `build()`、`nova.install(...)`，避免后一次安装的新注册表替换前一次编译期视图。
 
 `nova-bukkit` 当前声明的基线是 Spigot API 1.12.2。Particle、Advancement 和 1.20+

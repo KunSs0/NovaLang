@@ -5,9 +5,9 @@ import org.bukkit.Bukkit;
 import org.bukkit.Server;
 
 /** Bukkit Server 全局入口。 */
-final class BukkitServerJavaTypes {
+final class NovaServer {
 
-    private BukkitServerJavaTypes() {
+    private NovaServer() {
     }
 
     static void register(JavaTypes.Builder builder) {

@@ -12,9 +12,9 @@ import com.novalang.runtime.host.JavaTypes;
  * <p>该基础表以当前模块声明的 Spigot API 1.12.2 为准，不包含新版 Particle、
  * Advancement 或 Paper 专有 API。</p>
  */
-public final class BukkitJavaTypes {
+public final class NovaBukkit {
 
-    private BukkitJavaTypes() {
+    private NovaBukkit() {
     }
 
     public static JavaTypes create() {
@@ -33,13 +33,19 @@ public final class BukkitJavaTypes {
     /** 创建预装 Bukkit API 的 builder，业务插件可继续追加自己的 JavaTypes。 */
     public static JavaTypes.Builder builder() {
         JavaTypes.Builder builder = JavaTypes.builder();
-        BukkitServerJavaTypes.register(builder);
-        BukkitWorldJavaTypes.register(builder);
-        BukkitPlayerJavaTypes.register(builder);
-        BukkitLocationJavaTypes.register(builder);
-        BukkitEntityJavaTypes.register(builder);
-        BukkitValueJavaTypes.register(builder);
-        BukkitEnumJavaTypes.register(builder);
+        NovaServer.register(builder);
+        NovaWorld.register(builder);
+        NovaPlayer.register(builder);
+        NovaLocation.register(builder);
+        NovaEntity.register(builder);
+        NovaEntityHierarchy.register(builder);
+        NovaWorldInventory.register(builder);
+        NovaWorldBlocks.register(builder);
+        NovaValueFactory.register(builder);
+        NovaPlatform.register(builder);
+        NovaServerPlatform.register(builder);
+        NovaGameplay.register(builder);
+        NovaEnum.register(builder);
         return builder;
     }
 }
