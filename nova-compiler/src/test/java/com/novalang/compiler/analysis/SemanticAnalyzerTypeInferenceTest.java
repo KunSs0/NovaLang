@@ -107,6 +107,14 @@ class SemanticAnalyzerTypeInferenceTest {
         }
 
         @Test
+        @DisplayName("emptyList() → List<Any>")
+        void emptyListFactory() {
+            AnalysisResult r = analyze("val list = emptyList()");
+            assertNoDiagnostics(r);
+            assertSymbolType(r, "list", "List<Any>");
+        }
+
+        @Test
         @DisplayName("listOf(Int, Long) 数值提升 → List<Long>")
         void listOfNumericPromotion() {
             AnalysisResult r = analyze("val list = listOf(1, 2L)");
@@ -180,6 +188,14 @@ class SemanticAnalyzerTypeInferenceTest {
         @DisplayName("mapOf() 空 → Map<Any, Any>")
         void mapOfEmpty() {
             AnalysisResult r = analyze("val m = mapOf()");
+            assertSymbolType(r, "m", "Map<Any, Any>");
+        }
+
+        @Test
+        @DisplayName("emptyMap() → Map<Any, Any>")
+        void emptyMapFactory() {
+            AnalysisResult r = analyze("val m = emptyMap()");
+            assertNoDiagnostics(r);
             assertSymbolType(r, "m", "Map<Any, Any>");
         }
 

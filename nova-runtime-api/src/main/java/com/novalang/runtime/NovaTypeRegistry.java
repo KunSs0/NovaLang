@@ -448,6 +448,7 @@ public final class NovaTypeRegistry {
         registerFunction("toInt", "toInt(value)", 1, "将数值或字符串转换为整数", "Int");
         registerFunction("toLong", "toLong(value)", 1, "将数值或字符串转换为长整数", "Long");
         registerFunction("toDouble", "toDouble(value)", 1, "将数值或字符串转换为浮点数", "Double");
+        registerFunction("toFloat", "toFloat(value)", 1, "将数值或字符串转换为单精度浮点数", "Float");
         registerFunction("toBoolean", "toBoolean(value)", 1, "将任意值转换为布尔值", "Boolean");
         // 类型检查
         registerFunction("typeof", "typeof(value)", 1, "获取值的类型名称", "String");
@@ -455,8 +456,10 @@ public final class NovaTypeRegistry {
         // 集合
         registerFunction("listOf", "listOf(elements...)", -1, "创建列表", "List");
         registerFunction("mutableListOf", "mutableListOf(elements...)", -1, "创建可变列表", "List");
+        registerFunction("emptyList", "emptyList()", 0, "创建空列表", "List");
         registerFunction("mapOf", "mapOf(pairs...)", -1, "创建 Map（参数为 key1, value1, key2, value2...）", "Map");
         registerFunction("mutableMapOf", "mutableMapOf(pairs...)", -1, "创建可变 Map", "Map");
+        registerFunction("emptyMap", "emptyMap()", 0, "创建空 Map", "Map");
         registerFunction("setOf", "setOf(elements...)", -1, "创建 Set", "Set");
         registerFunction("mutableSetOf", "mutableSetOf(elements...)", -1, "创建可变 Set", "Set");
         registerFunction("Pair", "Pair(first, second)", 2, "创建二元组", "Pair");

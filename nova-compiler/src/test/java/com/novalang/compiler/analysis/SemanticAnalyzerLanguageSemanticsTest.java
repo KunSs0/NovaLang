@@ -378,6 +378,22 @@ class SemanticAnalyzerLanguageSemanticsTest {
     }
 
     @Test
+    @DisplayName("nova.json wildcard imports should register JSON functions")
+    void jsonWildcardImportShouldRegisterJsonFunctions() {
+        AnalysisResult result = analyze(
+                "import nova.json.*\n" +
+                "val parsed = jsonParse(\"{}\")\n" +
+                "val encoded = jsonStringify(parsed)\n" +
+                "val pretty = jsonStringifyPretty(parsed)");
+
+        assertNoDiagnostics(result,
+                "nova.json wildcard imports should expose JSON functions during semantic analysis");
+        assertSymbolType(result, "parsed", "dynamic");
+        assertSymbolType(result, "encoded", "String");
+        assertSymbolType(result, "pretty", "String");
+    }
+
+    @Test
     @DisplayName("inferred mutable variables should keep their original static type")
     void inferredMutableVariablesShouldNotWidenAfterReassignment() {
         AnalysisResult result = analyze(
@@ -2005,6 +2021,16 @@ class SemanticAnalyzerLanguageSemanticsTest {
         assertSymbolType(result, "z", "String");
         assertSymbolType(result, "aa", "Boolean");
         assertSymbolType(result, "ab", "String");
+    }
+
+    @Test
+    @DisplayName("global toFloat should be registered and infer Float")
+    void globalToFloatShouldBeRegistered() {
+        AnalysisResult result = analyze("val value = toFloat(3.5)");
+
+        assertNoDiagnostics(result,
+                "The global toFloat conversion should be available during semantic analysis");
+        assertSymbolType(result, "value", "Float");
     }
 
     @Test

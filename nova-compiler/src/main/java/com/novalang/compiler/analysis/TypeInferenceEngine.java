@@ -150,6 +150,9 @@ public final class TypeInferenceEngine {
                 NovaType elem = inferCommonArgType(args);
                 return NovaTypes.listOf(elem != null ? elem : NovaTypes.ANY);
             }
+            case "emptyList": {
+                return NovaTypes.listOf(NovaTypes.ANY);
+            }
             case "arrayOf": {
                 NovaType elem = inferCommonArgType(args);
                 NovaType e = elem != null ? elem : NovaTypes.ANY;
@@ -164,6 +167,8 @@ public final class TypeInferenceEngine {
             case "mapOf":
             case "mutableMapOf":
                 return inferMapFactoryType(args);
+            case "emptyMap":
+                return NovaTypes.mapOf(NovaTypes.ANY, NovaTypes.ANY);
             case "Pair": {
                 if (args.size() == 2) {
                     NovaType k = exprNovaTypeMap.get(args.get(0).getValue());

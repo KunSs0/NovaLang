@@ -64,6 +64,10 @@ public final class BuiltinModuleExports {
         registerFunction(LANG_DOT + "system", "totalMemory", 0, "Long");
         registerFunction(LANG_DOT + "system", "freeMemory", 0, "Long");
 
+        registerFunction(LANG_DOT + "json", "jsonParse", 1, "dynamic");
+        registerFunction(LANG_DOT + "json", "jsonStringify", 1, "String");
+        registerFunction(LANG_DOT + "json", "jsonStringifyPretty", 1, "String");
+
         registerFunction(LANG_DOT + "test", "test", 2, "Unit");
         registerFunction(LANG_DOT + "test", "testGroup", 2, "Unit");
         registerFunction(LANG_DOT + "test", "runTests", 0, "Map");
