@@ -25,6 +25,12 @@ public final class NovaEventTypes {
         NovaBukkitRegistrar.register(builder, NovaPlayerDeathEvent.class, NovaPlayerDeathEvent::register);
         NovaBukkitRegistrar.register(builder, NovaPlayerItemDamageEvent.class, NovaPlayerItemDamageEvent::register);
         NovaBukkitRegistrar.register(builder, NovaPlayerItemBreakEvent.class, NovaPlayerItemBreakEvent::register);
+        NovaBukkitRegistrar.register(builder, NovaPlayerInteractEntityEvent.class, NovaPlayerInteractEntityEvent::register);
+        NovaBukkitRegistrar.register(builder, NovaPlayerInteractAtEntityEvent.class, NovaPlayerInteractAtEntityEvent::register);
+        NovaBukkitRegistrar.register(builder, NovaPlayerItemConsumeEvent.class, NovaPlayerItemConsumeEvent::register);
+        NovaBukkitRegistrar.register(builder, NovaPlayerItemHeldEvent.class, NovaPlayerItemHeldEvent::register);
+        NovaBukkitRegistrar.register(builder, NovaPlayerDropItemEvent.class, NovaPlayerDropItemEvent::register);
+        NovaBukkitRegistrar.register(builder, NovaPlayerPickupItemEvent.class, NovaPlayerPickupItemEvent::register);
         NovaBukkitRegistrar.register(builder, NovaPlayerRespawnEvent.class, NovaPlayerRespawnEvent::register);
         builder.extension(Event.class, "handlerList", function -> function
                 .returns(HandlerList.class)

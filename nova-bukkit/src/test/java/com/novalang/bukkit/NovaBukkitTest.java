@@ -32,7 +32,13 @@ import org.bukkit.event.block.BlockDamageEvent;
 import org.bukkit.event.block.BlockMultiPlaceEvent;
 import org.bukkit.event.player.AsyncPlayerChatEvent;
 import org.bukkit.event.player.PlayerItemBreakEvent;
+import org.bukkit.event.player.PlayerItemConsumeEvent;
 import org.bukkit.event.player.PlayerItemDamageEvent;
+import org.bukkit.event.player.PlayerItemHeldEvent;
+import org.bukkit.event.player.PlayerDropItemEvent;
+import org.bukkit.event.player.PlayerInteractEntityEvent;
+import org.bukkit.event.player.PlayerInteractAtEntityEvent;
+import org.bukkit.event.player.PlayerPickupItemEvent;
 import org.bukkit.event.player.PlayerRespawnEvent;
 import org.bukkit.inventory.EntityEquipment;
 import org.bukkit.plugin.Plugin;
@@ -86,7 +92,7 @@ class NovaBukkitTest {
     @DisplayName("完整领域注册器不会生成重复扩展签名")
     void shouldExposeExpandedBukkitExtensionsWithoutDuplicates() {
         JavaTypes types = NovaBukkit.create();
-        assertEquals(1523, types.extensions().size());
+        assertEquals(1533, types.extensions().size());
         assertTrue(types.extensionProperties().size() > 100);
         assertTrue(hasProperty(types, Location.class, "x", true));
         assertTrue(hasProperty(types, Player.class, "name", false));
@@ -97,6 +103,12 @@ class NovaBukkitTest {
         assertTrue(hasExtension(types, BlockMultiPlaceEvent.class, "replacedBlockStates"));
         assertTrue(hasExtension(types, PlayerItemDamageEvent.class, "setDamage"));
         assertTrue(hasExtension(types, PlayerItemBreakEvent.class, "brokenItem"));
+        assertTrue(hasExtension(types, PlayerInteractEntityEvent.class, "rightClicked"));
+        assertTrue(hasExtension(types, PlayerInteractAtEntityEvent.class, "clickedPosition"));
+        assertTrue(hasExtension(types, PlayerItemConsumeEvent.class, "setItem"));
+        assertTrue(hasExtension(types, PlayerItemHeldEvent.class, "previousSlot"));
+        assertTrue(hasExtension(types, PlayerDropItemEvent.class, "itemDrop"));
+        assertTrue(hasExtension(types, PlayerPickupItemEvent.class, "remaining"));
         assertTrue(hasExtension(types, PlayerRespawnEvent.class, "setRespawnLocation"));
 
         Set<String> signatures = new LinkedHashSet<String>();
