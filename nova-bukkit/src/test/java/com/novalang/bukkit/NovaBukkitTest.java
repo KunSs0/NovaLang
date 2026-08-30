@@ -27,7 +27,14 @@ import org.bukkit.entity.Creeper;
 import org.bukkit.entity.Horse;
 import org.bukkit.entity.Minecart;
 import org.bukkit.event.entity.EntityRegainHealthEvent;
+import org.bukkit.event.entity.EntityBreedEvent;
+import org.bukkit.event.entity.EntityCombustEvent;
+import org.bukkit.event.entity.EntityPickupItemEvent;
+import org.bukkit.event.entity.EntityPortalEvent;
+import org.bukkit.event.entity.EntityTargetLivingEntityEvent;
+import org.bukkit.event.entity.EntityTeleportEvent;
 import org.bukkit.event.entity.PlayerDeathEvent;
+import org.bukkit.event.entity.CreatureSpawnEvent;
 import org.bukkit.event.block.BlockDamageEvent;
 import org.bukkit.event.block.BlockIgniteEvent;
 import org.bukkit.event.block.BlockMultiPlaceEvent;
@@ -100,7 +107,7 @@ class NovaBukkitTest {
     @DisplayName("完整领域注册器不会生成重复扩展签名")
     void shouldExposeExpandedBukkitExtensionsWithoutDuplicates() {
         JavaTypes types = NovaBukkit.create();
-        assertEquals(1548, types.extensions().size());
+        assertEquals(1569, types.extensions().size());
         assertTrue(types.extensionProperties().size() > 100);
         assertTrue(hasProperty(types, Location.class, "x", true));
         assertTrue(hasProperty(types, Player.class, "name", false));
@@ -124,6 +131,13 @@ class NovaBukkitTest {
         assertTrue(hasExtension(types, BlockPistonEvent.class, "isSticky"));
         assertTrue(hasExtension(types, BlockPistonExtendEvent.class, "blocks"));
         assertTrue(hasExtension(types, BlockPistonRetractEvent.class, "blocks"));
+        assertTrue(hasExtension(types, EntityCombustEvent.class, "setDuration"));
+        assertTrue(hasExtension(types, EntityTeleportEvent.class, "setTo"));
+        assertTrue(hasExtension(types, EntityPortalEvent.class, "setPortalTravelAgent"));
+        assertTrue(hasExtension(types, EntityTargetLivingEntityEvent.class, "setTarget"));
+        assertTrue(hasExtension(types, EntityPickupItemEvent.class, "remaining"));
+        assertTrue(hasExtension(types, CreatureSpawnEvent.class, "spawnReason"));
+        assertTrue(hasExtension(types, EntityBreedEvent.class, "setExperience"));
         assertTrue(hasExtension(types, PlayerRespawnEvent.class, "setRespawnLocation"));
 
         Set<String> signatures = new LinkedHashSet<String>();
