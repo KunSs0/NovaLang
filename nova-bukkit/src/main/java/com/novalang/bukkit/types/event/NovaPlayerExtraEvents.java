@@ -22,5 +22,6 @@ public final class NovaPlayerExtraEvents {
         NovaBukkitRegistrar.register(b, NovaPlayerItemMendEvent.class, NovaPlayerItemMendEvent::register);
         NovaBukkitRegistrar.register(b, NovaPlayerArmorStandManipulateEvent.class, NovaPlayerArmorStandManipulateEvent::register);
         NovaBukkitRegistrar.register(b, NovaPlayerAchievementAwardedEvent.class, NovaPlayerAchievementAwardedEvent::register);
+        NovaBukkitRegistrar.register(b, NovaPlayerPreLoginEvent.class, NovaPlayerPreLoginEvent::register);
     }
 }

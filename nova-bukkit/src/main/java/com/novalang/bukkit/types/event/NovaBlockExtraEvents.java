@@ -13,5 +13,6 @@ public final class NovaBlockExtraEvents {
         NovaBukkitRegistrar.register(builder, NovaBlockFormEvent.class, NovaBlockFormEvent::register);
         NovaBukkitRegistrar.register(builder, NovaBlockCanBuildEvent.class, NovaBlockCanBuildEvent::register);
         NovaBukkitRegistrar.register(builder, NovaBlockExpEvent.class, NovaBlockExpEvent::register);
+        NovaBukkitRegistrar.register(builder, NovaCauldronLevelChangeEvent.class, NovaCauldronLevelChangeEvent::register);
     }
 }
