@@ -26,6 +26,7 @@ final class NovaBlock {
         JavaTypeRef nullableLocation = JavaTypeRef.javaType(Location.class).nullable();
         builder.extension(Block.class, "type", f -> f.returns(Material.class).invoke(a -> block(a).getType()));
         builder.extension(Block.class, "setType", f -> f.param("type", Material.class).invoke(a -> { block(a).setType(arg(a, 1, Material.class)); return null; }));
+        builder.extension(Block.class, "setType", f -> f.param("type", Material.class).param("applyPhysics", Boolean.class).invoke(a -> { block(a).setType(arg(a, 1, Material.class), arg(a, 2, Boolean.class)); return null; }));
         builder.extension(Block.class, "data", f -> f.returns(Integer.class).invoke(a -> (int) block(a).getData()));
         builder.extension(Block.class, "setData", f -> f.param("data", Integer.class).invoke(a -> { block(a).setData(arg(a, 1, Integer.class).byteValue()); return null; }));
         builder.extension(Block.class, "state", f -> f.returns(BlockState.class).invoke(a -> block(a).getState()));
