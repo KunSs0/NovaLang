@@ -35,6 +35,7 @@ final class NovaChunk {
         builder.extension(Chunk.class, "load", f -> f.param("generate", Boolean.class).returns(Boolean.class).invoke(a -> chunk(a).load(arg(a, 1, Boolean.class))));
         builder.extension(Chunk.class, "unload", f -> f.returns(Boolean.class).invoke(a -> chunk(a).unload()));
         builder.extension(Chunk.class, "unload", f -> f.param("save", Boolean.class).returns(Boolean.class).invoke(a -> chunk(a).unload(arg(a, 1, Boolean.class))));
+        builder.extension(Chunk.class, "unload", f -> f.param("save", Boolean.class).param("safe", Boolean.class).returns(Boolean.class).invoke(a -> chunk(a).unload(arg(a, 1, Boolean.class), arg(a, 2, Boolean.class))));
         builder.extension(Chunk.class, "isSlimeChunk", f -> f.returns(Boolean.class).invoke(a -> chunk(a).isSlimeChunk()));
     }
 
