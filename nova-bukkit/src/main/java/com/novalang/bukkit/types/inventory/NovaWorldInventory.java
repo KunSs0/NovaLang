@@ -19,6 +19,9 @@ public final class NovaWorldInventory {
         NovaPlayerInventory.register(builder);
         NovaItemStack.register(builder);
         NovaItemMeta.register(builder);
+        NovaItemFactory.register(builder);
+        NovaShapedRecipe.register(builder);
+        NovaShapelessRecipe.register(builder);
         NovaBukkitRegistrar.register(builder, NovaSkullMeta.class, NovaSkullMeta::register);
         NovaBukkitRegistrar.register(builder, NovaBookMeta.class, NovaBookMeta::register);
         NovaBukkitRegistrar.register(builder, NovaPotionMeta.class, NovaPotionMeta::register);
