@@ -23,6 +23,9 @@ import org.bukkit.block.Furnace;
 import org.bukkit.block.Jukebox;
 import org.bukkit.block.Sign;
 import org.bukkit.entity.Player;
+import org.bukkit.entity.Creeper;
+import org.bukkit.entity.Horse;
+import org.bukkit.entity.Minecart;
 import org.bukkit.inventory.EntityEquipment;
 import org.bukkit.plugin.Plugin;
 import org.bukkit.plugin.PluginDescriptionFile;
@@ -75,7 +78,7 @@ class NovaBukkitTest {
     @DisplayName("完整领域注册器不会生成重复扩展签名")
     void shouldExposeExpandedBukkitExtensionsWithoutDuplicates() {
         JavaTypes types = NovaBukkit.create();
-        assertEquals(1462, types.extensions().size());
+        assertEquals(1489, types.extensions().size());
         assertTrue(types.extensionProperties().size() > 100);
         assertTrue(hasProperty(types, Location.class, "x", true));
         assertTrue(hasProperty(types, Player.class, "name", false));
@@ -140,6 +143,12 @@ class NovaBukkitTest {
                 variable -> variable.type(CommandBlock.class).value(emptyProxy(CommandBlock.class)));
         builder.globalVariable("testSpawner",
                 variable -> variable.type(CreatureSpawner.class).value(emptyProxy(CreatureSpawner.class)));
+        builder.globalVariable("testCreeper",
+                variable -> variable.type(Creeper.class).value(emptyProxy(Creeper.class)));
+        builder.globalVariable("testHorse",
+                variable -> variable.type(Horse.class).value(emptyProxy(Horse.class)));
+        builder.globalVariable("testMinecart",
+                variable -> variable.type(Minecart.class).value(emptyProxy(Minecart.class)));
         Nova nova = new Nova();
         nova.install(builder.build());
 
@@ -218,6 +227,15 @@ class NovaBukkitTest {
         assertDoesNotThrow(() -> nova.compileToBytecode(
                 "testSpawner.setSpawnCount(4)",
                 "bukkit-spawner-extension-valid.nova"));
+        assertDoesNotThrow(() -> nova.compileToBytecode(
+                "testCreeper.setExplosionRadius(4)",
+                "bukkit-creeper-extension-valid.nova"));
+        assertDoesNotThrow(() -> nova.compileToBytecode(
+                "testHorse.setCarryingChest(true)",
+                "bukkit-horse-extension-valid.nova"));
+        assertDoesNotThrow(() -> nova.compileToBytecode(
+                "testMinecart.setMaxSpeed(0.8)",
+                "bukkit-minecart-extension-valid.nova"));
         assertThrows(RuntimeException.class, () -> nova.compileToBytecode(
                 "location(1.0, 2.0, 3.0).missingMember", "bukkit-location-invalid.nova"));
         assertThrows(RuntimeException.class, () -> nova.compileToBytecode(
