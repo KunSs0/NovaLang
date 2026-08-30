@@ -4,8 +4,8 @@
 
 Nova 已经具备宿主绑定描述与运行时安装能力：
 
-- `JavaTypes` 可以描述全局变量、函数、对象、对象成员、参数类型和返回类型。
-- `JavaTypesInstaller` 可以把宿主变量、对象和函数安装到 `Nova` 实例。
+- `JavaTypes` 可以描述全局变量、函数、对象、对象成员、按 Java 类型注册的扩展函数、参数类型和返回类型。
+- `JavaTypesInstaller` 可以把宿主变量、对象、函数和扩展函数安装到 `Nova` 实例。
 - `RuntimeWorkspace` 会在编译脚本前调用宿主安装逻辑。
 - `SemanticAnalyzer` 已具备 Nova 类型检查、Java 成员解析和 Java 重载解析能力。
 
@@ -440,10 +440,33 @@ JavaTypes registry = JavaTypes.builder()
                 .param("name", JavaTypeRefs.STRING)
                 .returns(JavaTypeRef.javaType(Player.class))
                 .invoke1(String.class, Bukkit::getPlayerExact))
+        .extension(Player.class, "name", function -> function
+                .returns(String.class)
+                // 扩展 invoker 的 arguments[0] 固定为 receiver。
+                .invoke(arguments -> ((Player) arguments[0]).getName()))
         .build();
 ```
 
-以上示例表达目标 API，`javaType` 等结构化类型接口需要按本设计补充。
+扩展函数描述中的参数列表不包含 receiver；运行时 invoker 的参数数组按
+`[receiver, arg0, arg1, ...]` 排列。该描述会同时进入编译器和运行时扩展注册表，
+因此 `player("Alex")?.name()` 的成员存在性、参数和返回类型都能在编译阶段确认。
+
+当前 Bukkit 基础实现位于 `nova-bukkit`：
+
+```java
+// 单体 Nova
+Nova nova = BukkitJavaTypes.install(new Nova());
+
+// Workspace：在每次创建 Workspace 独占 Nova 时安装
+RuntimeWorkspace workspace = new RuntimeWorkspace(configFile, BukkitJavaTypes::install);
+```
+
+业务插件还要增加自己的 API 时，应使用 `BukkitJavaTypes.builder()` 继续追加后一次性
+`build()`、`nova.install(...)`，避免后一次安装的新注册表替换前一次编译期视图。
+
+`nova-bukkit` 当前声明的基线是 Spigot API 1.12.2。Particle、Advancement 和 1.20+
+专有枚举不进入基础层；若要完整复刻新版 Fluxon `platform-bukkit`，应建立明确版本模块，
+不能在基础类中通过反射或缺类兜底静默降级。
 
 对于较大的 Bukkit API，可按资源模块拆分：
 

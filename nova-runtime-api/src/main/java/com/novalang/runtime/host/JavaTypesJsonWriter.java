@@ -46,6 +46,7 @@ public final class JavaTypesJsonWriter {
         JsonObject root = new JsonObject();
         root.addProperty("version", 1);
         root.add("globals", toSymbolsArray(registry.globals()));
+        root.add("extensions", toExtensionsArray(registry.extensions()));
 
         JsonObject namespaces = new JsonObject();
         for (Map.Entry<String, JavaNamespaceDescriptor> entry : registry.namespaces().entrySet()) {
@@ -60,10 +61,22 @@ public final class JavaTypesJsonWriter {
                 namespaceObj.add("extends", extendsArray);
             }
             namespaceObj.add("globals", toSymbolsArray(namespace.getGlobals()));
+            namespaceObj.add("extensions", toExtensionsArray(namespace.getExtensions()));
             namespaces.add(entry.getKey(), namespaceObj);
         }
         root.add("namespaces", namespaces);
         return root;
+    }
+
+    private static JsonArray toExtensionsArray(Iterable<JavaExtensionDescriptor> extensions) {
+        JsonArray array = new JsonArray();
+        for (JavaExtensionDescriptor extension : extensions) {
+            JsonObject object = new JsonObject();
+            object.addProperty("targetType", extension.getTargetType().getName());
+            object.add("function", toSymbolObject(extension.getFunction()));
+            array.add(object);
+        }
+        return array;
     }
 
     private static JsonArray toSymbolsArray(Iterable<JavaSymbolDescriptor> symbols) {

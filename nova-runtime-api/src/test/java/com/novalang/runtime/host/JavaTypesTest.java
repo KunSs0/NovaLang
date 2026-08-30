@@ -21,6 +21,8 @@ class JavaTypesTest {
                                 .type("Player")
                                 .readonly()))
                 .namespace("rewardBase", namespace -> namespace
+                        .extension(CharSequence.class, "trimmed", function -> function
+                                .returns(JavaTypeRefs.STRING))
                         .function("grantBase", function -> function
                                 .param("count", JavaTypeRefs.INT)
                                 .returns(JavaTypeRefs.UNIT)))
@@ -37,6 +39,9 @@ class JavaTypesTest {
         assertThat(resolved.getGlobals())
                 .extracting(JavaSymbolDescriptor::getName)
                 .containsExactly("log", "player", "grantBase", "giveItem");
+        assertThat(resolved.getExtensions())
+                .extracting(extension -> extension.getFunction().getName())
+                .containsExactly("trimmed");
     }
 
     @Test
@@ -46,6 +51,8 @@ class JavaTypesTest {
                 .globalVariable("player", variable -> variable
                         .type("Player")
                         .doc("当前玩家"))
+                .extension(String.class, "shout", function -> function
+                        .returns(JavaTypeRefs.STRING))
                 .namespace("reward", namespace -> namespace
                         .function("giveItem", function -> function
                                 .param("itemId", JavaTypeRefs.STRING)
@@ -62,5 +69,8 @@ class JavaTypesTest {
         assertThat(json).contains("\"namespaces\"");
         assertThat(json).contains("\"reward\"");
         assertThat(json).contains("\"giveItem\"");
+        assertThat(json).contains("\"extensions\"");
+        assertThat(json).contains("\"targetType\": \"java.lang.String\"");
+        assertThat(json).contains("\"shout\"");
     }
 }

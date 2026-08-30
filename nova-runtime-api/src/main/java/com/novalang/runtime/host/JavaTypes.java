@@ -19,11 +19,14 @@ import com.novalang.runtime.NovaValueConversions;
 
 public final class JavaTypes {
     private final List<JavaSymbolDescriptor> globals;
+    private final List<JavaExtensionDescriptor> extensions;
     private final Map<String, JavaNamespaceDescriptor> namespaces;
 
     private JavaTypes(List<JavaSymbolDescriptor> globals,
+                      List<JavaExtensionDescriptor> extensions,
                       Map<String, JavaNamespaceDescriptor> namespaces) {
         this.globals = Collections.unmodifiableList(new ArrayList<JavaSymbolDescriptor>(globals));
+        this.extensions = Collections.unmodifiableList(new ArrayList<JavaExtensionDescriptor>(extensions));
         this.namespaces = Collections.unmodifiableMap(new LinkedHashMap<String, JavaNamespaceDescriptor>(namespaces));
     }
 
@@ -39,6 +42,10 @@ public final class JavaTypes {
         return namespaces;
     }
 
+    public List<JavaExtensionDescriptor> extensions() {
+        return extensions;
+    }
+
     public JavaNamespaceDescriptor namespace(String name) {
         return namespaces.get(name);
     }
@@ -51,14 +58,15 @@ public final class JavaTypes {
 
         LinkedHashMap<String, List<JavaSymbolDescriptor>> merged = new LinkedHashMap<String, List<JavaSymbolDescriptor>>();
         mergeSymbols(globals, merged);
+        List<JavaExtensionDescriptor> mergedExtensions = new ArrayList<JavaExtensionDescriptor>(extensions);
 
         Set<String> visiting = new LinkedHashSet<String>();
         Set<String> visited = new LinkedHashSet<String>();
         if (namespaces.containsKey("default")) {
-            mergeNamespace("default", merged, visiting, visited);
+            mergeNamespace("default", merged, mergedExtensions, visiting, visited);
         }
         if (!"default".equals(effectiveName)) {
-            mergeNamespace(effectiveName, merged, visiting, visited);
+            mergeNamespace(effectiveName, merged, mergedExtensions, visiting, visited);
         }
 
         JavaNamespaceDescriptor original = namespaces.get(effectiveName);
@@ -67,11 +75,12 @@ public final class JavaTypes {
         for (List<JavaSymbolDescriptor> descriptors : merged.values()) {
             flattened.addAll(descriptors);
         }
-        return new JavaNamespaceDescriptor(effectiveName, extendsNamespaces, flattened);
+        return new JavaNamespaceDescriptor(effectiveName, extendsNamespaces, flattened, mergedExtensions);
     }
 
     private void mergeNamespace(String namespaceName,
                                 LinkedHashMap<String, List<JavaSymbolDescriptor>> merged,
+                                List<JavaExtensionDescriptor> mergedExtensions,
                                 Set<String> visiting,
                                 Set<String> visited) {
         if (visited.contains(namespaceName)) {
@@ -90,10 +99,11 @@ public final class JavaTypes {
             if ("default".equals(parent) && visited.contains("default")) {
                 continue;
             }
-            mergeNamespace(parent, merged, visiting, visited);
+            mergeNamespace(parent, merged, mergedExtensions, visiting, visited);
         }
 
         mergeSymbols(descriptor.getGlobals(), merged);
+        mergedExtensions.addAll(descriptor.getExtensions());
         visiting.remove(namespaceName);
         visited.add(namespaceName);
     }
@@ -117,6 +127,7 @@ public final class JavaTypes {
 
     public static final class Builder {
         private final List<JavaSymbolDescriptor> globals = new ArrayList<JavaSymbolDescriptor>();
+        private final List<JavaExtensionDescriptor> extensions = new ArrayList<JavaExtensionDescriptor>();
         private final LinkedHashMap<String, NamespaceBuilder> namespaces = new LinkedHashMap<String, NamespaceBuilder>();
 
         public Builder globalVariable(String name, Consumer<VariableBuilder> spec) {
@@ -140,6 +151,17 @@ public final class JavaTypes {
             return this;
         }
 
+        /**
+         * 注册 Java 类型扩展函数。函数参数不包含 receiver，原始 invoker 收到的
+         * {@code arguments[0]} 固定为 receiver。
+         */
+        public Builder extension(Class<?> targetType, String name, Consumer<FunctionBuilder> spec) {
+            FunctionBuilder builder = new FunctionBuilder(name);
+            spec.accept(builder);
+            extensions.add(new JavaExtensionDescriptor(targetType, builder.build()));
+            return this;
+        }
+
         public Builder namespace(String name, Consumer<NamespaceBuilder> spec) {
             NamespaceBuilder builder = namespaces.computeIfAbsent(name, NamespaceBuilder::new);
             spec.accept(builder);
@@ -151,7 +173,7 @@ public final class JavaTypes {
             for (Map.Entry<String, NamespaceBuilder> entry : namespaces.entrySet()) {
                 builtNamespaces.put(entry.getKey(), entry.getValue().build());
             }
-            return new JavaTypes(globals, builtNamespaces);
+            return new JavaTypes(globals, extensions, builtNamespaces);
         }
     }
 
@@ -159,6 +181,7 @@ public final class JavaTypes {
         private final String name;
         private final List<String> extendsNamespaces = new ArrayList<String>();
         private final List<JavaSymbolDescriptor> globals = new ArrayList<JavaSymbolDescriptor>();
+        private final List<JavaExtensionDescriptor> extensions = new ArrayList<JavaExtensionDescriptor>();
 
         private NamespaceBuilder(String name) {
             if (name == null || name.trim().isEmpty()) {
@@ -196,8 +219,18 @@ public final class JavaTypes {
             return this;
         }
 
+        /**
+         * 在当前命名空间注册 Java 类型扩展函数。
+         */
+        public NamespaceBuilder extension(Class<?> targetType, String name, Consumer<FunctionBuilder> spec) {
+            FunctionBuilder builder = new FunctionBuilder(name);
+            spec.accept(builder);
+            extensions.add(new JavaExtensionDescriptor(targetType, builder.build()));
+            return this;
+        }
+
         private JavaNamespaceDescriptor build() {
-            return new JavaNamespaceDescriptor(name, extendsNamespaces, globals);
+            return new JavaNamespaceDescriptor(name, extendsNamespaces, globals, extensions);
         }
     }
 

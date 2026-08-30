@@ -555,6 +555,41 @@ public final class Nova {
         return this;
     }
 
+    /**
+     * 注册同时携带精确参数和返回类型的 Java 扩展方法。
+     *
+     * <p>解释器使用统一的 {@code interpreterMethod} 分派重载，编译产物则按这里提供的
+     * 参数类型从 {@link ExtensionRegistry} 选择具体实现。</p>
+     */
+    public Nova registerTypedExtension(Class<?> targetType,
+                                       String methodName,
+                                       NovaCallable interpreterMethod,
+                                       Class<?>[] parameterTypes,
+                                       Class<?> returnType,
+                                       ExtensionMethod<?, ?> compiledMethod) {
+        if (targetType == null) {
+            throw new IllegalArgumentException("targetType must not be null");
+        }
+        if (methodName == null || methodName.trim().isEmpty()) {
+            throw new IllegalArgumentException("methodName must not be empty");
+        }
+        if (interpreterMethod == null) {
+            throw new IllegalArgumentException("interpreterMethod must not be null");
+        }
+        if (parameterTypes == null) {
+            throw new IllegalArgumentException("parameterTypes must not be null");
+        }
+        if (returnType == null) {
+            throw new IllegalArgumentException("returnType must not be null");
+        }
+        if (compiledMethod == null) {
+            throw new IllegalArgumentException("compiledMethod must not be null");
+        }
+        interpreter.registerExtension(targetType, methodName, interpreterMethod);
+        extensionRegistry.register(targetType, methodName, parameterTypes, returnType, compiledMethod);
+        return this;
+    }
+
     ExtensionRegistry getExtensionRegistry() {
         return extensionRegistry;
     }

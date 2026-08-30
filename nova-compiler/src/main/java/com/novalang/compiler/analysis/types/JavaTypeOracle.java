@@ -79,13 +79,25 @@ public final class JavaTypeOracle {
     }
 
     public NovaType toNovaType(Class<?> javaClass, boolean nullable) {
-        if (javaClass == null || javaClass == Void.TYPE) return NovaTypes.UNIT;
-        if (javaClass == Integer.TYPE) return nullable ? NovaTypes.INT.withNullable(true) : NovaTypes.INT;
-        if (javaClass == Long.TYPE) return nullable ? NovaTypes.LONG.withNullable(true) : NovaTypes.LONG;
-        if (javaClass == Float.TYPE) return nullable ? NovaTypes.FLOAT.withNullable(true) : NovaTypes.FLOAT;
-        if (javaClass == Double.TYPE) return nullable ? NovaTypes.DOUBLE.withNullable(true) : NovaTypes.DOUBLE;
-        if (javaClass == Boolean.TYPE) return nullable ? NovaTypes.BOOLEAN.withNullable(true) : NovaTypes.BOOLEAN;
-        if (javaClass == Character.TYPE) return nullable ? NovaTypes.CHAR.withNullable(true) : NovaTypes.CHAR;
+        if (javaClass == null || javaClass == Void.TYPE || javaClass == Void.class) return NovaTypes.UNIT;
+        if (javaClass == Integer.TYPE || javaClass == Integer.class) {
+            return nullable ? NovaTypes.INT.withNullable(true) : NovaTypes.INT;
+        }
+        if (javaClass == Long.TYPE || javaClass == Long.class) {
+            return nullable ? NovaTypes.LONG.withNullable(true) : NovaTypes.LONG;
+        }
+        if (javaClass == Float.TYPE || javaClass == Float.class) {
+            return nullable ? NovaTypes.FLOAT.withNullable(true) : NovaTypes.FLOAT;
+        }
+        if (javaClass == Double.TYPE || javaClass == Double.class) {
+            return nullable ? NovaTypes.DOUBLE.withNullable(true) : NovaTypes.DOUBLE;
+        }
+        if (javaClass == Boolean.TYPE || javaClass == Boolean.class) {
+            return nullable ? NovaTypes.BOOLEAN.withNullable(true) : NovaTypes.BOOLEAN;
+        }
+        if (javaClass == Character.TYPE || javaClass == Character.class) {
+            return nullable ? NovaTypes.CHAR.withNullable(true) : NovaTypes.CHAR;
+        }
         if (javaClass == String.class) return nullable ? NovaTypes.STRING.withNullable(true) : NovaTypes.STRING;
         if (javaClass == Object.class) return nullable ? NovaTypes.ANY.withNullable(true) : NovaTypes.ANY;
 

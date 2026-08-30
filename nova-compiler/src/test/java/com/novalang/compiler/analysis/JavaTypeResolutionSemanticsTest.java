@@ -147,4 +147,16 @@ class JavaTypeResolutionSemanticsTest {
     void unknownJavaArgumentTypeShouldBeRepresentedAsObject() {
         assertEquals(Object.class, JavaTypeOracle.get().toJavaArgumentType(null));
     }
+
+    @Test
+    @DisplayName("boxed Java primitives should use Nova primitive types")
+    void boxedJavaPrimitivesShouldUseNovaPrimitiveTypes() {
+        assertEquals("Int", JavaTypeOracle.get().toNovaType(Integer.class, false).getTypeName());
+        assertEquals("Long", JavaTypeOracle.get().toNovaType(Long.class, false).getTypeName());
+        assertEquals("Float", JavaTypeOracle.get().toNovaType(Float.class, false).getTypeName());
+        assertEquals("Double", JavaTypeOracle.get().toNovaType(Double.class, false).getTypeName());
+        assertEquals("Boolean", JavaTypeOracle.get().toNovaType(Boolean.class, false).getTypeName());
+        assertEquals("Char", JavaTypeOracle.get().toNovaType(Character.class, false).getTypeName());
+        assertEquals("Unit", JavaTypeOracle.get().toNovaType(Void.class, false).getTypeName());
+    }
 }

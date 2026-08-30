@@ -123,8 +123,7 @@ public final class ExtensionRegistry {
     }
 
     public RegisteredExtension lookup(Class<?> receiverType, String methodName, Class<?>[] argTypes) {
-        int argCount = argTypes != null ? argTypes.length : 0;
-        String cacheKey = receiverType.getName() + "#" + methodName + "#" + argCount;
+        String cacheKey = lookupCacheKey(receiverType, methodName, argTypes);
         RegisteredExtension cached = lookupCache.get(cacheKey);
         if (cached != null) {
             return cached == LOOKUP_MISS ? null : cached;
@@ -172,14 +171,40 @@ public final class ExtensionRegistry {
             return null;
         }
 
-        // 查找参数匹配的方法
+        RegisteredExtension best = null;
+        int bestScore = Integer.MIN_VALUE;
+        boolean ambiguous = false;
         for (RegisteredExtension ext : methods) {
-            if (ext.matches(argTypes)) {
-                return ext;
+            int score = ext.matchScore(argTypes);
+            if (score > bestScore) {
+                best = ext;
+                bestScore = score;
+                ambiguous = false;
+            } else if (score != Integer.MIN_VALUE && score == bestScore) {
+                ambiguous = true;
             }
         }
+        if (ambiguous) {
+            throw new IllegalArgumentException("Ambiguous extension overload: "
+                    + targetType.getName() + "." + methodName);
+        }
+        return best;
+    }
 
-        return null;
+    private String lookupCacheKey(Class<?> receiverType, String methodName, Class<?>[] argTypes) {
+        StringBuilder key = new StringBuilder(receiverType.getName());
+        key.append('#').append(methodName).append('#');
+        if (argTypes != null) {
+            for (Class<?> argType : argTypes) {
+                if (argType == null) {
+                    key.append("<null>");
+                } else {
+                    key.append(argType.getName());
+                }
+                key.append(';');
+            }
+        }
+        return key.toString();
     }
 
     /**
@@ -260,18 +285,53 @@ public final class ExtensionRegistry {
          * 检查参数类型是否匹配
          */
         public boolean matches(Class<?>[] argTypes) {
+            return matchScore(argTypes) != Integer.MIN_VALUE;
+        }
+
+        int matchScore(Class<?>[] argTypes) {
             if (argTypes == null) {
                 argTypes = new Class<?>[0];
             }
             if (paramTypes.length != argTypes.length) {
-                return false;
+                return Integer.MIN_VALUE;
             }
+            int score = 0;
             for (int i = 0; i < paramTypes.length; i++) {
-                if (!paramTypes[i].isAssignableFrom(argTypes[i])) {
-                    return false;
+                Class<?> parameterType = boxedClass(paramTypes[i]);
+                Class<?> argumentType = argTypes[i] != null ? boxedClass(argTypes[i]) : null;
+                if (argumentType == null) {
+                    if (paramTypes[i].isPrimitive()) {
+                        return Integer.MIN_VALUE;
+                    }
+                    continue;
+                }
+                if (parameterType == argumentType) {
+                    score += 4;
+                } else if (parameterType.isAssignableFrom(argumentType)) {
+                    score += 2;
+                } else if (Number.class.isAssignableFrom(parameterType)
+                        && Number.class.isAssignableFrom(argumentType)) {
+                    score += 1;
+                } else {
+                    return Integer.MIN_VALUE;
                 }
             }
-            return true;
+            return score;
+        }
+
+        private static Class<?> boxedClass(Class<?> type) {
+            if (type == null || !type.isPrimitive()) {
+                return type;
+            }
+            if (type == Integer.TYPE) return Integer.class;
+            if (type == Long.TYPE) return Long.class;
+            if (type == Double.TYPE) return Double.class;
+            if (type == Float.TYPE) return Float.class;
+            if (type == Boolean.TYPE) return Boolean.class;
+            if (type == Character.TYPE) return Character.class;
+            if (type == Byte.TYPE) return Byte.class;
+            if (type == Short.TYPE) return Short.class;
+            return type;
         }
 
         /**

@@ -1,6 +1,7 @@
 package com.novalang.runtime.host;
 
 import com.novalang.runtime.AbstractNovaValue;
+import com.novalang.runtime.ExtensionMethod;
 import com.novalang.runtime.Nova;
 import com.novalang.runtime.NovaErrors;
 import com.novalang.runtime.NovaNull;
@@ -45,6 +46,105 @@ public final class JavaTypesInstaller {
         for (List<JavaFunctionDescriptor> overloads : functions.values()) {
             installFunctions(nova, overloads);
         }
+        installExtensions(nova, namespace.getExtensions());
+    }
+
+    private static void installExtensions(Nova nova, List<JavaExtensionDescriptor> extensions) {
+        Map<Class<?>, Map<String, List<JavaFunctionDescriptor>>> grouped =
+                new LinkedHashMap<Class<?>, Map<String, List<JavaFunctionDescriptor>>>();
+        for (JavaExtensionDescriptor extension : extensions) {
+            Class<?> targetType = extension.getTargetType();
+            Map<String, List<JavaFunctionDescriptor>> functionsByName = grouped.get(targetType);
+            if (functionsByName == null) {
+                functionsByName = new LinkedHashMap<String, List<JavaFunctionDescriptor>>();
+                grouped.put(targetType, functionsByName);
+            }
+            JavaFunctionDescriptor function = extension.getFunction();
+            List<JavaFunctionDescriptor> overloads = functionsByName.get(function.getName());
+            if (overloads == null) {
+                overloads = new ArrayList<JavaFunctionDescriptor>();
+                functionsByName.put(function.getName(), overloads);
+            }
+            overloads.add(function);
+        }
+        for (Map.Entry<Class<?>, Map<String, List<JavaFunctionDescriptor>>> typeEntry : grouped.entrySet()) {
+            for (List<JavaFunctionDescriptor> overloads : typeEntry.getValue().values()) {
+                installExtensionOverloads(nova, typeEntry.getKey(), overloads);
+            }
+        }
+    }
+
+    private static void installExtensionOverloads(Nova nova,
+                                                  Class<?> targetType,
+                                                  List<JavaFunctionDescriptor> functions) {
+        if (functions == null || functions.isEmpty()) {
+            return;
+        }
+        String functionName = functions.get(0).getName();
+        for (JavaFunctionDescriptor function : functions) {
+            if (function.getInvoker() == null) {
+                throw new IllegalStateException("Java extension has no invoker: " + functionName);
+            }
+            if (function.isVararg()) {
+                throw new IllegalStateException("JavaTypes extensions do not support vararg: " + functionName);
+            }
+        }
+
+        int arity = functions.size() == 1 ? functions.get(0).getParameters().size() + 1 : -1;
+        NovaNativeFunction dispatcher = new NovaNativeFunction(functionName, arity, (ctx, args) -> {
+            try {
+                Object receiver = args.isEmpty() ? null : args.get(0).toJavaValue();
+                Object[] javaArgs = new Object[Math.max(args.size() - 1, 0)];
+                for (int i = 1; i < args.size(); i++) {
+                    NovaValue arg = args.get(i);
+                    javaArgs[i - 1] = arg != null ? arg.toJavaValue() : null;
+                }
+                JavaFunctionDescriptor function = resolveFunction(functions, javaArgs);
+                Object result = invokeExtension(function, receiver, javaArgs);
+                return result == null ? NovaNull.UNIT : AbstractNovaValue.fromJava(result);
+            } catch (Exception exception) {
+                throw NovaErrors.wrap("调用 Java 扩展函数 '" + functionName + "' 失败", exception);
+            }
+        });
+
+        for (JavaFunctionDescriptor function : functions) {
+            Class<?>[] parameterTypes = parameterClasses(function);
+            Class<?> returnType = runtimeClass(function.getReturnType());
+            ExtensionMethod<Object, Object> compiledMethod = new ExtensionMethod<Object, Object>() {
+                @Override
+                public Object invoke(Object receiver, Object[] arguments) throws Exception {
+                    return invokeExtension(function, receiver, arguments);
+                }
+            };
+            nova.registerTypedExtension(targetType, functionName, dispatcher,
+                    parameterTypes, returnType, compiledMethod);
+        }
+    }
+
+    private static Object invokeExtension(JavaFunctionDescriptor function,
+                                          Object receiver,
+                                          Object[] arguments) throws Exception {
+        Object[] invocationArguments = new Object[arguments.length + 1];
+        invocationArguments[0] = receiver;
+        System.arraycopy(arguments, 0, invocationArguments, 1, arguments.length);
+        return function.getInvoker().invoke(invocationArguments);
+    }
+
+    private static Class<?>[] parameterClasses(JavaFunctionDescriptor function) {
+        List<JavaParameterDescriptor> parameters = function.getParameters();
+        Class<?>[] parameterTypes = new Class<?>[parameters.size()];
+        for (int i = 0; i < parameters.size(); i++) {
+            parameterTypes[i] = runtimeClass(parameters.get(i).getType());
+        }
+        return parameterTypes;
+    }
+
+    private static Class<?> runtimeClass(JavaTypeRef type) {
+        Class<?> javaClass = type != null ? type.javaClass() : null;
+        if (javaClass == null) {
+            return Object.class;
+        }
+        return boxedClass(javaClass);
     }
 
     private static void installSymbol(Nova nova, JavaSymbolDescriptor symbol) {

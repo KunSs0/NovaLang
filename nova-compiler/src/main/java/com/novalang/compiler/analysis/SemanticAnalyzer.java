@@ -13,6 +13,7 @@ import com.novalang.runtime.contract.NovaContract;
 import com.novalang.runtime.stdlib.BuiltinModuleExports;
 import com.novalang.runtime.stdlib.StdlibRegistry;
 import com.novalang.runtime.host.JavaFunctionDescriptor;
+import com.novalang.runtime.host.JavaExtensionDescriptor;
 import com.novalang.runtime.host.JavaNamespaceDescriptor;
 import com.novalang.runtime.host.JavaObjectDescriptor;
 import com.novalang.runtime.host.JavaParameterDescriptor;
@@ -52,6 +53,7 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
     private final Map<Declaration, Symbol> declarationSymbols;
     private final Set<String> externalKnownTypeNames;
     private final Set<MemberExpr> callMemberExpressions;
+    private final List<JavaExtensionDescriptor> javaExtensions;
 
     // 委托
     private final TypeUnifier unifier;
@@ -76,6 +78,7 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
         this.externalKnownTypeNames = new java.util.LinkedHashSet<String>();
         this.callMemberExpressions = java.util.Collections.newSetFromMap(
                 new java.util.IdentityHashMap<MemberExpr, Boolean>());
+        this.javaExtensions = new ArrayList<JavaExtensionDescriptor>();
         this.unifier = new TypeUnifier(exprNovaTypeMap, superTypeRegistry, typeResolver);
         this.inference = new TypeInferenceEngine(exprNovaTypeMap, unifier);
         this.checker = new SemanticChecker(diagnostics, superTypeRegistry, exprNovaTypeMap);
@@ -103,6 +106,7 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
             throw new IllegalArgumentException("javaTypes must not be null");
         }
         JavaNamespaceDescriptor resolved = javaTypes.resolveNamespace(namespace);
+        javaExtensions.addAll(resolved.getExtensions());
         for (JavaSymbolDescriptor descriptor : resolved.getGlobals()) {
             Symbol symbol = createJavaSymbol(descriptor);
             Symbol existing = currentScope.resolveLocal(symbol.getName());
@@ -171,6 +175,14 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
     }
 
     private Symbol resolveJavaFunctionOverload(Symbol root, CallExpr call) {
+        return resolveJavaFunctionOverload(root, analyzedCallArgumentTypes(call),
+                actualCallArgumentCount(call), call);
+    }
+
+    private Symbol resolveJavaFunctionOverload(Symbol root,
+                                               List<NovaType> argumentTypes,
+                                               int actualCount,
+                                               AstNode callNode) {
         if (root == null || root.getKind() != SymbolKind.FUNCTION || root.getDeclaration() != null) {
             return root;
         }
@@ -187,7 +199,7 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
         int bestScore = Integer.MIN_VALUE;
         boolean ambiguous = false;
         for (Symbol candidate : candidates) {
-            int score = scoreJavaFunctionCandidate(candidate, call);
+            int score = scoreJavaFunctionCandidate(candidate, argumentTypes, actualCount);
             if (score == Integer.MIN_VALUE) {
                 continue;
             }
@@ -202,23 +214,24 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
         if (best == null) {
             checker.addDiagnostic(SemanticDiagnostic.Severity.ERROR,
                     "Java 函数 '" + root.getName() + "' 没有匹配的重载",
-                    call);
+                    callNode);
             return root;
         }
         if (ambiguous) {
             checker.addDiagnostic(SemanticDiagnostic.Severity.ERROR,
                     "Java 函数 '" + root.getName() + "' 的调用存在歧义",
-                    call);
+                    callNode);
         }
         return best;
     }
 
-    private int scoreJavaFunctionCandidate(Symbol candidate, CallExpr call) {
+    private int scoreJavaFunctionCandidate(Symbol candidate,
+                                           List<NovaType> argumentTypes,
+                                           int actualCount) {
         List<Symbol> parameters = candidate.getParameters();
         if (parameters == null) {
             return Integer.MIN_VALUE;
         }
-        int actualCount = actualCallArgumentCount(call);
         int declaredCount = parameters.size();
         int minimumCount = candidate.isVararg() ? Math.max(declaredCount - 1, 0) : declaredCount;
         if (actualCount < minimumCount) {
@@ -229,7 +242,7 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
         }
 
         int score = candidate.isVararg() ? -1 : 0;
-        for (int i = 0; i < call.getArgs().size(); i++) {
+        for (int i = 0; i < argumentTypes.size(); i++) {
             int parameterIndex = i;
             if (parameterIndex >= declaredCount) {
                 parameterIndex = declaredCount - 1;
@@ -238,7 +251,7 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
                 return Integer.MIN_VALUE;
             }
             NovaType parameterType = parameters.get(parameterIndex).getResolvedNovaType();
-            NovaType argumentType = getNovaType(call.getArgs().get(i).getValue());
+            NovaType argumentType = argumentTypes.get(i);
             if (parameterType == null || argumentType == null) {
                 continue;
             }
@@ -252,6 +265,60 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
             }
         }
         return score;
+    }
+
+    private Symbol resolveJavaExtensionRoot(NovaType receiverType, String functionName) {
+        if (!(receiverType instanceof JavaClassNovaType) || functionName == null) {
+            return null;
+        }
+        Class<?> receiverClass = JavaTypeOracle.get().toJavaArgumentType(receiverType.withNullable(false));
+        if (receiverClass == null || receiverClass == Object.class) {
+            return null;
+        }
+
+        Class<?> bestTargetType = null;
+        List<JavaExtensionDescriptor> matches = new ArrayList<JavaExtensionDescriptor>();
+        for (JavaExtensionDescriptor extension : javaExtensions) {
+            JavaFunctionDescriptor function = extension.getFunction();
+            Class<?> targetType = extension.getTargetType();
+            if (!functionName.equals(function.getName()) || !targetType.isAssignableFrom(receiverClass)) {
+                continue;
+            }
+            if (bestTargetType == null || bestTargetType.isAssignableFrom(targetType)) {
+                if (bestTargetType != targetType) {
+                    matches.clear();
+                    bestTargetType = targetType;
+                }
+                matches.add(extension);
+            } else if (!targetType.isAssignableFrom(bestTargetType)) {
+                matches.add(extension);
+            }
+        }
+        if (matches.isEmpty()) {
+            return null;
+        }
+
+        Symbol root = null;
+        for (JavaExtensionDescriptor extension : matches) {
+            Symbol symbol = createJavaFunctionSymbol(extension.getFunction());
+            if (root == null) {
+                root = symbol;
+            } else {
+                root.addOverload(symbol);
+            }
+        }
+        return root;
+    }
+
+    private List<NovaType> analyzedSafeCallArgumentTypes(SafeCallExpr node) {
+        List<NovaType> argumentTypes = new ArrayList<NovaType>();
+        if (node == null || node.getArgs() == null) {
+            return argumentTypes;
+        }
+        for (CallExpr.Argument argument : node.getArgs()) {
+            argumentTypes.add(analyzedCallArgumentType(argument.getValue()));
+        }
+        return argumentTypes;
     }
 
     private NovaType resolveJavaTypeRef(JavaTypeRef typeRef) {
@@ -3260,12 +3327,18 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
                 if (specialType != null) {
                     setNovaType(node, specialType);
                 } else {
+                    NovaType receiverType = memberCallee != null ? getNovaType(memberCallee.getTarget()) : null;
                     JavaTypeDescriptor.JavaExecutableDescriptor javaMethod = resolveJavaMemberCall(memberCallee, node);
                     if (javaMethod != null) {
                         setNovaType(node, javaMethod.getReturnType());
                     } else {
-                        NovaType receiverType = memberCallee != null ? getNovaType(memberCallee.getTarget()) : null;
-                        if (receiverType instanceof JavaClassNovaType) {
+                        Symbol extensionRoot = resolveJavaExtensionRoot(receiverType, memberCallee.getMember());
+                        if (extensionRoot != null) {
+                            Symbol extension = resolveJavaFunctionOverload(extensionRoot, node);
+                            checker.checkCallArgCount(node, extension);
+                            checker.checkCallArgTypes(node, extension);
+                            setNovaType(node, extension.getResolvedNovaType());
+                        } else if (receiverType instanceof JavaClassNovaType) {
                             checker.addDiagnostic(SemanticDiagnostic.Severity.ERROR,
                                     "No matching Java method overload found for '" + memberCallee.getMember() + "'",
                                     node);
@@ -3306,6 +3379,13 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
         if (receiverNovaType != null) {
             if (NovaTypes.isDynamicType(receiverNovaType)) {
                 setNovaType(node, NovaTypes.DYNAMIC);
+                return null;
+            }
+            Symbol extensionRoot = resolveJavaExtensionRoot(receiverNovaType, node.getMember());
+            if (extensionRoot != null) {
+                FunctionNovaType extensionType = functionTypeFromMemberSymbol(
+                        receiverNovaType, extensionRoot, true);
+                setNovaType(node, extensionType);
                 return null;
             }
             if (expectedFunctionType != null) {
@@ -4032,6 +4112,50 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
         NovaType registryMemberType = inference.lookupMemberType(nonNullReceiverType, node.getMember());
         if (registryMemberType != null) {
             resultType = registryMemberType;
+        }
+
+        if (nonNullReceiverType instanceof JavaClassNovaType) {
+            JavaClassNovaType javaReceiverType = (JavaClassNovaType) nonNullReceiverType;
+            if (node.isMethodCall()) {
+                List<NovaType> argumentTypes = analyzedSafeCallArgumentTypes(node);
+                JavaTypeDescriptor descriptor = javaReceiverType.getDescriptor();
+                JavaTypeDescriptor.JavaExecutableDescriptor javaMethod = descriptor != null
+                        ? descriptor.resolveMethod(node.getMember(), argumentTypes, false)
+                        : null;
+                if (javaMethod != null) {
+                    resultType = javaMethod.getReturnType();
+                } else {
+                    Symbol extensionRoot = resolveJavaExtensionRoot(nonNullReceiverType, node.getMember());
+                    if (extensionRoot != null) {
+                        if ((extensionRoot.getOverloads() == null || extensionRoot.getOverloads().isEmpty())
+                                && scoreJavaFunctionCandidate(extensionRoot, argumentTypes,
+                                argumentTypes.size()) == Integer.MIN_VALUE) {
+                            checker.addDiagnostic(SemanticDiagnostic.Severity.ERROR,
+                                    "Java 扩展函数 '" + node.getMember() + "' 的参数不匹配",
+                                    node);
+                        }
+                        Symbol extension = resolveJavaFunctionOverload(extensionRoot, argumentTypes,
+                                argumentTypes.size(), node);
+                        resultType = extension.getResolvedNovaType();
+                    } else if (strictJavaTypes && resultType == null) {
+                        checker.addDiagnostic(SemanticDiagnostic.Severity.ERROR,
+                                "No matching Java method overload found for '" + node.getMember() + "'",
+                                node);
+                    }
+                }
+            } else {
+                JavaTypeDescriptor descriptor = javaReceiverType.getDescriptor();
+                NovaType propertyType = descriptor != null
+                        ? descriptor.resolveProperty(node.getMember(), false)
+                        : null;
+                if (propertyType != null) {
+                    resultType = propertyType;
+                } else if (strictJavaTypes && resultType == null) {
+                    checker.addDiagnostic(SemanticDiagnostic.Severity.ERROR,
+                            "Java 对象上不存在属性 '" + node.getMember() + "'",
+                            node);
+                }
+            }
         }
 
         Symbol receiverSym = resolveTypeSymbol(nonNullReceiverType.getTypeName());
