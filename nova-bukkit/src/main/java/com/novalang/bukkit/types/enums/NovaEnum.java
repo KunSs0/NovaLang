@@ -111,11 +111,15 @@ public final class NovaEnum {
         registerEnum(builder, "weatherType", WeatherType.class);
         registerEnum(builder, "worldEnvironment", World.Environment.class);
         registerEnum(builder, "worldType", WorldType.class);
+        NovaGameplayEnum.register(builder);
+        NovaEntityEnum.register(builder);
+        NovaEventEnum.register(builder);
+        NovaPlatformEnum.register(builder);
     }
 
-    private static <E extends Enum<E>> void registerEnum(JavaTypes.Builder builder,
-                                                          String functionName,
-                                                          Class<E> enumClass) {
+    static <E extends Enum<E>> void registerEnum(JavaTypes.Builder builder,
+                                                 String functionName,
+                                                 Class<E> enumClass) {
         builder.globalFunction(functionName, function -> function
                 .param("name", String.class)
                 .returns(JavaTypeRef.javaType(enumClass).nullable())

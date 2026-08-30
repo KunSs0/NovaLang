@@ -236,6 +236,15 @@ class NovaBukkitTest {
         assertDoesNotThrow(() -> nova.compileToBytecode(
                 "testMinecart.setMaxSpeed(0.8)",
                 "bukkit-minecart-extension-valid.nova"));
+        assertDoesNotThrow(() -> nova.compileToBytecode(
+                "horseColor(\"WHITE\")?.name()",
+                "bukkit-entity-enum-valid.nova"));
+        assertDoesNotThrow(() -> nova.compileToBytecode(
+                "blockIgniteEventIgniteCause(\"LAVA\")",
+                "bukkit-event-enum-valid.nova"));
+        assertDoesNotThrow(() -> nova.compileToBytecode(
+                "statistic(\"JUMP\")",
+                "bukkit-platform-enum-valid.nova"));
         assertThrows(RuntimeException.class, () -> nova.compileToBytecode(
                 "location(1.0, 2.0, 3.0).missingMember", "bukkit-location-invalid.nova"));
         assertThrows(RuntimeException.class, () -> nova.compileToBytecode(
