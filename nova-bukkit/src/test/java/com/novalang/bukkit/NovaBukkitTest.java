@@ -122,7 +122,7 @@ class NovaBukkitTest {
     @DisplayName("完整领域注册器不会生成重复扩展签名")
     void shouldExposeExpandedBukkitExtensionsWithoutDuplicates() {
         JavaTypes types = NovaBukkit.create();
-        assertEquals(2301, types.extensions().size());
+        assertEquals(2324, types.extensions().size());
         assertTrue(types.extensionProperties().size() > 100);
         assertTrue(hasProperty(types, Location.class, "x", true));
         assertTrue(hasProperty(types, Player.class, "name", false));
@@ -288,6 +288,9 @@ class NovaBukkitTest {
         assertTrue(hasExtension(types, org.bukkit.entity.Wolf.class, "collarColor"));
         assertTrue(hasExtension(types, org.bukkit.entity.Rabbit.class, "setRabbitType"));
         assertTrue(hasExtension(types, org.bukkit.entity.Enderman.class, "carriedMaterial"));
+        assertTrue(hasExtension(types, org.bukkit.inventory.meta.KnowledgeBookMeta.class, "addRecipe"));
+        assertTrue(hasExtension(types, org.bukkit.enchantments.EnchantmentOffer.class, "setCost"));
+        assertTrue(hasExtension(types, org.bukkit.map.MapCursorCollection.class, "addCursor"));
 
         Set<String> signatures = new LinkedHashSet<String>();
         for (JavaExtensionDescriptor extension : types.extensions()) {

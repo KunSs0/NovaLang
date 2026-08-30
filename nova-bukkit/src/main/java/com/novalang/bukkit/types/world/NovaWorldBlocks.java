@@ -20,6 +20,8 @@ public final class NovaWorldBlocks {
         NovaMap.register(builder);
         NovaBukkitRegistrar.register(builder, NovaMapCanvas.class, NovaMapCanvas::register);
         NovaBukkitRegistrar.register(builder, NovaMapCursor.class, NovaMapCursor::register);
+        NovaBukkitRegistrar.register(builder, NovaMapCursorCollection.class, NovaMapCursorCollection::register);
+        NovaBukkitRegistrar.register(builder, NovaMapRenderer.class, NovaMapRenderer::register);
         NovaGenerator.register(builder);
         NovaBlockIterator.register(builder);
         NovaBukkitRegistrar.register(builder, NovaContainer.class, NovaContainer::register);
