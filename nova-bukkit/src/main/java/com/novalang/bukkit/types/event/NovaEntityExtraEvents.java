@@ -23,5 +23,10 @@ public final class NovaEntityExtraEvents {
         NovaBukkitRegistrar.register(builder, NovaEntityAirChangeEvent.class, NovaEntityAirChangeEvent::register);
         NovaBukkitRegistrar.register(builder, NovaHorseJumpEvent.class, NovaHorseJumpEvent::register);
         NovaBukkitRegistrar.register(builder, NovaPlayerLeashEntityEvent.class, NovaPlayerLeashEntityEvent::register);
+        NovaBukkitRegistrar.register(builder, NovaAreaEffectCloudApplyEvent.class, NovaAreaEffectCloudApplyEvent::register);
+        NovaBukkitRegistrar.register(builder, NovaEnderDragonChangePhaseEvent.class, NovaEnderDragonChangePhaseEvent::register);
+        NovaBukkitRegistrar.register(builder, NovaItemDespawnEvent.class, NovaItemDespawnEvent::register);
+        NovaBukkitRegistrar.register(builder, NovaEntityToggleGlideEvent.class, NovaEntityToggleGlideEvent::register);
+        NovaBukkitRegistrar.register(builder, NovaEntityPortalEnterEvent.class, NovaEntityPortalEnterEvent::register);
     }
 }
