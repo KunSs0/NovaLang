@@ -67,6 +67,12 @@ public final class NovaEventTypes {
         NovaBukkitRegistrar.register(builder, NovaPlayerLoginEvent.class, NovaPlayerLoginEvent::register);
         NovaBukkitRegistrar.register(builder, NovaAsyncPlayerPreLoginEvent.class, NovaAsyncPlayerPreLoginEvent::register);
         NovaBukkitRegistrar.register(builder, NovaPlayerSwapHandItemsEvent.class, NovaPlayerSwapHandItemsEvent::register);
+        NovaBukkitRegistrar.register(builder, NovaBlockPhysicsEvent.class, NovaBlockPhysicsEvent::register);
+        NovaBukkitRegistrar.register(builder, NovaBlockFadeEvent.class, NovaBlockFadeEvent::register);
+        NovaBukkitRegistrar.register(builder, NovaBlockExplodeEvent.class, NovaBlockExplodeEvent::register);
+        NovaBukkitRegistrar.register(builder, NovaBlockDispenseEvent.class, NovaBlockDispenseEvent::register);
+        NovaBukkitRegistrar.register(builder, NovaBlockBurnEvent.class, NovaBlockBurnEvent::register);
+        NovaBukkitRegistrar.register(builder, NovaNotePlayEvent.class, NovaNotePlayEvent::register);
         builder.extension(Event.class, "handlerList", function -> function
                 .returns(HandlerList.class)
                 .invoke(arguments -> NovaTypeSupport.argument(arguments, 0, Event.class).getHandlers()));
