@@ -47,6 +47,7 @@ import org.bukkit.event.player.PlayerFishEvent;
 import org.bukkit.event.player.PlayerLoginEvent;
 import org.bukkit.event.player.PlayerTeleportEvent;
 import org.bukkit.inventory.EquipmentSlot;
+import org.bukkit.inventory.InventoryView;
 import org.bukkit.inventory.ItemFlag;
 import org.bukkit.inventory.MainHand;
 import org.bukkit.permissions.PermissionDefault;
@@ -88,6 +89,7 @@ public final class NovaEnum {
         registerEnum(builder, "inventoryAction", InventoryAction.class);
         registerEnum(builder, "inventoryType", InventoryType.class);
         registerEnum(builder, "inventoryTypeSlotType", InventoryType.SlotType.class);
+        registerEnum(builder, "inventoryViewProperty", InventoryView.Property.class);
         registerEnum(builder, "itemFlag", ItemFlag.class);
         registerEnum(builder, "mainHand", MainHand.class);
         registerEnum(builder, "material", Material.class);

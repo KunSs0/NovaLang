@@ -59,9 +59,12 @@ final class NovaInventory {
         builder.extension(InventoryView.class, "setItem", f -> f.param("slot", Integer.class).param("item", item).invoke(a -> { view(a).setItem(arg(a, 1, Integer.class), arg(a, 2, ItemStack.class)); return null; }));
         builder.extension(InventoryView.class, "cursor", f -> f.returns(item).invoke(a -> view(a).getCursor()));
         builder.extension(InventoryView.class, "setCursor", f -> f.param("item", item).invoke(a -> { view(a).setCursor(arg(a, 1, ItemStack.class)); return null; }));
+        builder.extension(InventoryView.class, "convertSlot", f -> f.param("rawSlot", Integer.class).returns(Integer.class).invoke(a -> view(a).convertSlot(arg(a, 1, Integer.class))));
         builder.extension(InventoryView.class, "countSlots", f -> f.returns(Integer.class).invoke(a -> view(a).countSlots()));
+        builder.extension(InventoryView.class, "setProperty", f -> f.param("property", InventoryView.Property.class).param("value", Integer.class).returns(Boolean.class).invoke(a -> view(a).setProperty(arg(a, 1, InventoryView.Property.class), arg(a, 2, Integer.class))));
         builder.extension(InventoryView.class, "title", f -> f.returns(String.class).invoke(a -> view(a).getTitle()));
         builder.extension(InventoryView.class, "close", f -> f.invoke(a -> { view(a).close(); return null; }));
+        builder.extension(InventoryView.Property.class, "id", f -> f.returns(Integer.class).invoke(a -> NovaTypeSupport.argument(a, 0, InventoryView.Property.class).getId()));
     }
 
     private static Inventory inv(Object[] a) {

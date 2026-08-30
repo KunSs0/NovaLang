@@ -64,6 +64,8 @@ import org.bukkit.event.player.PlayerInteractAtEntityEvent;
 import org.bukkit.event.player.PlayerPickupItemEvent;
 import org.bukkit.event.player.PlayerRespawnEvent;
 import org.bukkit.inventory.EntityEquipment;
+import org.bukkit.inventory.Inventory;
+import org.bukkit.inventory.InventoryView;
 import org.bukkit.inventory.meta.BookMeta;
 import org.bukkit.inventory.meta.BannerMeta;
 import org.bukkit.inventory.meta.EnchantmentStorageMeta;
@@ -130,7 +132,7 @@ class NovaBukkitTest {
     @DisplayName("完整领域注册器不会生成重复扩展签名")
     void shouldExposeExpandedBukkitExtensionsWithoutDuplicates() {
         JavaTypes types = NovaBukkit.create();
-        assertEquals(2396, types.extensions().size());
+        assertEquals(2399, types.extensions().size());
         assertTrue(types.extensionProperties().size() > 100);
         assertTrue(hasProperty(types, Location.class, "x", true));
         assertTrue(hasProperty(types, Player.class, "name", false));
@@ -324,6 +326,8 @@ class NovaBukkitTest {
         assertTrue(hasExtension(types, org.bukkit.WorldBorder.class, "setCenter"));
         assertTrue(hasExtension(types, org.bukkit.Chunk.class, "unload"));
         assertTrue(hasExtension(types, org.bukkit.WorldCreator.class, "generator"));
+        assertTrue(hasExtension(types, InventoryView.class, "setProperty"));
+        assertTrue(hasExtension(types, InventoryView.Property.class, "id"));
 
         Set<String> signatures = new LinkedHashSet<String>();
         for (JavaExtensionDescriptor extension : types.extensions()) {
@@ -391,6 +395,8 @@ class NovaBukkitTest {
                 variable -> variable.type(Horse.class).value(emptyProxy(Horse.class)));
         builder.globalVariable("testMinecart",
                 variable -> variable.type(Minecart.class).value(emptyProxy(Minecart.class)));
+        builder.globalVariable("testInventoryView",
+                variable -> variable.type(InventoryView.class).value(emptyInventoryView()));
         Nova nova = new Nova();
         nova.install(builder.build());
 
@@ -480,6 +486,12 @@ class NovaBukkitTest {
         assertDoesNotThrow(() -> nova.compileToBytecode(
                 "testMinecart.setMaxSpeed(0.8)",
                 "bukkit-minecart-extension-valid.nova"));
+        assertDoesNotThrow(() -> nova.compileToBytecode(
+                "testInventoryView.convertSlot(1)",
+                "bukkit-inventory-view-slot-valid.nova"));
+        assertDoesNotThrow(() -> nova.compileToBytecode(
+                "inventoryViewProperty(\"BURN_TIME\")?.id()",
+                "bukkit-inventory-view-property-valid.nova"));
         assertDoesNotThrow(() -> nova.compileToBytecode(
                 "horseColor(\"WHITE\")?.name()",
                 "bukkit-entity-enum-valid.nova"));
@@ -660,6 +672,30 @@ class NovaBukkitTest {
             @Override
             public boolean execute(CommandSender sender, String label, String[] arguments) {
                 return true;
+            }
+        };
+    }
+
+    private InventoryView emptyInventoryView() {
+        return new InventoryView() {
+            @Override
+            public Inventory getTopInventory() {
+                return emptyProxy(Inventory.class);
+            }
+
+            @Override
+            public Inventory getBottomInventory() {
+                return emptyProxy(Inventory.class);
+            }
+
+            @Override
+            public org.bukkit.entity.HumanEntity getPlayer() {
+                return emptyProxy(org.bukkit.entity.HumanEntity.class);
+            }
+
+            @Override
+            public org.bukkit.event.inventory.InventoryType getType() {
+                return org.bukkit.event.inventory.InventoryType.CHEST;
             }
         };
     }
