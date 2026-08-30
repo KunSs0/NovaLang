@@ -1,0 +1,3 @@
+package com.novalang.bukkit.types.event;
+import com.novalang.bukkit.Requires; import com.novalang.bukkit.types.value.NovaTypeSupport; import com.novalang.runtime.host.JavaTypes; import org.bukkit.event.player.PlayerAnimationEvent; import org.bukkit.event.player.PlayerAnimationType;
+@Requires(classes = {"org.bukkit.event.player.PlayerAnimationEvent"}) public final class NovaPlayerAnimationEvent { private NovaPlayerAnimationEvent() { } public static void register(JavaTypes.Builder b){b.extension(PlayerAnimationEvent.class,"animationType",f->f.returns(PlayerAnimationType.class).invoke(a->NovaTypeSupport.argument(a,0,PlayerAnimationEvent.class).getAnimationType()));} }

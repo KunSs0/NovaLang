@@ -88,6 +88,8 @@ public final class NovaEventTypes {
         NovaInventoryExtraEvents.register(builder);
         NovaEntityMoreEvents.register(builder);
         NovaServerExtraEvents.register(builder);
+        NovaEntityFinalEvents.register(builder);
+        NovaPlayerFinalEvents.register(builder);
         builder.extension(Event.class, "handlerList", function -> function
                 .returns(HandlerList.class)
                 .invoke(arguments -> NovaTypeSupport.argument(arguments, 0, Event.class).getHandlers()));
