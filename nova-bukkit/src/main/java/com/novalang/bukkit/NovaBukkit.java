@@ -5,6 +5,7 @@ import com.novalang.runtime.host.JavaTypes;
 import com.novalang.bukkit.types.entity.NovaEntity;
 import com.novalang.bukkit.types.entity.NovaEntityHierarchy;
 import com.novalang.bukkit.types.entity.NovaEntityMoreTypes;
+import com.novalang.bukkit.types.entity.NovaEntityValueMoreTypes;
 import com.novalang.bukkit.types.entity.NovaPlayer;
 import com.novalang.bukkit.types.enums.NovaEnum;
 import com.novalang.bukkit.types.event.NovaEventTypes;
@@ -64,6 +65,7 @@ public final class NovaBukkit {
         NovaBukkitRegistrar.register(builder, NovaEntity.class, NovaEntity::register);
         NovaBukkitRegistrar.register(builder, NovaEntityHierarchy.class, NovaEntityHierarchy::register);
         NovaBukkitRegistrar.register(builder, NovaEntityMoreTypes.class, NovaEntityMoreTypes::register);
+        NovaBukkitRegistrar.register(builder, NovaEntityValueMoreTypes.class, NovaEntityValueMoreTypes::register);
         NovaBukkitRegistrar.register(builder, NovaWorldInventory.class, NovaWorldInventory::register);
         NovaBukkitRegistrar.register(builder, NovaInventoryMoreTypes.class, NovaInventoryMoreTypes::register);
         NovaBukkitRegistrar.register(builder, NovaInventoryMetaMoreTypes.class, NovaInventoryMetaMoreTypes::register);

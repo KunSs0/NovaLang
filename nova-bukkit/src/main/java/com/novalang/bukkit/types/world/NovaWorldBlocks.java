@@ -13,6 +13,7 @@ public final class NovaWorldBlocks {
         NovaWorldExtra.register(builder);
         NovaChunk.register(builder);
         NovaBlock.register(builder);
+        NovaBukkitRegistrar.register(builder, NovaBlockStringTypes.class, NovaBlockStringTypes::register);
         NovaBlockState.register(builder);
         NovaMaterialData.register(builder);
         NovaMap.register(builder);
