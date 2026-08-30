@@ -1,6 +1,7 @@
 package com.novalang.bukkit.types.enums;
 
 import com.novalang.runtime.host.JavaTypes;
+import org.bukkit.entity.Arrow;
 import org.bukkit.entity.Horse;
 import org.bukkit.entity.Llama;
 import org.bukkit.entity.Parrot;
@@ -17,6 +18,7 @@ final class NovaEntityEnum {
     }
 
     static void register(JavaTypes.Builder builder) {
+        NovaEnum.registerEnum(builder, "arrowPickupStatus", Arrow.PickupStatus.class);
         NovaEnum.registerEnum(builder, "horseColor", Horse.Color.class);
         NovaEnum.registerEnum(builder, "horseStyle", Horse.Style.class);
         NovaEnum.registerEnum(builder, "horseVariant", Horse.Variant.class);

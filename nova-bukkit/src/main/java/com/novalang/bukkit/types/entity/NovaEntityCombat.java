@@ -45,6 +45,8 @@ public final class NovaEntityCombat {
         b.extension(Arrow.class, "setCritical", f -> f.param("critical", Boolean.class).returns(Void.TYPE).invoke(a -> { arrow(a).setCritical(arg(a, 1, Boolean.class)); return null; }));
         b.extension(Arrow.class, "isInBlock", f -> f.returns(Boolean.class).invoke(a -> arrow(a).isInBlock()));
         b.extension(Arrow.class, "attachedBlock", f -> f.returns(nullableBlock).invoke(a -> arrow(a).getAttachedBlock()));
+        b.extension(Arrow.class, "pickupStatus", f -> f.returns(Arrow.PickupStatus.class).invoke(a -> arrow(a).getPickupStatus()));
+        b.extension(Arrow.class, "setPickupStatus", f -> f.param("status", Arrow.PickupStatus.class).returns(Void.TYPE).invoke(a -> { arrow(a).setPickupStatus(arg(a, 1, Arrow.PickupStatus.class)); return null; }));
         b.extension(Fireball.class, "direction", f -> f.returns(Vector.class).invoke(a -> fireball(a).getDirection()));
         b.extension(Fireball.class, "setDirection", f -> f.param("direction", Vector.class).returns(Void.TYPE).invoke(a -> { fireball(a).setDirection(arg(a, 1, Vector.class)); return null; }));
     }
