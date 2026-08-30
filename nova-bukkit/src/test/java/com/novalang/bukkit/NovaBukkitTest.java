@@ -26,6 +26,8 @@ import org.bukkit.entity.Player;
 import org.bukkit.entity.Creeper;
 import org.bukkit.entity.Horse;
 import org.bukkit.entity.Minecart;
+import org.bukkit.entity.ArmorStand;
+import org.bukkit.entity.Villager;
 import org.bukkit.event.entity.EntityRegainHealthEvent;
 import org.bukkit.event.entity.EntityBreedEvent;
 import org.bukkit.event.entity.EntityCombustEvent;
@@ -93,6 +95,7 @@ class NovaBukkitTest {
 
         assertEquals(Server.class, returnClass(namespace, "server"));
         assertEquals(Player.class, returnClass(namespace, "player"));
+        assertEquals(Villager.Profession.class, returnClass(namespace, "villagerProfession"));
         assertEquals(Location.class, returnClass(namespace, "location"));
         assertEquals(4, overloads(namespace, "location").size());
         assertEquals(3, overloads(namespace, "color").size());
@@ -116,7 +119,7 @@ class NovaBukkitTest {
     @DisplayName("完整领域注册器不会生成重复扩展签名")
     void shouldExposeExpandedBukkitExtensionsWithoutDuplicates() {
         JavaTypes types = NovaBukkit.create();
-        assertEquals(1642, types.extensions().size());
+        assertEquals(1661, types.extensions().size());
         assertTrue(types.extensionProperties().size() > 100);
         assertTrue(hasProperty(types, Location.class, "x", true));
         assertTrue(hasProperty(types, Player.class, "name", false));
@@ -156,6 +159,8 @@ class NovaBukkitTest {
         assertTrue(hasExtension(types, MapMeta.class, "setScaling"));
         assertTrue(hasExtension(types, BannerMeta.class, "setPatterns"));
         assertTrue(hasExtension(types, SpawnEggMeta.class, "setSpawnedType"));
+        assertTrue(hasExtension(types, ArmorStand.class, "setHeadPose"));
+        assertTrue(hasExtension(types, Villager.class, "setCareer"));
         assertTrue(hasExtension(types, PlayerRespawnEvent.class, "setRespawnLocation"));
 
         Set<String> signatures = new LinkedHashSet<String>();

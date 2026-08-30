@@ -22,5 +22,7 @@ public final class NovaEntityHierarchy {
         NovaBukkitRegistrar.register(builder, NovaCreeper.class, NovaCreeper::register);
         NovaBukkitRegistrar.register(builder, NovaHorse.class, NovaHorse::register);
         NovaBukkitRegistrar.register(builder, NovaMinecart.class, NovaMinecart::register);
+        NovaBukkitRegistrar.register(builder, NovaArmorStandPose.class, NovaArmorStandPose::register);
+        NovaBukkitRegistrar.register(builder, NovaVillager.class, NovaVillager::register);
     }
 }
