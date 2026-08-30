@@ -3393,6 +3393,39 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
                     setNovaType(node, absArgType.withNullable(false));
                 }
             }
+            if (("min".equals(funcName) || "max".equals(funcName)) && node.getArgs().size() == 2) {
+                NovaType firstType = getNovaType(node.getArgs().get(0).getValue());
+                NovaType secondType = getNovaType(node.getArgs().get(1).getValue());
+                if (NovaTypes.isNumericType(firstType) && NovaTypes.isNumericType(secondType)) {
+                    NovaType resultType = NovaTypes.DOUBLE;
+                    if (firstType.withNullable(false).equals(secondType.withNullable(false))) {
+                        String numericName = firstType.getTypeName();
+                        if ("Int".equals(numericName) || "Long".equals(numericName)) {
+                            resultType = firstType.withNullable(false);
+                        }
+                    }
+                    setNovaType(node, resultType);
+                }
+            }
+            if ("clamp".equals(funcName) && node.getArgs().size() == 3) {
+                NovaType valueType = getNovaType(node.getArgs().get(0).getValue());
+                NovaType minType = getNovaType(node.getArgs().get(1).getValue());
+                NovaType maxType = getNovaType(node.getArgs().get(2).getValue());
+                if (NovaTypes.isNumericType(valueType)
+                        && NovaTypes.isNumericType(minType)
+                        && NovaTypes.isNumericType(maxType)) {
+                    NovaType resultType = NovaTypes.DOUBLE;
+                    NovaType plainValueType = valueType.withNullable(false);
+                    if (plainValueType.equals(minType.withNullable(false))
+                            && plainValueType.equals(maxType.withNullable(false))) {
+                        String numericName = valueType.getTypeName();
+                        if ("Int".equals(numericName) || "Long".equals(numericName)) {
+                            resultType = plainValueType;
+                        }
+                    }
+                    setNovaType(node, resultType);
+                }
+            }
             java.util.List<NovaType> argumentTypes = new java.util.ArrayList<NovaType>();
             java.util.List<LambdaExpr> functionLambdas = new java.util.ArrayList<LambdaExpr>();
             for (CallExpr.Argument arg : node.getArgs()) {

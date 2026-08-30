@@ -2034,6 +2034,27 @@ class SemanticAnalyzerLanguageSemanticsTest {
     }
 
     @Test
+    @DisplayName("min, max and clamp should preserve runtime integer result types")
+    void integerMathBoundsShouldPreserveRuntimeTypes() {
+        AnalysisResult result = analyze(
+                "import java java.lang.StringBuilder\n" +
+                "fun requireInt(value: Int) {}\n" +
+                "val minimum = min(3, 5)\n" +
+                "val maximum = max(3L, 5L)\n" +
+                "val bounded = clamp(3, 1, 5)\n" +
+                "val mixed = min(3, 5L)\n" +
+                "requireInt(minimum)\n" +
+                "StringBuilder().setLength(max(1, 2))");
+
+        assertNoDiagnostics(result,
+                "Math bound helpers should expose the types returned by their runtime implementation");
+        assertSymbolType(result, "minimum", "Int");
+        assertSymbolType(result, "maximum", "Long");
+        assertSymbolType(result, "bounded", "Int");
+        assertSymbolType(result, "mixed", "Double");
+    }
+
+    @Test
     @DisplayName("Array helper methods should infer scalar, list and lambda-driven result types")
     void arrayHelperMethodsShouldInferExpectedTypes() {
         AnalysisResult result = analyze(
