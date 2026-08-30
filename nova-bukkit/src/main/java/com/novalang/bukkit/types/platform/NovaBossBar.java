@@ -1,5 +1,6 @@
 package com.novalang.bukkit.types.platform;
 
+import com.novalang.bukkit.Requires;
 import com.novalang.bukkit.types.value.NovaTypeSupport;
 
 import com.novalang.runtime.host.JavaTypeRef;
@@ -11,6 +12,7 @@ import org.bukkit.boss.BossBar;
 import org.bukkit.entity.Player;
 
 /** Bukkit 1.12.2 BossBar 别名；BossBar 的创建由 Server.createBossBar 提供。 */
+@Requires(classes = {"org.bukkit.boss.BossBar"})
 final class NovaBossBar {
 
     private NovaBossBar() {

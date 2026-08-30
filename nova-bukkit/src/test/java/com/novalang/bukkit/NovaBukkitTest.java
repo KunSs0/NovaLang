@@ -30,6 +30,7 @@ import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -46,6 +47,20 @@ class NovaBukkitTest {
         assertEquals(Location.class, returnClass(namespace, "location"));
         assertEquals(4, overloads(namespace, "location").size());
         assertEquals(3, overloads(namespace, "color").size());
+    }
+
+    @Test
+    @DisplayName("缺失 Requires 类的注册器不会安装契约")
+    void shouldSkipRegistrarWithMissingRequiredClass() {
+        boolean[] invoked = new boolean[]{false};
+        JavaTypes.Builder builder = JavaTypes.builder();
+
+        NovaBukkitRegistrar.register(builder, MissingRequiredRegistrar.class,
+                ignored -> invoked[0] = true);
+
+        assertFalse(invoked[0]);
+        assertFalse(NovaBukkitRegistrar.isSatisfied(MissingRequiredRegistrar.class));
+        assertTrue(NovaBukkitRegistrar.isSatisfied(PresentRequiredRegistrar.class));
     }
 
     @Test
@@ -310,5 +325,13 @@ class NovaBukkitTest {
                 return true;
             }
         };
+    }
+
+    @Requires(classes = {"com.novalang.bukkit.missing.OptionalBukkitApi"})
+    private static final class MissingRequiredRegistrar {
+    }
+
+    @Requires(classes = {"org.bukkit.Server"})
+    private static final class PresentRequiredRegistrar {
     }
 }

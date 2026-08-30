@@ -47,20 +47,20 @@ public final class NovaBukkit {
     /** 创建预装 Bukkit API 的 builder，业务插件可继续追加自己的 JavaTypes。 */
     public static JavaTypes.Builder builder() {
         JavaTypes.Builder builder = JavaTypes.builder();
-        NovaServer.register(builder);
-        NovaWorld.register(builder);
-        NovaPlayer.register(builder);
-        NovaLocation.register(builder);
-        NovaEntity.register(builder);
-        NovaEntityHierarchy.register(builder);
-        NovaWorldInventory.register(builder);
-        NovaWorldBlocks.register(builder);
-        NovaValueFactory.register(builder);
-        NovaPlatform.register(builder);
-        NovaServerPlatform.register(builder);
-        NovaGameplay.register(builder);
-        NovaEnum.register(builder);
-        NovaEventTypes.register(builder);
+        NovaBukkitRegistrar.register(builder, NovaServer.class, NovaServer::register);
+        NovaBukkitRegistrar.register(builder, NovaWorld.class, NovaWorld::register);
+        NovaBukkitRegistrar.register(builder, NovaPlayer.class, NovaPlayer::register);
+        NovaBukkitRegistrar.register(builder, NovaLocation.class, NovaLocation::register);
+        NovaBukkitRegistrar.register(builder, NovaEntity.class, NovaEntity::register);
+        NovaBukkitRegistrar.register(builder, NovaEntityHierarchy.class, NovaEntityHierarchy::register);
+        NovaBukkitRegistrar.register(builder, NovaWorldInventory.class, NovaWorldInventory::register);
+        NovaBukkitRegistrar.register(builder, NovaWorldBlocks.class, NovaWorldBlocks::register);
+        NovaBukkitRegistrar.register(builder, NovaValueFactory.class, NovaValueFactory::register);
+        NovaBukkitRegistrar.register(builder, NovaPlatform.class, NovaPlatform::register);
+        NovaBukkitRegistrar.register(builder, NovaServerPlatform.class, NovaServerPlatform::register);
+        NovaBukkitRegistrar.register(builder, NovaGameplay.class, NovaGameplay::register);
+        NovaBukkitRegistrar.register(builder, NovaEnum.class, NovaEnum::register);
+        NovaBukkitRegistrar.register(builder, NovaEventTypes.class, NovaEventTypes::register);
         builder.javaBeanPropertiesFromExtensions();
         return builder;
     }

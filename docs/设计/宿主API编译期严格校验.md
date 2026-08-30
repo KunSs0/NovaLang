@@ -488,6 +488,12 @@ RuntimeWorkspace workspace = new RuntimeWorkspace(configFile, NovaBukkit::instal
 专有枚举不进入基础层；若要完整复刻新版 Fluxon `platform-bukkit`，应建立明确版本模块，
 不能在基础类中通过反射或缺类兜底静默降级。
 
+可选 Bukkit 类型注册器使用 `@Requires(classes = {"完整类名"})` 标记。`NovaBukkitRegistrar`
+会先以当前 Bukkit 类加载器检查全部要求类，再调用注册器；缺少任一类时，该注册器不会把
+运行时函数或编译期契约安装到 `Nova`。类名使用字符串，避免在读取注解前链接缺失 API。
+这与 Fluxon 的 `@Requires` 类存在性门禁一致；它仅处理“类不存在”，同一类上的新增方法
+仍必须放入相应版本模块，不能依赖调用时捕获异常。
+
 当前 `nova-bukkit` 的编译期资源按领域分包，根包只保留公开入口和 Bukkit 运行设施：
 
 ```text

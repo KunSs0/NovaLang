@@ -1,8 +1,11 @@
 package com.novalang.bukkit.types.platform;
 
+import com.novalang.bukkit.NovaBukkitRegistrar;
+import com.novalang.bukkit.Requires;
 import com.novalang.runtime.host.JavaTypes;
 
 /** 非 Server Bukkit 平台别名聚合入口。由宿主在组装 JavaTypes 时调用。 */
+@Requires(classes = {"org.bukkit.Server"})
 public final class NovaPlatform {
 
     private NovaPlatform() {
@@ -15,7 +18,7 @@ public final class NovaPlatform {
         NovaEvent.register(builder);
         NovaMessaging.register(builder);
         NovaScoreboard.register(builder);
-        NovaBossBar.register(builder);
+        NovaBukkitRegistrar.register(builder, NovaBossBar.class, NovaBossBar::register);
         NovaConfiguration.register(builder);
     }
 }
