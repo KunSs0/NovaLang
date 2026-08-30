@@ -134,7 +134,7 @@ class NovaBukkitTest {
     @DisplayName("完整领域注册器不会生成重复扩展签名")
     void shouldExposeExpandedBukkitExtensionsWithoutDuplicates() {
         JavaTypes types = NovaBukkit.create();
-        assertEquals(2434, types.extensions().size());
+        assertEquals(2438, types.extensions().size());
         assertTrue(types.extensionProperties().size() > 100);
         assertTrue(hasProperty(types, Location.class, "x", true));
         assertTrue(hasProperty(types, Player.class, "name", false));
@@ -337,6 +337,7 @@ class NovaBukkitTest {
         assertTrue(hasExtension(types, World.class, "entities"));
         assertTrue(hasExtension(types, World.class, "createExplosion"));
         assertTrue(hasExtension(types, World.class, "setSpawnFlags"));
+        assertTrue(hasExtension(types, World.class, "playEffect"));
 
         Set<String> signatures = new LinkedHashSet<String>();
         for (JavaExtensionDescriptor extension : types.extensions()) {
@@ -453,6 +454,11 @@ class NovaBukkitTest {
                 "bukkit-world-spawn-flags-valid.nova"));
         assertDoesNotThrow(() -> nova.compileToBytecode(
                 "testWorld.canGenerateStructures()", "bukkit-world-structures-valid.nova"));
+        assertDoesNotThrow(() -> nova.compileToBytecode(
+                "testWorld.setSpawnLocation(location(1.0, 2.0, 3.0))",
+                "bukkit-world-spawn-location-valid.nova"));
+        assertDoesNotThrow(() -> nova.compileToBytecode(
+                "testWorld.generator()", "bukkit-world-generator-valid.nova"));
         assertDoesNotThrow(() -> nova.compileToBytecode(
                 "worldCreator(\"nova\").seed(42).name()", "bukkit-world-creator-valid.nova"));
         assertDoesNotThrow(() -> nova.compileToBytecode(

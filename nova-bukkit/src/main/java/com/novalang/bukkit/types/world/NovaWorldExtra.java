@@ -5,11 +5,13 @@ import com.novalang.bukkit.types.value.NovaTypeSupport;
 import com.novalang.runtime.host.JavaTypeRef;
 import com.novalang.runtime.host.JavaTypes;
 import org.bukkit.Difficulty;
+import org.bukkit.Effect;
 import org.bukkit.Location;
 import org.bukkit.World;
 import org.bukkit.WorldBorder;
 import org.bukkit.WorldType;
 import org.bukkit.block.Biome;
+import org.bukkit.generator.ChunkGenerator;
 
 /** Spigot 1.12.2 World 扩展别名。 */
 final class NovaWorldExtra {
@@ -27,6 +29,7 @@ final class NovaWorldExtra {
         builder.extension(World.class, "pvp", f -> f.returns(Boolean.class).invoke(a -> world(a).getPVP()));
         builder.extension(World.class, "setPVP", f -> f.param("pvp", Boolean.class).invoke(a -> { world(a).setPVP(arg(a, 1, Boolean.class)); return null; }));
         builder.extension(World.class, "spawnLocation", f -> f.returns(Location.class).invoke(a -> world(a).getSpawnLocation()));
+        builder.extension(World.class, "setSpawnLocation", f -> f.param("location", Location.class).returns(Boolean.class).invoke(a -> world(a).setSpawnLocation(arg(a, 1, Location.class))));
         builder.extension(World.class, "setSpawnLocation", f -> f.param("x", Integer.class).param("y", Integer.class).param("z", Integer.class).returns(Boolean.class).invoke(a -> world(a).setSpawnLocation(arg(a, 1, Integer.class), arg(a, 2, Integer.class), arg(a, 3, Integer.class))));
         builder.extension(World.class, "time", f -> f.returns(Long.class).invoke(a -> world(a).getTime()));
         builder.extension(World.class, "setTime", f -> f.param("time", Long.class).invoke(a -> { world(a).setTime(arg(a, 1, Long.class)); return null; }));
@@ -45,6 +48,7 @@ final class NovaWorldExtra {
         builder.extension(World.class, "keepSpawnInMemory", f -> f.returns(Boolean.class).invoke(a -> world(a).getKeepSpawnInMemory()));
         builder.extension(World.class, "setKeepSpawnInMemory", f -> f.param("keep", Boolean.class).invoke(a -> { world(a).setKeepSpawnInMemory(arg(a, 1, Boolean.class)); return null; }));
         builder.extension(World.class, "worldBorder", f -> f.returns(WorldBorder.class).invoke(a -> world(a).getWorldBorder()));
+        builder.extension(World.class, "generator", f -> f.returns(JavaTypeRef.javaType(ChunkGenerator.class).nullable()).invoke(a -> world(a).getGenerator()));
         builder.extension(World.class, "getGameRuleValue", f -> f.param("rule", String.class).returns(JavaTypeRef.javaType(String.class).nullable()).invoke(a -> world(a).getGameRuleValue(arg(a, 1, String.class))));
         builder.extension(World.class, "setGameRuleValue", f -> f.param("rule", String.class).param("value", String.class).returns(Boolean.class).invoke(a -> world(a).setGameRuleValue(arg(a, 1, String.class), arg(a, 2, String.class))));
         builder.extension(World.class, "gameRules", f -> f.returns(JavaTypeRef.javaType(String[].class)).invoke(a -> world(a).getGameRules()));
@@ -72,6 +76,8 @@ final class NovaWorldExtra {
         builder.extension(World.class, "unloadChunkRequest", f -> f.param("x", Integer.class).param("z", Integer.class).param("safe", Boolean.class).returns(Boolean.class).invoke(a -> world(a).unloadChunkRequest(arg(a, 1, Integer.class), arg(a, 2, Integer.class), arg(a, 3, Boolean.class))));
         builder.extension(World.class, "refreshChunk", f -> f.param("x", Integer.class).param("z", Integer.class).returns(Boolean.class).invoke(a -> world(a).refreshChunk(arg(a, 1, Integer.class), arg(a, 2, Integer.class))));
         builder.extension(World.class, "regenerateChunk", f -> f.param("x", Integer.class).param("z", Integer.class).returns(Boolean.class).invoke(a -> world(a).regenerateChunk(arg(a, 1, Integer.class), arg(a, 2, Integer.class))));
+        builder.extension(World.class, "playEffect", f -> f.param("location", Location.class).param("effect", Effect.class).param("data", Integer.class).invoke(a -> { world(a).playEffect(arg(a, 1, Location.class), arg(a, 2, Effect.class), arg(a, 3, Integer.class)); return null; }));
+        builder.extension(World.class, "playEffect", f -> f.param("location", Location.class).param("effect", Effect.class).param("data", Integer.class).param("radius", Integer.class).invoke(a -> { world(a).playEffect(arg(a, 1, Location.class), arg(a, 2, Effect.class), arg(a, 3, Integer.class).intValue(), arg(a, 4, Integer.class).intValue()); return null; }));
     }
 
     private static World world(Object[] a) { return NovaTypeSupport.argument(a, 0, World.class); }
