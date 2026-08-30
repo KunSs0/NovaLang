@@ -1,5 +1,6 @@
 package com.novalang.bukkit.types.enums;
 
+import com.novalang.bukkit.NovaBukkitRegistrar;
 import com.novalang.bukkit.types.value.NovaTypeSupport;
 
 import com.novalang.runtime.host.JavaTypeRef;
@@ -116,6 +117,8 @@ public final class NovaEnum {
         NovaEventEnum.register(builder);
         NovaEventExtraEnum.register(builder);
         NovaPlatformEnum.register(builder);
+        NovaBukkitRegistrar.register(builder, NovaWorldInventoryEnum.class, NovaWorldInventoryEnum::register);
+        NovaBukkitRegistrar.register(builder, NovaEnumMoreTypes.class, NovaEnumMoreTypes::register);
     }
 
     static <E extends Enum<E>> void registerEnum(JavaTypes.Builder builder,
