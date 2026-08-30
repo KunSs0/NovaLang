@@ -13,6 +13,7 @@ public final class NovaWorldBlocks {
         NovaWorldExtra.register(builder);
         NovaWorldEntityOperations.register(builder);
         NovaWorldEnvironmentOperations.register(builder);
+        NovaWorldParticleOperations.register(builder);
         NovaChunk.register(builder);
         NovaBlock.register(builder);
         NovaBlockFace.register(builder);
