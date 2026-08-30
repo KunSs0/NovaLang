@@ -58,6 +58,12 @@ public final class NovaEventTypes {
         NovaBukkitRegistrar.register(builder, NovaPrepareItemCraftEvent.class, NovaPrepareItemCraftEvent::register);
         NovaBukkitRegistrar.register(builder, NovaBrewEvent.class, NovaBrewEvent::register);
         NovaBukkitRegistrar.register(builder, NovaPrepareAnvilEvent.class, NovaPrepareAnvilEvent::register);
+        NovaBukkitRegistrar.register(builder, NovaProjectileLaunchEvent.class, NovaProjectileLaunchEvent::register);
+        NovaBukkitRegistrar.register(builder, NovaEntityShootBowEvent.class, NovaEntityShootBowEvent::register);
+        NovaBukkitRegistrar.register(builder, NovaExplosionPrimeEvent.class, NovaExplosionPrimeEvent::register);
+        NovaBukkitRegistrar.register(builder, NovaPotionSplashEvent.class, NovaPotionSplashEvent::register);
+        NovaBukkitRegistrar.register(builder, NovaLingeringPotionSplashEvent.class, NovaLingeringPotionSplashEvent::register);
+        NovaBukkitRegistrar.register(builder, NovaItemSpawnEvent.class, NovaItemSpawnEvent::register);
         builder.extension(Event.class, "handlerList", function -> function
                 .returns(HandlerList.class)
                 .invoke(arguments -> NovaTypeSupport.argument(arguments, 0, Event.class).getHandlers()));
