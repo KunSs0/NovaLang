@@ -66,6 +66,9 @@ import org.bukkit.inventory.meta.MapMeta;
 import org.bukkit.inventory.meta.PotionMeta;
 import org.bukkit.inventory.meta.SkullMeta;
 import org.bukkit.inventory.meta.SpawnEggMeta;
+import org.bukkit.scoreboard.Objective;
+import org.bukkit.scoreboard.Scoreboard;
+import org.bukkit.scoreboard.Team;
 import org.bukkit.plugin.Plugin;
 import org.bukkit.plugin.PluginDescriptionFile;
 import org.bukkit.scheduler.BukkitScheduler;
@@ -119,7 +122,7 @@ class NovaBukkitTest {
     @DisplayName("完整领域注册器不会生成重复扩展签名")
     void shouldExposeExpandedBukkitExtensionsWithoutDuplicates() {
         JavaTypes types = NovaBukkit.create();
-        assertEquals(1661, types.extensions().size());
+        assertEquals(1677, types.extensions().size());
         assertTrue(types.extensionProperties().size() > 100);
         assertTrue(hasProperty(types, Location.class, "x", true));
         assertTrue(hasProperty(types, Player.class, "name", false));
@@ -161,6 +164,9 @@ class NovaBukkitTest {
         assertTrue(hasExtension(types, SpawnEggMeta.class, "setSpawnedType"));
         assertTrue(hasExtension(types, ArmorStand.class, "setHeadPose"));
         assertTrue(hasExtension(types, Villager.class, "setCareer"));
+        assertTrue(hasExtension(types, Scoreboard.class, "objectivesByCriteria"));
+        assertTrue(hasExtension(types, Objective.class, "unregister"));
+        assertTrue(hasExtension(types, Team.class, "setOption"));
         assertTrue(hasExtension(types, PlayerRespawnEvent.class, "setRespawnLocation"));
 
         Set<String> signatures = new LinkedHashSet<String>();

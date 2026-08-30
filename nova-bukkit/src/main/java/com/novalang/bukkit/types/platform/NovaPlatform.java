@@ -18,6 +18,9 @@ public final class NovaPlatform {
         NovaEvent.register(builder);
         NovaMessaging.register(builder);
         NovaScoreboard.register(builder);
+        NovaBukkitRegistrar.register(builder, NovaScoreboardExtra.class, NovaScoreboardExtra::register);
+        NovaBukkitRegistrar.register(builder, NovaObjectiveExtra.class, NovaObjectiveExtra::register);
+        NovaBukkitRegistrar.register(builder, NovaTeamOptions.class, NovaTeamOptions::register);
         NovaBukkitRegistrar.register(builder, NovaBossBar.class, NovaBossBar::register);
         NovaConfiguration.register(builder);
     }
