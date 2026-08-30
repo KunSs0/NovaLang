@@ -31,6 +31,25 @@ class JavaTypesCompileValidationTest {
     }
 
     @Test
+    @DisplayName("严格 JavaTypes 模式允许调用后声明的 Nova 函数")
+    void shouldCompileForwardDeclaredNovaFunctions() {
+        Nova nova = createNova();
+        String source = String.join("\n",
+                "fun entry(): Int = createValue()",
+                "class ForwardFunctions {",
+                "    fun first(): Int = second()",
+                "    fun second(): Int = 42",
+                "}",
+                "fun createValue(): Int = ForwardFunctions().first()",
+                "entry()"
+        );
+
+        CompiledNova compiled = nova.compileToBytecode(source, "java-types-forward-functions.nova");
+
+        assertEquals(42, compiled.run());
+    }
+
+    @Test
     @DisplayName("函数参数数量错误必须在编译期失败")
     void shouldRejectInvalidArgumentCountDuringCompilation() {
         Nova nova = createNova();

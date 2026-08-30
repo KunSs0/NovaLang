@@ -2136,6 +2136,7 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
         for (ImportDecl imp : node.getImports()) {
             imp.accept(this, ctx);
         }
+        predeclareFunctions(node.getDeclarations(), currentScope, null);
         for (Declaration decl : node.getDeclarations()) {
             decl.accept(this, ctx);
         }
@@ -2304,24 +2305,19 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
         // 进入泛型类型参数作用域
         NovaType returnNovaType = typeResolver.resolve(node.getReturnType());
 
-        Symbol funSym = null;
+        Symbol funSym = declarationSymbols.get(node);
         if (!node.isExtensionFunction()) {
-            Symbol existingLocal = currentScope.resolveLocal(node.getName());
-            boolean allowPropertyCollision = (currentScope.getType() == Scope.ScopeType.CLASS
-                    || currentScope.getType() == Scope.ScopeType.ENUM)
-                    && existingLocal != null
-                    && existingLocal.getKind() == SymbolKind.PROPERTY;
-            if (!allowPropertyCollision) {
-                checker.checkRedefinition(currentScope, node.getName(), node);
-            }
-            funSym = new Symbol(node.getName(), SymbolKind.FUNCTION,
-                    returnType, false, node.getLocation(), node, extractVisibility(node.getModifiers()));
-            funSym.setResolvedNovaType(returnNovaType);
-            List<Symbol> paramSymbols = buildParamSymbols(node.getParams());
-            funSym.setParameters(paramSymbols);
-            declarationSymbols.put(node, funSym);
-            if (!allowPropertyCollision) {
-                currentScope.define(funSym);
+            if (funSym == null) {
+                Symbol existingLocal = currentScope.resolveLocal(node.getName());
+                boolean allowPropertyCollision = isPropertyFunctionCollision(currentScope, existingLocal);
+                if (!allowPropertyCollision) {
+                    checker.checkRedefinition(currentScope, node.getName(), node);
+                }
+                funSym = createFunctionSymbol(node, returnType, returnNovaType);
+                declarationSymbols.put(node, funSym);
+                if (!allowPropertyCollision) {
+                    currentScope.define(funSym);
+                }
             }
         }
 
@@ -2368,6 +2364,79 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
         }
 
         return null;
+    }
+
+    /**
+     * 在分析函数体之前登记同一作用域中的函数签名，使函数声明顺序不影响名称解析。
+     */
+    private void predeclareFunctions(List<Declaration> declarations, Scope scope, Symbol ownerSymbol) {
+        if (declarations == null || declarations.isEmpty()) {
+            return;
+        }
+        for (Declaration declaration : declarations) {
+            if (!(declaration instanceof FunDecl)) {
+                continue;
+            }
+            FunDecl function = (FunDecl) declaration;
+            if (function.isExtensionFunction() || declarationSymbols.containsKey(function)) {
+                continue;
+            }
+
+            boolean hasTypeParameters = function.getTypeParams() != null
+                    && !function.getTypeParams().isEmpty();
+            if (hasTypeParameters) {
+                typeResolver.enterTypeParams(function.getTypeParams());
+            }
+            try {
+                String returnType = resolveTypeName(function.getReturnType());
+                NovaType returnNovaType = typeResolver.resolve(function.getReturnType());
+                Symbol existingLocal = scope.resolveLocal(function.getName());
+                boolean allowPropertyCollision = isPropertyFunctionCollision(scope, existingLocal)
+                        || hasPropertyDeclaration(declarations, scope, function.getName());
+                if (!allowPropertyCollision) {
+                    checker.checkRedefinition(scope, function.getName(), function);
+                }
+                Symbol functionSymbol = createFunctionSymbol(function, returnType, returnNovaType);
+                declarationSymbols.put(function, functionSymbol);
+                if (!allowPropertyCollision) {
+                    scope.define(functionSymbol);
+                }
+                if (ownerSymbol != null) {
+                    ownerSymbol.addMember(functionSymbol);
+                }
+            } finally {
+                if (hasTypeParameters) {
+                    typeResolver.exitTypeParams();
+                }
+            }
+        }
+    }
+
+    private boolean isPropertyFunctionCollision(Scope scope, Symbol existingLocal) {
+        return (scope.getType() == Scope.ScopeType.CLASS || scope.getType() == Scope.ScopeType.ENUM)
+                && existingLocal != null
+                && existingLocal.getKind() == SymbolKind.PROPERTY;
+    }
+
+    private boolean hasPropertyDeclaration(List<Declaration> declarations, Scope scope, String name) {
+        if (scope.getType() != Scope.ScopeType.CLASS && scope.getType() != Scope.ScopeType.ENUM) {
+            return false;
+        }
+        for (Declaration declaration : declarations) {
+            if (declaration instanceof PropertyDecl && name.equals(declaration.getName())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private Symbol createFunctionSymbol(FunDecl function, String returnType, NovaType returnNovaType) {
+        Symbol functionSymbol = new Symbol(function.getName(), SymbolKind.FUNCTION,
+                returnType, false, function.getLocation(), function,
+                extractVisibility(function.getModifiers()));
+        functionSymbol.setResolvedNovaType(returnNovaType);
+        functionSymbol.setParameters(buildParamSymbols(function.getParams()));
+        return functionSymbol;
     }
 
     @Override
@@ -2442,6 +2511,7 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
             diagnostics.addAll(varianceDiags);
         }
 
+        predeclareFunctions(node.getMembers(), classScope, classSym);
         for (Declaration member : node.getMembers()) {
             member.accept(this, ctx);
             if (member.getName() != null) {
@@ -2505,6 +2575,7 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
         Scope ifScope = enterScope(Scope.ScopeType.CLASS, node);
         ifScope.setOwnerTypeName(node.getName());
 
+        predeclareFunctions(node.getMembers(), ifScope, ifSym);
         for (Declaration member : node.getMembers()) {
             member.accept(this, ctx);
             if (member.getName() != null) {
@@ -2556,6 +2627,7 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
             }
         }
 
+        predeclareFunctions(node.getMembers(), objScope, objSym);
         for (Declaration member : node.getMembers()) {
             member.accept(this, ctx);
             if (member.getName() != null) {
@@ -2591,6 +2663,7 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
             enumSym.addMember(entrySym);
         }
 
+        predeclareFunctions(node.getMembers(), enumScope, enumSym);
         for (Declaration member : node.getMembers()) {
             member.accept(this, ctx);
             if (member.getName() != null) {
