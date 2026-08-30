@@ -857,7 +857,8 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
         if (memberExpr == null || node == null) return null;
         NovaType receiverType = getNovaType(memberExpr.getTarget());
         if (!(receiverType instanceof JavaClassNovaType)) return null;
-        JavaTypeDescriptor descriptor = ((JavaClassNovaType) receiverType).getDescriptor();
+        JavaClassNovaType javaReceiverType = (JavaClassNovaType) receiverType;
+        JavaTypeDescriptor descriptor = javaReceiverType.getDescriptor();
         if (descriptor == null) return null;
 
         boolean staticOnly = false;
@@ -869,7 +870,8 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
             }
         }
 
-        return descriptor.resolveMethod(memberExpr.getMember(), analyzedCallArgumentTypes(node), staticOnly);
+        return descriptor.resolveMethod(memberExpr.getMember(), analyzedCallArgumentTypes(node),
+                staticOnly, javaReceiverType.getTypeArgs());
     }
 
     private boolean isStaticJavaMemberAccess(MemberExpr memberExpr) {
@@ -919,7 +921,8 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
                 }
             }
             JavaTypeDescriptor.JavaExecutableDescriptor resolved =
-                    descriptor.resolveMethod(memberName, argTypes, staticOnly);
+                    descriptor.resolveMethod(memberName, argTypes, staticOnly,
+                            receiverType.getTypeArgs());
             if (resolved != null) {
                 NovaType expectedReturnType = expectedType.getReturnType();
                 if (expectedReturnType == null
@@ -929,7 +932,8 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
             }
         }
 
-        List<JavaTypeDescriptor.JavaExecutableDescriptor> overloads = descriptor.methodOverloads(memberName, staticOnly);
+        List<JavaTypeDescriptor.JavaExecutableDescriptor> overloads = descriptor.methodOverloads(
+                memberName, staticOnly, receiverType.getTypeArgs());
         if (overloads.isEmpty()) return null;
         if (overloads.size() == 1) {
             return new JavaExecutableResolution(overloads.get(0), false);
@@ -1865,6 +1869,11 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
                 || statement instanceof BreakStmt
                 || statement instanceof ContinueStmt) {
             return true;
+        }
+        if (statement instanceof ExpressionStmt) {
+            Expression expression = ((ExpressionStmt) statement).getExpression();
+            NovaType expressionType = getNovaType(expression);
+            return expressionType instanceof NothingType && !expressionType.isNullable();
         }
         if (statement instanceof Block) {
             Block block = (Block) statement;
@@ -3445,9 +3454,11 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
                                     node);
                         }
                     }
-                    NovaType calleeNovaType = getNovaType(node.getCallee());
-                    if (calleeNovaType != null) {
-                        setNovaType(node, calleeNovaType);
+                    if (getNovaType(node) == null) {
+                        NovaType calleeNovaType = getNovaType(node.getCallee());
+                        if (calleeNovaType != null) {
+                            setNovaType(node, calleeNovaType);
+                        }
                     }
                 }
             }
@@ -3531,10 +3542,12 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
                 NovaType propertyType = extensionProperty != null
                         ? resolveJavaTypeRef(extensionProperty.getProperty().getType())
                         : null;
-                JavaTypeDescriptor descriptor = ((JavaClassNovaType) receiverNovaType).getDescriptor();
+                JavaClassNovaType javaReceiverType = (JavaClassNovaType) receiverNovaType;
+                JavaTypeDescriptor descriptor = javaReceiverType.getDescriptor();
                 if (propertyType == null && descriptor != null) {
                     propertyType = descriptor.resolveProperty(
-                            node.getMember(), isStaticJavaMemberAccess(node));
+                            node.getMember(), isStaticJavaMemberAccess(node),
+                            javaReceiverType.getTypeArgs());
                 }
                 if (propertyType != null) {
                     setNovaType(node, propertyType);
@@ -3613,7 +3626,8 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
                     } else {
                         JavaTypeDescriptor.JavaExecutableDescriptor setter =
                                 descriptor.resolvePropertySetter(
-                                        memberExpr.getMember(), valueType, staticAccess);
+                                        memberExpr.getMember(), valueType, staticAccess,
+                                        javaType.getTypeArgs());
                         if (setter == null || setter.getParamTypes().isEmpty()) {
                             checker.addDiagnostic(SemanticDiagnostic.Severity.ERROR,
                                     "Java 属性 '" + memberExpr.getMember() + "' 的 setter 参数不匹配",
@@ -4278,7 +4292,8 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
                 List<NovaType> argumentTypes = analyzedSafeCallArgumentTypes(node);
                 JavaTypeDescriptor descriptor = javaReceiverType.getDescriptor();
                 JavaTypeDescriptor.JavaExecutableDescriptor javaMethod = descriptor != null
-                        ? descriptor.resolveMethod(node.getMember(), argumentTypes, false)
+                        ? descriptor.resolveMethod(node.getMember(), argumentTypes, false,
+                        javaReceiverType.getTypeArgs())
                         : null;
                 if (javaMethod != null) {
                     resultType = javaMethod.getReturnType();
@@ -4309,7 +4324,8 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
                         : null;
                 JavaTypeDescriptor descriptor = javaReceiverType.getDescriptor();
                 if (propertyType == null && descriptor != null) {
-                    propertyType = descriptor.resolveProperty(node.getMember(), false);
+                    propertyType = descriptor.resolveProperty(
+                            node.getMember(), false, javaReceiverType.getTypeArgs());
                 }
                 if (propertyType != null) {
                     resultType = propertyType;

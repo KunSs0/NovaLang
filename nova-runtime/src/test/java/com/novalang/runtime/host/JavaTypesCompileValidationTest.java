@@ -107,6 +107,27 @@ class JavaTypesCompileValidationTest {
     }
 
     @Test
+    @DisplayName("Java 泛型接收者的方法返回类型使用实际类型参数")
+    void shouldResolveGenericReceiverMethodReturnType() {
+        JavaTypeRef referenceType = JavaTypeRef.parameterized(
+                "GenericReference", GenericReference.class, JavaTypeRefs.FLOAT);
+        JavaTypes javaTypes = JavaTypes.builder()
+                .globalVariable("reference", variable -> variable
+                        .type(referenceType)
+                        .value(new GenericReference<Float>(3.0f)))
+                .build();
+        Nova nova = new Nova();
+        nova.install(javaTypes);
+        String source = String.join("\n",
+                "fun acceptFloat(value: Float): Float = value",
+                "acceptFloat(reference.get())"
+        );
+
+        assertEquals(3.0f, nova.compileToBytecode(
+                source, "java-types-generic-receiver-return.nova").run());
+    }
+
+    @Test
     @DisplayName("注册 object 成员使用正确签名时可以编译执行")
     void shouldCompileRegisteredObjectMember() {
         Nova nova = createNova();
@@ -257,5 +278,17 @@ class JavaTypesCompileValidationTest {
     public static final class ExtensionPropertyBean {
         private final String id = "settings";
         private String label = "initial";
+    }
+
+    public static final class GenericReference<T> {
+        private final T value;
+
+        public GenericReference(T value) {
+            this.value = value;
+        }
+
+        public T get() {
+            return value;
+        }
     }
 }

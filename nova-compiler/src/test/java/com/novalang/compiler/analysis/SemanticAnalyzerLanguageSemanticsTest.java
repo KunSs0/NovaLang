@@ -768,6 +768,55 @@ class SemanticAnalyzerLanguageSemanticsTest {
     }
 
     @Test
+    @DisplayName("Nothing-returning calls should smart-cast after a null guard")
+    void nothingReturningCallShouldSmartCastAfterNullGuard() {
+        AnalyzedSource analyzed = analyzeSource(
+                "fun size(value: String?): Int {\n" +
+                "    val active = value\n" +
+                "    if (active == null) {\n" +
+                "        error(\"missing\")\n" +
+                "    }\n" +
+                "    return active.length\n" +
+                "}");
+
+        assertNoDiagnostics(analyzed.result,
+                "A call returning Nothing should terminate the guarded branch");
+    }
+
+    @Test
+    @DisplayName("Nothing-returning calls should smart-cast after disjunctive null guards")
+    void nothingReturningCallShouldSmartCastAfterDisjunctiveNullGuard() {
+        AnalyzedSource analyzed = analyzeSource(
+                "fun size(left: String?, right: String?): Int {\n" +
+                "    val activeLeft = left\n" +
+                "    val activeRight = right\n" +
+                "    if (activeLeft == null || activeRight == null) {\n" +
+                "        error(\"missing\")\n" +
+                "    }\n" +
+                "    return activeLeft.length + activeRight.length\n" +
+                "}");
+
+        assertNoDiagnostics(analyzed.result,
+                "A Nothing guard should apply every false-branch narrowing from ||");
+    }
+
+    @Test
+    @DisplayName("Nullable Nothing expressions should not terminate a null guard")
+    void nullableNothingExpressionShouldNotTerminateNullGuard() {
+        AnalysisResult result = analyze(
+                "fun size(value: String?): Int {\n" +
+                "    val active = value\n" +
+                "    if (active == null) {\n" +
+                "        null\n" +
+                "    }\n" +
+                "    return active.length\n" +
+                "}");
+
+        assertHasDiagnosticContaining(result, SemanticDiagnostic.Severity.ERROR,
+                "nullable receiver", "A null literal must not terminate control flow");
+    }
+
+    @Test
     @DisplayName("elvis expressions should use the common type of the non-null left side and right side")
     void elvisShouldUseCommonTypeOfBothSides() {
         AnalysisResult result = analyze(

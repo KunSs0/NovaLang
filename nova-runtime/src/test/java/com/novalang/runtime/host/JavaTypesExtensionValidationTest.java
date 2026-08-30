@@ -30,6 +30,19 @@ class JavaTypesExtensionValidationTest {
     }
 
     @Test
+    @DisplayName("扩展函数调用结果使用声明的返回类型而不是方法引用类型")
+    void extensionCallResultUsesDeclaredReturnType() {
+        Nova nova = createNova();
+        String source = String.join("\n",
+                "fun accept(value: Int): Int = value",
+                "accept(box.plus(4))"
+        );
+
+        assertEquals(7, nova.compileToBytecode(
+                source, "java-types-extension-call-result.nova").run());
+    }
+
+    @Test
     @DisplayName("扩展函数错误参数在编译期失败")
     void invalidExtensionArgumentsFailDuringCompilation() {
         Nova nova = createNova();

@@ -6,10 +6,17 @@ import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
+import java.lang.reflect.GenericArrayType;
+import java.lang.reflect.ParameterizedType;
+import java.lang.reflect.Type;
+import java.lang.reflect.TypeVariable;
+import java.lang.reflect.WildcardType;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Cached compile-time description of a Java type.
@@ -135,6 +142,13 @@ public final class JavaTypeDescriptor {
     }
 
     public JavaExecutableDescriptor resolveMethod(String methodName, List<NovaType> argTypes, boolean staticOnly) {
+        return resolveMethod(methodName, argTypes, staticOnly,
+                Collections.<NovaTypeArgument>emptyList());
+    }
+
+    public JavaExecutableDescriptor resolveMethod(String methodName, List<NovaType> argTypes,
+                                                  boolean staticOnly,
+                                                  List<NovaTypeArgument> receiverTypeArguments) {
         Class<?> javaClass = loadJavaClass();
         if (javaClass == null) return null;
         List<Method> candidates = new ArrayList<Method>();
@@ -145,7 +159,9 @@ public final class JavaTypeDescriptor {
         }
         Method bestMethod = JavaOverloadResolver.selectBestMethod(
                 candidates, staticOnly, JavaTypeOracle.get().toJavaArgumentTypes(argTypes));
-        return bestMethod != null ? toExecutableDescriptor(bestMethod) : null;
+        return bestMethod != null
+                ? toExecutableDescriptor(bestMethod, receiverTypeArguments)
+                : null;
     }
 
     public JavaExecutableDescriptor resolveConstructor(List<NovaType> argTypes) {
@@ -158,13 +174,19 @@ public final class JavaTypeDescriptor {
     }
 
     public List<JavaExecutableDescriptor> methodOverloads(String methodName, boolean staticOnly) {
+        return methodOverloads(methodName, staticOnly,
+                Collections.<NovaTypeArgument>emptyList());
+    }
+
+    public List<JavaExecutableDescriptor> methodOverloads(String methodName, boolean staticOnly,
+                                                         List<NovaTypeArgument> receiverTypeArguments) {
         Class<?> javaClass = loadJavaClass();
         if (javaClass == null) return Collections.emptyList();
         List<JavaExecutableDescriptor> overloads = new ArrayList<JavaExecutableDescriptor>();
         for (Method method : javaClass.getMethods()) {
             if (!methodName.equals(method.getName())) continue;
             if (Modifier.isStatic(method.getModifiers()) != staticOnly) continue;
-            overloads.add(toExecutableDescriptor(method));
+            overloads.add(toExecutableDescriptor(method, receiverTypeArguments));
         }
         return overloads;
     }
@@ -180,14 +202,22 @@ public final class JavaTypeDescriptor {
     }
 
     public NovaType resolveProperty(String memberName, boolean staticOnly) {
+        return resolveProperty(memberName, staticOnly,
+                Collections.<NovaTypeArgument>emptyList());
+    }
+
+    public NovaType resolveProperty(String memberName, boolean staticOnly,
+                                    List<NovaTypeArgument> receiverTypeArguments) {
         Class<?> javaClass = loadJavaClass();
         if (javaClass == null || memberName == null || memberName.isEmpty()) {
             return null;
         }
+        Map<TypeVariable<?>, NovaType> typeBindings = receiverTypeBindings(
+                javaClass, receiverTypeArguments);
         try {
             Field field = javaClass.getField(memberName);
             if (Modifier.isStatic(field.getModifiers()) == staticOnly) {
-                return JavaTypeOracle.get().toNovaType(field.getType(), false);
+                return toNovaType(field.getGenericType(), typeBindings);
             }
         } catch (NoSuchFieldException ignored) {
         }
@@ -205,7 +235,7 @@ public final class JavaTypeDescriptor {
                         && getter.getReturnType() != Boolean.class) {
                     continue;
                 }
-                return JavaTypeOracle.get().toNovaType(getter.getReturnType(), false);
+                return toNovaType(getter.getGenericReturnType(), typeBindings);
             } catch (NoSuchMethodException ignored) {
             }
         }
@@ -249,16 +279,26 @@ public final class JavaTypeDescriptor {
     public JavaExecutableDescriptor resolvePropertySetter(String memberName,
                                                            NovaType valueType,
                                                            boolean staticOnly) {
+        return resolvePropertySetter(memberName, valueType, staticOnly,
+                Collections.<NovaTypeArgument>emptyList());
+    }
+
+    public JavaExecutableDescriptor resolvePropertySetter(String memberName,
+                                                           NovaType valueType,
+                                                           boolean staticOnly,
+                                                           List<NovaTypeArgument> receiverTypeArguments) {
         Class<?> javaClass = loadJavaClass();
         if (javaClass == null || memberName == null || memberName.isEmpty()) {
             return null;
         }
+        Map<TypeVariable<?>, NovaType> typeBindings = receiverTypeBindings(
+                javaClass, receiverTypeArguments);
         try {
             Field field = javaClass.getField(memberName);
             int modifiers = field.getModifiers();
             if (Modifier.isStatic(modifiers) == staticOnly && !Modifier.isFinal(modifiers)) {
                 List<NovaType> parameterTypes = Collections.singletonList(
-                        JavaTypeOracle.get().toNovaType(field.getType(), false));
+                        toNovaType(field.getGenericType(), typeBindings));
                 return new JavaExecutableDescriptor(parameterTypes, NovaTypes.UNIT, false);
             }
         } catch (NoSuchFieldException ignored) {
@@ -276,16 +316,93 @@ public final class JavaTypeDescriptor {
                 Collections.singletonList(valueType));
         Method bestMethod = JavaOverloadResolver.selectBestMethod(
                 candidates, staticOnly, argumentTypes);
-        return bestMethod != null ? toExecutableDescriptor(bestMethod) : null;
+        return bestMethod != null
+                ? toExecutableDescriptor(bestMethod, receiverTypeArguments)
+                : null;
     }
 
     private JavaExecutableDescriptor toExecutableDescriptor(Method method) {
+        return toExecutableDescriptor(method, Collections.<NovaTypeArgument>emptyList());
+    }
+
+    private JavaExecutableDescriptor toExecutableDescriptor(
+            Method method, List<NovaTypeArgument> receiverTypeArguments) {
+        Class<?> javaClass = loadJavaClass();
+        Map<TypeVariable<?>, NovaType> typeBindings = receiverTypeBindings(
+                javaClass, receiverTypeArguments);
         List<NovaType> paramTypes = new ArrayList<NovaType>();
-        for (Class<?> paramType : method.getParameterTypes()) {
-            paramTypes.add(JavaTypeOracle.get().toNovaType(paramType, false));
+        for (Type paramType : method.getGenericParameterTypes()) {
+            paramTypes.add(toNovaType(paramType, typeBindings));
         }
-        NovaType returnType = JavaTypeOracle.get().toNovaType(method.getReturnType(), false);
+        NovaType returnType = toNovaType(method.getGenericReturnType(), typeBindings);
         return new JavaExecutableDescriptor(paramTypes, returnType, method.isVarArgs());
+    }
+
+    private Map<TypeVariable<?>, NovaType> receiverTypeBindings(
+            Class<?> javaClass, List<NovaTypeArgument> receiverTypeArguments) {
+        Map<TypeVariable<?>, NovaType> bindings =
+                new LinkedHashMap<TypeVariable<?>, NovaType>();
+        if (javaClass == null || receiverTypeArguments == null) {
+            return bindings;
+        }
+        TypeVariable<?>[] typeParameters = javaClass.getTypeParameters();
+        int count = Math.min(typeParameters.length, receiverTypeArguments.size());
+        for (int i = 0; i < count; i++) {
+            NovaTypeArgument argument = receiverTypeArguments.get(i);
+            NovaType argumentType = argument != null ? argument.getType() : null;
+            if (argumentType != null) {
+                bindings.put(typeParameters[i], argumentType);
+            }
+        }
+        return bindings;
+    }
+
+    private NovaType toNovaType(Type type, Map<TypeVariable<?>, NovaType> typeBindings) {
+        if (type instanceof Class<?>) {
+            return JavaTypeOracle.get().toNovaType((Class<?>) type, false);
+        }
+        if (type instanceof TypeVariable<?>) {
+            NovaType boundType = typeBindings.get(type);
+            return boundType != null ? boundType : NovaTypes.ANY;
+        }
+        if (type instanceof ParameterizedType) {
+            ParameterizedType parameterizedType = (ParameterizedType) type;
+            Type rawType = parameterizedType.getRawType();
+            if (!(rawType instanceof Class<?>)) {
+                return NovaTypes.ANY;
+            }
+            List<NovaTypeArgument> arguments = new ArrayList<NovaTypeArgument>();
+            for (Type argument : parameterizedType.getActualTypeArguments()) {
+                arguments.add(NovaTypeArgument.invariant(
+                        toNovaType(argument, typeBindings)));
+            }
+            NovaType rawNovaType = JavaTypeOracle.get().toNovaType(
+                    (Class<?>) rawType, false);
+            if (rawNovaType instanceof JavaClassNovaType) {
+                JavaClassNovaType javaType = (JavaClassNovaType) rawNovaType;
+                return new JavaClassNovaType(javaType.getDescriptor(), arguments, false);
+            }
+            if (rawNovaType instanceof ClassNovaType) {
+                return new ClassNovaType(rawNovaType.getTypeName(), arguments, false);
+            }
+            return rawNovaType;
+        }
+        if (type instanceof WildcardType) {
+            WildcardType wildcardType = (WildcardType) type;
+            Type[] upperBounds = wildcardType.getUpperBounds();
+            if (upperBounds.length > 0) {
+                return toNovaType(upperBounds[0], typeBindings);
+            }
+            return NovaTypes.ANY;
+        }
+        if (type instanceof GenericArrayType) {
+            GenericArrayType arrayType = (GenericArrayType) type;
+            NovaType elementType = toNovaType(
+                    arrayType.getGenericComponentType(), typeBindings);
+            return new ClassNovaType("Array",
+                    Collections.singletonList(NovaTypeArgument.invariant(elementType)), false);
+        }
+        return NovaTypes.ANY;
     }
 
     private JavaExecutableDescriptor toExecutableDescriptor(Constructor<?> constructor) {
