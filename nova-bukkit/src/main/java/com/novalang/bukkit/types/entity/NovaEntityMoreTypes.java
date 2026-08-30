@@ -28,6 +28,9 @@ public final class NovaEntityMoreTypes {
         NovaBukkitRegistrar.register(builder, NovaOcelot.class, NovaOcelot::register);
         NovaBukkitRegistrar.register(builder, NovaEnderman.class, NovaEnderman::register);
         NovaBukkitRegistrar.register(builder, NovaZombieVillager.class, NovaZombieVillager::register);
+        NovaBukkitRegistrar.register(builder, NovaTNTPrimed.class, NovaTNTPrimed::register);
+        NovaBukkitRegistrar.register(builder, NovaWitherSkull.class, NovaWitherSkull::register);
+        NovaBukkitRegistrar.register(builder, NovaEnderSignal.class, NovaEnderSignal::register);
         NovaBukkitRegistrar.register(builder, NovaEntityProjectileSource.class, NovaEntityProjectileSource::register);
     }
 }
