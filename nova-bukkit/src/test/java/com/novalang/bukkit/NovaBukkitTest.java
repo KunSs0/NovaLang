@@ -122,7 +122,7 @@ class NovaBukkitTest {
     @DisplayName("完整领域注册器不会生成重复扩展签名")
     void shouldExposeExpandedBukkitExtensionsWithoutDuplicates() {
         JavaTypes types = NovaBukkit.create();
-        assertEquals(1745, types.extensions().size());
+        assertEquals(1770, types.extensions().size());
         assertTrue(types.extensionProperties().size() > 100);
         assertTrue(hasProperty(types, Location.class, "x", true));
         assertTrue(hasProperty(types, Player.class, "name", false));
@@ -191,6 +191,9 @@ class NovaBukkitTest {
         assertTrue(hasExtension(types, org.bukkit.event.entity.PotionSplashEvent.class, "setIntensity"));
         assertTrue(hasExtension(types, org.bukkit.event.entity.LingeringPotionSplashEvent.class, "areaEffectCloud"));
         assertTrue(hasExtension(types, org.bukkit.event.entity.ItemSpawnEvent.class, "entity"));
+        assertTrue(hasExtension(types, org.bukkit.event.player.PlayerLoginEvent.class, "realAddress"));
+        assertTrue(hasExtension(types, org.bukkit.event.player.AsyncPlayerPreLoginEvent.class, "setLoginResult"));
+        assertTrue(hasExtension(types, org.bukkit.event.player.PlayerSwapHandItemsEvent.class, "setOffHandItem"));
 
         Set<String> signatures = new LinkedHashSet<String>();
         for (JavaExtensionDescriptor extension : types.extensions()) {
@@ -461,7 +464,7 @@ class NovaBukkitTest {
             if (index > 0) {
                 signature.append(',');
             }
-            signature.append(parameters.get(index).getType().displayName());
+            signature.append(parameters.get(index).getType().javaClass().getName());
         }
         signature.append(')');
         return signature.toString();
