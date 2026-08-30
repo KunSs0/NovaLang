@@ -489,6 +489,8 @@ public final class NovaTypeRegistry {
         registerFunction("async", "async(block)", 1, "异步执行代码块，返回 Future", "Future");
         registerFunction("coroutineScope", "coroutineScope(block)", 1, "创建结构化并发作用域，自动等待所有子任务", "Any");
         registerFunction("supervisorScope", "supervisorScope(block)", 1, "创建监督作用域，子任务失败不影响兄弟任务", "Any");
+        registerFunction("scheduleRepeat", "scheduleRepeat(delayMs, periodMs, block)", 3,
+                "延迟指定时间后按固定周期重复执行代码块", "Task");
         // 时间
         registerFunction("sleep", "sleep(millis)", 1, "暂停当前线程指定毫秒数", "Unit");
         registerFunction("measureTimeMillis", "measureTimeMillis(block)", 1, "测量代码块执行时间（毫秒）", "Long");

@@ -50,6 +50,16 @@ class JavaTypesCompileValidationTest {
     }
 
     @Test
+    @DisplayName("严格 JavaTypes 模式允许编译 scheduleRepeat")
+    void shouldCompileScheduleRepeatBuiltin() {
+        Nova nova = createNova();
+
+        nova.compileToBytecode(
+                "scheduleRepeat(50L, 50L) { }",
+                "java-types-schedule-repeat.nova");
+    }
+
+    @Test
     @DisplayName("函数参数数量错误必须在编译期失败")
     void shouldRejectInvalidArgumentCountDuringCompilation() {
         Nova nova = createNova();
