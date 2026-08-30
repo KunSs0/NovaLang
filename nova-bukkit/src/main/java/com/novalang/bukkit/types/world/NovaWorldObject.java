@@ -21,6 +21,7 @@ public final class NovaWorldObject {
         builder.extension(WorldBorder.class, "setSize", f -> f.param("size", Double.class).invoke(a -> { support(a).setSize(arg(a, 1, Double.class)); return null; }));
         builder.extension(WorldBorder.class, "setSize", f -> f.param("size", Double.class).param("seconds", Long.class).invoke(a -> { support(a).setSize(arg(a, 1, Double.class), arg(a, 2, Long.class)); return null; }));
         builder.extension(WorldBorder.class, "center", f -> f.returns(org.bukkit.Location.class).invoke(a -> support(a).getCenter()));
+        builder.extension(WorldBorder.class, "setCenter", f -> f.param("location", org.bukkit.Location.class).invoke(a -> { support(a).setCenter(arg(a, 1, org.bukkit.Location.class)); return null; }));
         builder.extension(WorldBorder.class, "setCenter", f -> f.param("x", Double.class).param("z", Double.class).invoke(a -> { support(a).setCenter(arg(a, 1, Double.class), arg(a, 2, Double.class)); return null; }));
         builder.extension(WorldBorder.class, "damageBuffer", f -> f.returns(Double.class).invoke(a -> support(a).getDamageBuffer()));
         builder.extension(WorldBorder.class, "setDamageBuffer", f -> f.param("blocks", Double.class).invoke(a -> { support(a).setDamageBuffer(arg(a, 1, Double.class)); return null; }));
