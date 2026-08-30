@@ -53,6 +53,12 @@ public final class NovaEventTypes {
         NovaBukkitRegistrar.register(builder, NovaServerListPingEvent.class, NovaServerListPingEvent::register);
         NovaBukkitRegistrar.register(builder, NovaServiceEvent.class, NovaServiceEvent::register);
         NovaBukkitRegistrar.register(builder, NovaTabCompleteEvent.class, NovaTabCompleteEvent::register);
+        NovaBukkitRegistrar.register(builder, NovaVehicleEvent.class, NovaVehicleEvent::register);
+        NovaBukkitRegistrar.register(builder, NovaVehicleDamageEvent.class, NovaVehicleDamageEvent::register);
+        NovaBukkitRegistrar.register(builder, NovaVehicleDestroyEvent.class, NovaVehicleDestroyEvent::register);
+        NovaBukkitRegistrar.register(builder, NovaVehiclePassengerEvent.class, NovaVehiclePassengerEvent::register);
+        NovaBukkitRegistrar.register(builder, NovaVehicleMoveEvent.class, NovaVehicleMoveEvent::register);
+        NovaBukkitRegistrar.register(builder, NovaVehicleCollisionEvent.class, NovaVehicleCollisionEvent::register);
         NovaBukkitRegistrar.register(builder, NovaInventoryMoveItemEvent.class, NovaInventoryMoveItemEvent::register);
         NovaBukkitRegistrar.register(builder, NovaCraftItemEvent.class, NovaCraftItemEvent::register);
         NovaBukkitRegistrar.register(builder, NovaPrepareItemCraftEvent.class, NovaPrepareItemCraftEvent::register);
