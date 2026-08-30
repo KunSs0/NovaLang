@@ -4,6 +4,8 @@ import com.novalang.runtime.host.JavaTypes;
 import org.bukkit.entity.Horse;
 import org.bukkit.entity.Llama;
 import org.bukkit.entity.Parrot;
+import org.bukkit.entity.Ocelot;
+import org.bukkit.entity.Rabbit;
 import org.bukkit.entity.Skeleton;
 import org.bukkit.entity.Villager;
 
@@ -20,6 +22,8 @@ final class NovaEntityEnum {
         NovaEnum.registerEnum(builder, "horseVariant", Horse.Variant.class);
         NovaEnum.registerEnum(builder, "llamaColor", Llama.Color.class);
         NovaEnum.registerEnum(builder, "parrotVariant", Parrot.Variant.class);
+        NovaEnum.registerEnum(builder, "ocelotType", Ocelot.Type.class);
+        NovaEnum.registerEnum(builder, "rabbitType", Rabbit.Type.class);
         NovaEnum.registerEnum(builder, "skeletonSkeletonType", Skeleton.SkeletonType.class);
         NovaEnum.registerEnum(builder, "villagerProfession", Villager.Profession.class);
         NovaEnum.registerEnum(builder, "villagerCareer", Villager.Career.class);
