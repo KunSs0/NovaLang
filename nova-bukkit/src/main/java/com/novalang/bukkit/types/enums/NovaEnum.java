@@ -119,6 +119,7 @@ public final class NovaEnum {
         NovaPlatformEnum.register(builder);
         NovaBukkitRegistrar.register(builder, NovaWorldInventoryEnum.class, NovaWorldInventoryEnum::register);
         NovaBukkitRegistrar.register(builder, NovaEnumMoreTypes.class, NovaEnumMoreTypes::register);
+        NovaBukkitRegistrar.register(builder, NovaLegacyEnumMoreTypes.class, NovaLegacyEnumMoreTypes::register);
     }
 
     static <E extends Enum<E>> void registerEnum(JavaTypes.Builder builder,
