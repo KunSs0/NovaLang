@@ -31,6 +31,8 @@ import org.bukkit.entity.Minecart;
 import org.bukkit.entity.Slime;
 import org.bukkit.entity.Guardian;
 import org.bukkit.entity.Zombie;
+import org.bukkit.entity.minecart.CommandMinecart;
+import org.bukkit.entity.minecart.HopperMinecart;
 import org.bukkit.entity.ArmorStand;
 import org.bukkit.entity.Villager;
 import org.bukkit.event.entity.EntityRegainHealthEvent;
@@ -127,7 +129,7 @@ class NovaBukkitTest {
     @DisplayName("完整领域注册器不会生成重复扩展签名")
     void shouldExposeExpandedBukkitExtensionsWithoutDuplicates() {
         JavaTypes types = NovaBukkit.create();
-        assertEquals(2387, types.extensions().size());
+        assertEquals(2392, types.extensions().size());
         assertTrue(types.extensionProperties().size() > 100);
         assertTrue(hasProperty(types, Location.class, "x", true));
         assertTrue(hasProperty(types, Player.class, "name", false));
@@ -315,6 +317,8 @@ class NovaBukkitTest {
         assertEquals(org.bukkit.entity.Arrow.PickupStatus.class,
                 returnClass(types.resolveNamespace("default"), "arrowPickupStatus"));
         assertTrue(hasExtension(types, Zombie.class, "setVillagerProfession"));
+        assertTrue(hasExtension(types, HopperMinecart.class, "setEnabled"));
+        assertTrue(hasExtension(types, CommandMinecart.class, "setCommand"));
 
         Set<String> signatures = new LinkedHashSet<String>();
         for (JavaExtensionDescriptor extension : types.extensions()) {
