@@ -17,6 +17,10 @@ public final class NovaWorldBlocks {
         NovaBukkitRegistrar.register(builder, NovaBlockStringTypes.class, NovaBlockStringTypes::register);
         NovaBlockState.register(builder);
         NovaMaterialData.register(builder);
+        NovaLegacyCauldron.register(builder);
+        NovaLegacyCrops.register(builder);
+        NovaLegacyLever.register(builder);
+        NovaLegacyRails.register(builder);
         NovaMap.register(builder);
         NovaBukkitRegistrar.register(builder, NovaMapCanvas.class, NovaMapCanvas::register);
         NovaBukkitRegistrar.register(builder, NovaMapCursor.class, NovaMapCursor::register);
