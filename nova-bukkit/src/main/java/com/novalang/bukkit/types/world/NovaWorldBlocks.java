@@ -20,5 +20,8 @@ public final class NovaWorldBlocks {
         NovaBlockIterator.register(builder);
         NovaBukkitRegistrar.register(builder, NovaContainer.class, NovaContainer::register);
         NovaBukkitRegistrar.register(builder, NovaFurnace.class, NovaFurnace::register);
+        NovaBukkitRegistrar.register(builder, NovaBrewingStand.class, NovaBrewingStand::register);
+        NovaBukkitRegistrar.register(builder, NovaJukebox.class, NovaJukebox::register);
+        NovaBukkitRegistrar.register(builder, NovaSign.class, NovaSign::register);
     }
 }

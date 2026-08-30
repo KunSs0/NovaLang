@@ -15,7 +15,10 @@ import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandSender;
 import org.bukkit.block.Container;
+import org.bukkit.block.BrewingStand;
 import org.bukkit.block.Furnace;
+import org.bukkit.block.Jukebox;
+import org.bukkit.block.Sign;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.EntityEquipment;
 import org.bukkit.plugin.Plugin;
@@ -69,7 +72,7 @@ class NovaBukkitTest {
     @DisplayName("完整领域注册器不会生成重复扩展签名")
     void shouldExposeExpandedBukkitExtensionsWithoutDuplicates() {
         JavaTypes types = NovaBukkit.create();
-        assertEquals(1421, types.extensions().size());
+        assertEquals(1434, types.extensions().size());
         assertTrue(types.extensionProperties().size() > 100);
         assertTrue(hasProperty(types, Location.class, "x", true));
         assertTrue(hasProperty(types, Player.class, "name", false));
@@ -122,6 +125,12 @@ class NovaBukkitTest {
                 variable -> variable.type(Container.class).value(emptyProxy(Container.class)));
         builder.globalVariable("testFurnace",
                 variable -> variable.type(Furnace.class).value(emptyProxy(Furnace.class)));
+        builder.globalVariable("testBrewingStand",
+                variable -> variable.type(BrewingStand.class).value(emptyProxy(BrewingStand.class)));
+        builder.globalVariable("testJukebox",
+                variable -> variable.type(Jukebox.class).value(emptyProxy(Jukebox.class)));
+        builder.globalVariable("testSign",
+                variable -> variable.type(Sign.class).value(emptyProxy(Sign.class)));
         Nova nova = new Nova();
         nova.install(builder.build());
 
@@ -182,6 +191,15 @@ class NovaBukkitTest {
         assertDoesNotThrow(() -> nova.compileToBytecode(
                 "testFurnace.setBurnTime(200)",
                 "bukkit-furnace-extension-valid.nova"));
+        assertDoesNotThrow(() -> nova.compileToBytecode(
+                "testBrewingStand.setFuelLevel(20)",
+                "bukkit-brewing-stand-extension-valid.nova"));
+        assertDoesNotThrow(() -> nova.compileToBytecode(
+                "testJukebox.eject()",
+                "bukkit-jukebox-extension-valid.nova"));
+        assertDoesNotThrow(() -> nova.compileToBytecode(
+                "testSign.setLine(0, \"Nova\")",
+                "bukkit-sign-extension-valid.nova"));
         assertThrows(RuntimeException.class, () -> nova.compileToBytecode(
                 "location(1.0, 2.0, 3.0).missingMember", "bukkit-location-invalid.nova"));
         assertThrows(RuntimeException.class, () -> nova.compileToBytecode(
