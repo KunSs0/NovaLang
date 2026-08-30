@@ -10,5 +10,7 @@ public final class NovaBlockStateMoreTypes {
         NovaBukkitRegistrar.register(builder, NovaBanner.class, NovaBanner::register);
         NovaBukkitRegistrar.register(builder, NovaFlowerPot.class, NovaFlowerPot::register);
         NovaBukkitRegistrar.register(builder, NovaEndGateway.class, NovaEndGateway::register);
+        NovaBukkitRegistrar.register(builder, NovaBed.class, NovaBed::register);
+        NovaBukkitRegistrar.register(builder, NovaShulkerBox.class, NovaShulkerBox::register);
     }
 }

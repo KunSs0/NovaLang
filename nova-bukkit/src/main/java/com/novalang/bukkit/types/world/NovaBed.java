@@ -1,0 +1,3 @@
+package com.novalang.bukkit.types.world;
+import com.novalang.bukkit.Requires; import com.novalang.bukkit.types.value.NovaTypeSupport; import com.novalang.runtime.host.JavaTypes; import org.bukkit.DyeColor; import org.bukkit.block.Bed;
+@Requires(classes = {"org.bukkit.block.Bed"}) public final class NovaBed { private NovaBed() { } public static void register(JavaTypes.Builder b) { b.extension(Bed.class,"color",f->f.returns(DyeColor.class).invoke(a->NovaTypeSupport.argument(a,0,Bed.class).getColor())); b.extension(Bed.class,"setColor",f->f.param("color",DyeColor.class).returns(Void.TYPE).invoke(a->{NovaTypeSupport.argument(a,0,Bed.class).setColor(NovaTypeSupport.argument(a,1,DyeColor.class));return null;})); } }

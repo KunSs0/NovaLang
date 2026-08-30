@@ -12,5 +12,9 @@ public final class NovaInventoryMoreTypes {
         NovaBukkitRegistrar.register(builder, NovaMerchantInventory.class, NovaMerchantInventory::register);
         NovaBukkitRegistrar.register(builder, NovaFurnaceInventory.class, NovaFurnaceInventory::register);
         NovaBukkitRegistrar.register(builder, NovaMerchant.class, NovaMerchant::register);
+        NovaBukkitRegistrar.register(builder, NovaHorseInventory.class, NovaHorseInventory::register);
+        NovaBukkitRegistrar.register(builder, NovaEnchantingInventory.class, NovaEnchantingInventory::register);
+        NovaBukkitRegistrar.register(builder, NovaCraftingInventory.class, NovaCraftingInventory::register);
+        NovaBukkitRegistrar.register(builder, NovaBeaconInventory.class, NovaBeaconInventory::register);
     }
 }
