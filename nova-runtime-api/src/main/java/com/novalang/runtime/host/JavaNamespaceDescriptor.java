@@ -9,15 +9,27 @@ public final class JavaNamespaceDescriptor {
     private final List<String> extendsNamespaces;
     private final List<JavaSymbolDescriptor> globals;
     private final List<JavaExtensionDescriptor> extensions;
+    private final List<JavaExtensionPropertyDescriptor> extensionProperties;
 
     public JavaNamespaceDescriptor(String name, List<String> extendsNamespaces, List<JavaSymbolDescriptor> globals) {
-        this(name, extendsNamespaces, globals, Collections.<JavaExtensionDescriptor>emptyList());
+        this(name, extendsNamespaces, globals,
+                Collections.<JavaExtensionDescriptor>emptyList(),
+                Collections.<JavaExtensionPropertyDescriptor>emptyList());
     }
 
     public JavaNamespaceDescriptor(String name,
                                    List<String> extendsNamespaces,
                                    List<JavaSymbolDescriptor> globals,
                                    List<JavaExtensionDescriptor> extensions) {
+        this(name, extendsNamespaces, globals, extensions,
+                Collections.<JavaExtensionPropertyDescriptor>emptyList());
+    }
+
+    public JavaNamespaceDescriptor(String name,
+                                   List<String> extendsNamespaces,
+                                   List<JavaSymbolDescriptor> globals,
+                                   List<JavaExtensionDescriptor> extensions,
+                                   List<JavaExtensionPropertyDescriptor> extensionProperties) {
         if (name == null || name.trim().isEmpty()) {
             throw new IllegalArgumentException("Namespace name must not be empty");
         }
@@ -25,6 +37,10 @@ public final class JavaNamespaceDescriptor {
         this.extendsNamespaces = Collections.unmodifiableList(new ArrayList<String>(extendsNamespaces != null ? extendsNamespaces : Collections.<String>emptyList()));
         this.globals = Collections.unmodifiableList(new ArrayList<JavaSymbolDescriptor>(globals != null ? globals : Collections.<JavaSymbolDescriptor>emptyList()));
         this.extensions = Collections.unmodifiableList(new ArrayList<JavaExtensionDescriptor>(extensions != null ? extensions : Collections.<JavaExtensionDescriptor>emptyList()));
+        this.extensionProperties = Collections.unmodifiableList(
+                new ArrayList<JavaExtensionPropertyDescriptor>(extensionProperties != null
+                        ? extensionProperties
+                        : Collections.<JavaExtensionPropertyDescriptor>emptyList()));
     }
 
     public String getName() {
@@ -41,5 +57,9 @@ public final class JavaNamespaceDescriptor {
 
     public List<JavaExtensionDescriptor> getExtensions() {
         return extensions;
+    }
+
+    public List<JavaExtensionPropertyDescriptor> getExtensionProperties() {
+        return extensionProperties;
     }
 }

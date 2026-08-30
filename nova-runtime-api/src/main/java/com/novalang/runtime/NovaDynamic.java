@@ -1,5 +1,6 @@
 package com.novalang.runtime;
 
+import com.novalang.runtime.host.JavaExtensionPropertyDescriptor;
 import com.novalang.runtime.resolution.MethodNameCanonicalizer;
 import com.novalang.runtime.resolution.PublicMethodResolver;
 import com.novalang.runtime.resolution.StdlibMethodResolver;
@@ -131,6 +132,12 @@ public final class NovaDynamic {
             try {
                 getter = resolveGetter(clazz, memberName);
             } catch (RuntimeException e) {
+                ExtensionRegistry.RegisteredExtension extensionGetter =
+                        resolveExtensionPropertyGetter(clazz, memberName);
+                if (extensionGetter != null) {
+                    return invokeExtensionProperty(
+                            extensionGetter, target, EMPTY_ARGS, memberName, false);
+                }
                 // resolveGetter 失败 → scope receiver / ScriptContext fallback
                 Object scopeReceiver = com.novalang.runtime.stdlib.NovaScopeFunctions.getScopeReceiver();
                 if (scopeReceiver != null && scopeReceiver != target) {
@@ -161,10 +168,59 @@ public final class NovaDynamic {
                 setterCache.computeIfAbsent(clazz, k -> new ConcurrentHashMap<>());
         MethodHandle setter = cache.get(memberName);
         if (setter == null) {
-            setter = resolveSetter(clazz, memberName);
-            cache.put(memberName, setter);
+            try {
+                setter = resolveSetter(clazz, memberName);
+                cache.put(memberName, setter);
+            } catch (RuntimeException exception) {
+                ExtensionRegistry.RegisteredExtension extensionSetter =
+                        resolveExtensionPropertySetter(clazz, memberName, value);
+                if (extensionSetter != null) {
+                    invokeExtensionProperty(extensionSetter, target,
+                            new Object[]{value}, memberName, true);
+                    return;
+                }
+                throw exception;
+            }
         }
         invokeSetter(setter, target, value, memberName);
+    }
+
+    private static ExtensionRegistry.RegisteredExtension resolveExtensionPropertyGetter(
+            Class<?> receiverType, String propertyName) {
+        ExtensionRegistry registry = NovaScriptContext.getExtensionRegistry();
+        if (registry == null) {
+            return null;
+        }
+        return registry.lookup(receiverType,
+                JavaExtensionPropertyDescriptor.getterExtensionName(propertyName),
+                new Class<?>[0]);
+    }
+
+    private static ExtensionRegistry.RegisteredExtension resolveExtensionPropertySetter(
+            Class<?> receiverType, String propertyName, Object value) {
+        ExtensionRegistry registry = NovaScriptContext.getExtensionRegistry();
+        if (registry == null) {
+            return null;
+        }
+        Class<?> valueType = value != null ? value.getClass() : null;
+        return registry.lookup(receiverType,
+                JavaExtensionPropertyDescriptor.setterExtensionName(propertyName),
+                new Class<?>[]{valueType});
+    }
+
+    private static Object invokeExtensionProperty(
+            ExtensionRegistry.RegisteredExtension extension,
+            Object receiver,
+            Object[] arguments,
+            String propertyName,
+            boolean setter) {
+        try {
+            return extension.invoke(receiver, arguments);
+        } catch (Exception exception) {
+            String operation = setter ? "写入" : "读取";
+            throw NovaErrors.wrap(operation + " Java 扩展属性 '" + propertyName + "' 失败",
+                    exception);
+        }
     }
 
     /** 按已绑定的类调用 Java 静态方法，供编译后的 import static 使用。 */

@@ -72,7 +72,7 @@ public final class NovaExternalObject extends AbstractNovaValue {
         }
 
         try {
-            Object value = cache.getField(javaObject, fieldName);
+            Object value = NovaDynamic.getMember(javaObject, fieldName);
             return AbstractNovaValue.fromJava(value);
         } catch (Throwable e) {
             throw new NovaRuntimeException("Cannot access field '" + fieldName + "' on " + getTypeName()
@@ -85,7 +85,7 @@ public final class NovaExternalObject extends AbstractNovaValue {
      */
     public void setField(String fieldName, NovaValue value) {
         try {
-            cache.setField(javaObject, fieldName, value.toJavaValue());
+            NovaDynamic.setMember(javaObject, fieldName, value.toJavaValue());
         } catch (Throwable e) {
             throw new NovaRuntimeException("Cannot set field '" + fieldName + "' on " + getTypeName()
                     + ": " + e.getMessage(), e);

@@ -212,6 +212,73 @@ public final class JavaTypeDescriptor {
         return null;
     }
 
+    /**
+     * 判断 Java 属性是否存在可写入口。公开且非 final 的字段，或单参数 JavaBean
+     * {@code setXxx(...)} 方法，都会被视为可写属性。
+     */
+    public boolean hasWritableProperty(String memberName, boolean staticOnly) {
+        Class<?> javaClass = loadJavaClass();
+        if (javaClass == null || memberName == null || memberName.isEmpty()) {
+            return false;
+        }
+        try {
+            Field field = javaClass.getField(memberName);
+            int modifiers = field.getModifiers();
+            if (Modifier.isStatic(modifiers) == staticOnly && !Modifier.isFinal(modifiers)) {
+                return true;
+            }
+        } catch (NoSuchFieldException ignored) {
+        }
+
+        String setterName = "set" + Character.toUpperCase(memberName.charAt(0))
+                + memberName.substring(1);
+        for (Method method : javaClass.getMethods()) {
+            if (setterName.equals(method.getName())
+                    && method.getParameterCount() == 1
+                    && Modifier.isStatic(method.getModifiers()) == staticOnly) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 按赋值表达式的静态类型解析 Java 属性 setter。返回值的第一个参数类型就是
+     * setter 接受的属性类型；不存在匹配 setter 时返回 {@code null}。
+     */
+    public JavaExecutableDescriptor resolvePropertySetter(String memberName,
+                                                           NovaType valueType,
+                                                           boolean staticOnly) {
+        Class<?> javaClass = loadJavaClass();
+        if (javaClass == null || memberName == null || memberName.isEmpty()) {
+            return null;
+        }
+        try {
+            Field field = javaClass.getField(memberName);
+            int modifiers = field.getModifiers();
+            if (Modifier.isStatic(modifiers) == staticOnly && !Modifier.isFinal(modifiers)) {
+                List<NovaType> parameterTypes = Collections.singletonList(
+                        JavaTypeOracle.get().toNovaType(field.getType(), false));
+                return new JavaExecutableDescriptor(parameterTypes, NovaTypes.UNIT, false);
+            }
+        } catch (NoSuchFieldException ignored) {
+        }
+
+        String setterName = "set" + Character.toUpperCase(memberName.charAt(0))
+                + memberName.substring(1);
+        List<Method> candidates = new ArrayList<Method>();
+        for (Method method : javaClass.getMethods()) {
+            if (setterName.equals(method.getName()) && method.getParameterCount() == 1) {
+                candidates.add(method);
+            }
+        }
+        Class<?>[] argumentTypes = JavaTypeOracle.get().toJavaArgumentTypes(
+                Collections.singletonList(valueType));
+        Method bestMethod = JavaOverloadResolver.selectBestMethod(
+                candidates, staticOnly, argumentTypes);
+        return bestMethod != null ? toExecutableDescriptor(bestMethod) : null;
+    }
+
     private JavaExecutableDescriptor toExecutableDescriptor(Method method) {
         List<NovaType> paramTypes = new ArrayList<NovaType>();
         for (Class<?> paramType : method.getParameterTypes()) {

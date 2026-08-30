@@ -444,12 +444,32 @@ JavaTypes registry = JavaTypes.builder()
                 .returns(String.class)
                 // 扩展 invoker 的 arguments[0] 固定为 receiver。
                 .invoke(arguments -> ((Player) arguments[0]).getName()))
+        .extensionProperty(Location.class, "x", property -> property
+                .type(double.class)
+                .getter(arguments -> ((Location) arguments[0]).getX())
+                // setter 的 arguments 为 [receiver, value]。
+                .setter(arguments -> {
+                    Location location = (Location) arguments[0];
+                    location.setX((Double) arguments[1]);
+                    return null;
+                }))
         .build();
 ```
 
 扩展函数描述中的参数列表不包含 receiver；运行时 invoker 的参数数组按
 `[receiver, arg0, arg1, ...]` 排列。该描述会同时进入编译器和运行时扩展注册表，
 因此 `player("Alex")?.name()` 的成员存在性、参数和返回类型都能在编译阶段确认。
+
+扩展属性同样是编译期与运行时共用的资源。只配置 getter 时属性只读；同时配置 setter
+后才允许赋值。编译器会在生成字节码前拒绝不存在的 setter、只读属性赋值和赋值类型
+不匹配，例如 `location(...).blockX = 4` 与 `location(...).x = "bad"`。原生 Java
+对象的公开字段和 JavaBean `getX/isX/setX` 也使用相同规则校验。
+
+NovaBukkit 在全部领域扩展注册完成后显式调用
+`javaBeanPropertiesFromExtensions()`，把这些扩展涉及类型的公开 JavaBean 属性登记为
+`extensionProperties`。这不是编译器的系统级反射兜底：其他宿主若需要同样能力，应主动
+调用该方法，或逐项使用 `extensionProperty(...)` 声明别名属性。导出的契约 JSON 会同时
+包含根命名空间和子命名空间的 `extensionProperties`、属性类型及 `mutable` 标记。
 
 当前 Bukkit 基础实现位于 `nova-bukkit`：
 
@@ -468,17 +488,25 @@ RuntimeWorkspace workspace = new RuntimeWorkspace(configFile, NovaBukkit::instal
 专有枚举不进入基础层；若要完整复刻新版 Fluxon `platform-bukkit`，应建立明确版本模块，
 不能在基础类中通过反射或缺类兜底静默降级。
 
-对于较大的 Bukkit API，可按资源模块拆分：
+当前 `nova-bukkit` 的编译期资源按领域分包，根包只保留公开入口和 Bukkit 运行设施：
 
 ```text
-BukkitCoreApi
-BukkitPlayerApi
-BukkitWorldApi
-BukkitInventoryApi
-PlaceholderApiBindings
+com.novalang.bukkit
+├─ NovaBukkit
+├─ NovaBukkitPlugin
+└─ types
+   ├─ entity
+   ├─ enums
+   ├─ event
+   ├─ gameplay
+   ├─ inventory
+   ├─ platform
+   ├─ server
+   ├─ value
+   └─ world
 ```
 
-模块最终合并为当前 Nova 或 Workspace 的不可变注册表。资源模块负责声明能力，Nova 负责编译校验，不要求每个模块生成和维护独立 JSON。
+各领域注册器最终由 `NovaBukkit` 合并为当前 Nova 或 Workspace 的不可变注册表。资源模块负责声明能力，Nova 负责编译校验，不要求每个模块生成和维护独立 JSON。
 
 ## 15. 实现阶段
 

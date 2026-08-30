@@ -14,6 +14,7 @@ import com.novalang.runtime.stdlib.BuiltinModuleExports;
 import com.novalang.runtime.stdlib.StdlibRegistry;
 import com.novalang.runtime.host.JavaFunctionDescriptor;
 import com.novalang.runtime.host.JavaExtensionDescriptor;
+import com.novalang.runtime.host.JavaExtensionPropertyDescriptor;
 import com.novalang.runtime.host.JavaNamespaceDescriptor;
 import com.novalang.runtime.host.JavaObjectDescriptor;
 import com.novalang.runtime.host.JavaParameterDescriptor;
@@ -54,6 +55,7 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
     private final Set<String> externalKnownTypeNames;
     private final Set<MemberExpr> callMemberExpressions;
     private final List<JavaExtensionDescriptor> javaExtensions;
+    private final List<JavaExtensionPropertyDescriptor> javaExtensionProperties;
 
     // 委托
     private final TypeUnifier unifier;
@@ -79,6 +81,7 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
         this.callMemberExpressions = java.util.Collections.newSetFromMap(
                 new java.util.IdentityHashMap<MemberExpr, Boolean>());
         this.javaExtensions = new ArrayList<JavaExtensionDescriptor>();
+        this.javaExtensionProperties = new ArrayList<JavaExtensionPropertyDescriptor>();
         this.unifier = new TypeUnifier(exprNovaTypeMap, superTypeRegistry, typeResolver);
         this.inference = new TypeInferenceEngine(exprNovaTypeMap, unifier);
         this.checker = new SemanticChecker(diagnostics, superTypeRegistry, exprNovaTypeMap);
@@ -107,6 +110,7 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
         }
         JavaNamespaceDescriptor resolved = javaTypes.resolveNamespace(namespace);
         javaExtensions.addAll(resolved.getExtensions());
+        javaExtensionProperties.addAll(resolved.getExtensionProperties());
         for (JavaSymbolDescriptor descriptor : resolved.getGlobals()) {
             Symbol symbol = createJavaSymbol(descriptor);
             Symbol existing = currentScope.resolveLocal(symbol.getName());
@@ -308,6 +312,30 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
             }
         }
         return root;
+    }
+
+    private JavaExtensionPropertyDescriptor resolveJavaExtensionProperty(
+            NovaType receiverType, String propertyName) {
+        if (!(receiverType instanceof JavaClassNovaType) || propertyName == null) {
+            return null;
+        }
+        Class<?> receiverClass = JavaTypeOracle.get().toJavaArgumentType(
+                receiverType.withNullable(false));
+        if (receiverClass == null || receiverClass == Object.class) {
+            return null;
+        }
+        JavaExtensionPropertyDescriptor best = null;
+        for (JavaExtensionPropertyDescriptor extension : javaExtensionProperties) {
+            if (!propertyName.equals(extension.getProperty().getName())
+                    || !extension.getTargetType().isAssignableFrom(receiverClass)) {
+                continue;
+            }
+            if (best == null
+                    || best.getTargetType().isAssignableFrom(extension.getTargetType())) {
+                best = extension;
+            }
+        }
+        return best;
     }
 
     private List<NovaType> analyzedSafeCallArgumentTypes(SafeCallExpr node) {
@@ -3425,10 +3453,16 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
             if (getNovaType(node) == null
                     && receiverNovaType instanceof JavaClassNovaType
                     && !callMemberExpressions.contains(node)) {
-                JavaTypeDescriptor descriptor = ((JavaClassNovaType) receiverNovaType).getDescriptor();
-                NovaType propertyType = descriptor != null
-                        ? descriptor.resolveProperty(node.getMember(), isStaticJavaMemberAccess(node))
+                JavaExtensionPropertyDescriptor extensionProperty =
+                        resolveJavaExtensionProperty(receiverNovaType, node.getMember());
+                NovaType propertyType = extensionProperty != null
+                        ? resolveJavaTypeRef(extensionProperty.getProperty().getType())
                         : null;
+                JavaTypeDescriptor descriptor = ((JavaClassNovaType) receiverNovaType).getDescriptor();
+                if (propertyType == null && descriptor != null) {
+                    propertyType = descriptor.resolveProperty(
+                            node.getMember(), isStaticJavaMemberAccess(node));
+                }
                 if (propertyType != null) {
                     setNovaType(node, propertyType);
                 } else if (strictJavaTypes) {
@@ -3444,7 +3478,10 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
     @Override
     public Void visitAssignExpr(AssignExpr node, Void ctx) {
         node.getValue().accept(this, ctx);
-        if (node.getTarget() != null) {
+        if (node.getTarget() instanceof MemberExpr) {
+            MemberExpr memberTarget = (MemberExpr) node.getTarget();
+            memberTarget.getTarget().accept(this, ctx);
+        } else if (node.getTarget() != null) {
             node.getTarget().accept(this, ctx);
         }
 
@@ -3452,11 +3489,13 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
         if (node.getTarget() instanceof MemberExpr) {
             MemberExpr memberExpr = (MemberExpr) node.getTarget();
             NovaType receiverType = getNovaType(memberExpr.getTarget());
+            boolean resolvedAssignment = false;
             if (receiverType != null) {
                 Symbol receiverSym = resolveTypeSymbol(receiverType.getTypeName());
                 if (receiverSym != null && receiverSym.getMembers() != null) {
                     Symbol memberSym = receiverSym.getMembers().get(memberExpr.getMember());
                     if (memberSym != null) {
+                        resolvedAssignment = true;
                         if (!memberSym.isMutable() &&
                                 (memberSym.getKind() == SymbolKind.VARIABLE || memberSym.getKind() == SymbolKind.PROPERTY)) {
                             checker.addDiagnostic(SemanticDiagnostic.Severity.ERROR,
@@ -3465,6 +3504,52 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
                         if (memberSym.getResolvedNovaType() != null) {
                             checker.checkTypeCompatibility(memberSym.getResolvedNovaType(), valueType, node,
                                     "璧嬪€肩粨 '" + memberExpr.getMember() + "'");
+                        }
+                    }
+                }
+                NovaType nonNullReceiverType = receiverType.withNullable(false);
+                if (!resolvedAssignment && nonNullReceiverType instanceof JavaClassNovaType) {
+                    JavaExtensionPropertyDescriptor extensionProperty =
+                            resolveJavaExtensionProperty(nonNullReceiverType, memberExpr.getMember());
+                    if (extensionProperty != null) {
+                        resolvedAssignment = true;
+                        JavaPropertyDescriptor property = extensionProperty.getProperty();
+                        if (!property.isMutable()) {
+                            checker.addDiagnostic(SemanticDiagnostic.Severity.ERROR,
+                                    "Java 扩展属性 '" + memberExpr.getMember() + "' 是只读属性",
+                                    node);
+                        } else {
+                            NovaType propertyType = resolveJavaTypeRef(property.getType());
+                            checker.checkTypeCompatibility(propertyType, valueType, node,
+                                    "赋值给 Java 扩展属性 '" + memberExpr.getMember() + "'");
+                            setNovaType(memberExpr, propertyType);
+                        }
+                    }
+                }
+                if (!resolvedAssignment && nonNullReceiverType instanceof JavaClassNovaType) {
+                    JavaClassNovaType javaType = (JavaClassNovaType) nonNullReceiverType;
+                    JavaTypeDescriptor descriptor = javaType.getDescriptor();
+                    boolean staticAccess = isStaticJavaMemberAccess(memberExpr);
+                    if (descriptor == null
+                            || !descriptor.hasWritableProperty(memberExpr.getMember(), staticAccess)) {
+                        if (strictJavaTypes) {
+                            checker.addDiagnostic(SemanticDiagnostic.Severity.ERROR,
+                                    "Java 属性 '" + memberExpr.getMember() + "' 不可写或不存在 setter",
+                                    node);
+                        }
+                    } else {
+                        JavaTypeDescriptor.JavaExecutableDescriptor setter =
+                                descriptor.resolvePropertySetter(
+                                        memberExpr.getMember(), valueType, staticAccess);
+                        if (setter == null || setter.getParamTypes().isEmpty()) {
+                            checker.addDiagnostic(SemanticDiagnostic.Severity.ERROR,
+                                    "Java 属性 '" + memberExpr.getMember() + "' 的 setter 参数不匹配",
+                                    node);
+                        } else {
+                            NovaType setterType = setter.getParamTypes().get(0);
+                            checker.checkTypeCompatibility(setterType, valueType, node,
+                                    "赋值给 Java 属性 '" + memberExpr.getMember() + "'");
+                            setNovaType(memberExpr, setterType);
                         }
                     }
                 }
@@ -4144,10 +4229,15 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
                     }
                 }
             } else {
-                JavaTypeDescriptor descriptor = javaReceiverType.getDescriptor();
-                NovaType propertyType = descriptor != null
-                        ? descriptor.resolveProperty(node.getMember(), false)
+                JavaExtensionPropertyDescriptor extensionProperty =
+                        resolveJavaExtensionProperty(nonNullReceiverType, node.getMember());
+                NovaType propertyType = extensionProperty != null
+                        ? resolveJavaTypeRef(extensionProperty.getProperty().getType())
                         : null;
+                JavaTypeDescriptor descriptor = javaReceiverType.getDescriptor();
+                if (propertyType == null && descriptor != null) {
+                    propertyType = descriptor.resolveProperty(node.getMember(), false);
+                }
                 if (propertyType != null) {
                     resultType = propertyType;
                 } else if (strictJavaTypes && resultType == null) {

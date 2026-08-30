@@ -47,6 +47,67 @@ public final class JavaTypesInstaller {
             installFunctions(nova, overloads);
         }
         installExtensions(nova, namespace.getExtensions());
+        installExtensionProperties(nova, namespace.getExtensionProperties());
+    }
+
+    private static void installExtensionProperties(
+            Nova nova, List<JavaExtensionPropertyDescriptor> properties) {
+        for (JavaExtensionPropertyDescriptor extension : properties) {
+            JavaPropertyDescriptor property = extension.getProperty();
+            String getterName = JavaExtensionPropertyDescriptor.getterExtensionName(
+                    property.getName());
+            NovaNativeFunction getterDispatcher = new NovaNativeFunction(
+                    getterName, 1, (context, args) -> {
+                Object receiver = args.get(0).toJavaValue();
+                try {
+                    Object result = extension.getGetter().invoke(new Object[]{receiver});
+                    return result == null ? NovaNull.NULL : AbstractNovaValue.fromJava(result);
+                } catch (Exception exception) {
+                    throw NovaErrors.wrap(
+                            "读取 Java 扩展属性 '" + property.getName() + "' 失败", exception);
+                }
+            });
+            ExtensionMethod<Object, Object> getterMethod =
+                    new ExtensionMethod<Object, Object>() {
+                @Override
+                public Object invoke(Object receiver, Object[] arguments) throws Exception {
+                    return extension.getGetter().invoke(new Object[]{receiver});
+                }
+            };
+            nova.registerTypedExtension(extension.getTargetType(), getterName,
+                    getterDispatcher, new Class<?>[0], runtimeClass(property.getType()),
+                    getterMethod);
+
+            if (property.isMutable()) {
+                String setterName = JavaExtensionPropertyDescriptor.setterExtensionName(
+                        property.getName());
+                NovaNativeFunction setterDispatcher = new NovaNativeFunction(
+                        setterName, 2, (context, args) -> {
+                    Object receiver = args.get(0).toJavaValue();
+                    Object value = args.get(1).toJavaValue();
+                    try {
+                        extension.getSetter().invoke(new Object[]{receiver, value});
+                        return NovaNull.UNIT;
+                    } catch (Exception exception) {
+                        throw NovaErrors.wrap(
+                                "写入 Java 扩展属性 '" + property.getName() + "' 失败", exception);
+                    }
+                });
+                ExtensionMethod<Object, Object> setterMethod =
+                        new ExtensionMethod<Object, Object>() {
+                    @Override
+                    public Object invoke(Object receiver, Object[] arguments) throws Exception {
+                        Object value = arguments.length > 0 ? arguments[0] : null;
+                        extension.getSetter().invoke(new Object[]{receiver, value});
+                        return null;
+                    }
+                };
+                nova.registerTypedExtension(extension.getTargetType(), setterName,
+                        setterDispatcher,
+                        new Class<?>[]{runtimeClass(property.getType())},
+                        Void.class, setterMethod);
+            }
+        }
     }
 
     private static void installExtensions(Nova nova, List<JavaExtensionDescriptor> extensions) {

@@ -53,6 +53,15 @@ class JavaTypesTest {
                         .doc("当前玩家"))
                 .extension(String.class, "shout", function -> function
                         .returns(JavaTypeRefs.STRING))
+                .extensionProperty(StringBuilder.class, "content", property -> property
+                        .type(String.class)
+                        .getter(arguments -> arguments[0].toString())
+                        .setter(arguments -> {
+                            StringBuilder builder = (StringBuilder) arguments[0];
+                            builder.setLength(0);
+                            builder.append(arguments[1]);
+                            return null;
+                        }))
                 .namespace("reward", namespace -> namespace
                         .function("giveItem", function -> function
                                 .param("itemId", JavaTypeRefs.STRING)
@@ -72,5 +81,8 @@ class JavaTypesTest {
         assertThat(json).contains("\"extensions\"");
         assertThat(json).contains("\"targetType\": \"java.lang.String\"");
         assertThat(json).contains("\"shout\"");
+        assertThat(json).contains("\"extensionProperties\"");
+        assertThat(json).contains("\"content\"");
+        assertThat(json).contains("\"mutable\": true");
     }
 }

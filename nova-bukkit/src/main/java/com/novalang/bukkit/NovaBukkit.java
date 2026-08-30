@@ -2,6 +2,19 @@ package com.novalang.bukkit;
 
 import com.novalang.runtime.Nova;
 import com.novalang.runtime.host.JavaTypes;
+import com.novalang.bukkit.types.entity.NovaEntity;
+import com.novalang.bukkit.types.entity.NovaEntityHierarchy;
+import com.novalang.bukkit.types.entity.NovaPlayer;
+import com.novalang.bukkit.types.enums.NovaEnum;
+import com.novalang.bukkit.types.gameplay.NovaGameplay;
+import com.novalang.bukkit.types.inventory.NovaWorldInventory;
+import com.novalang.bukkit.types.platform.NovaPlatform;
+import com.novalang.bukkit.types.server.NovaServer;
+import com.novalang.bukkit.types.server.NovaServerPlatform;
+import com.novalang.bukkit.types.value.NovaLocation;
+import com.novalang.bukkit.types.value.NovaValueFactory;
+import com.novalang.bukkit.types.world.NovaWorld;
+import com.novalang.bukkit.types.world.NovaWorldBlocks;
 
 /**
  * Bukkit 运行时函数及其编译期 Java 类型定义入口。
@@ -46,6 +59,7 @@ public final class NovaBukkit {
         NovaServerPlatform.register(builder);
         NovaGameplay.register(builder);
         NovaEnum.register(builder);
+        builder.javaBeanPropertiesFromExtensions();
         return builder;
     }
 }

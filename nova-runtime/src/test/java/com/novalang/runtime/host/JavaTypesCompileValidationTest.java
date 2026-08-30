@@ -144,6 +144,40 @@ class JavaTypesCompileValidationTest {
                 () -> nova.compileToBytecode("choose(true)", "java-types-overload-missing.nova"));
     }
 
+    @Test
+    @DisplayName("扩展属性 getter 和 setter 使用同一份描述完成编译与执行")
+    void shouldCompileAndRunExtensionPropertySetter() {
+        ExtensionPropertyBean bean = new ExtensionPropertyBean();
+        JavaTypes javaTypes = JavaTypes.builder()
+                .globalVariable("settings", variable -> variable
+                        .type(ExtensionPropertyBean.class)
+                        .value(bean))
+                .extensionProperty(ExtensionPropertyBean.class, "label", property -> property
+                        .type(String.class)
+                        .getter(arguments -> ((ExtensionPropertyBean) arguments[0]).label)
+                        .setter(arguments -> {
+                            ((ExtensionPropertyBean) arguments[0]).label = (String) arguments[1];
+                            return null;
+                        }))
+                .extensionProperty(ExtensionPropertyBean.class, "id", property -> property
+                        .type(String.class)
+                        .getter(arguments -> ((ExtensionPropertyBean) arguments[0]).id))
+                .build();
+        Nova nova = new Nova();
+        nova.install(javaTypes);
+
+        Object result = nova.compileToBytecode(
+                "settings.label = \"changed\"\nsettings.label",
+                "java-extension-property-valid.nova").run();
+
+        assertEquals("changed", result);
+        assertEquals("changed", bean.label);
+        assertThrows(RuntimeException.class, () -> nova.compileToBytecode(
+                "settings.label = 1", "java-extension-property-type-invalid.nova"));
+        assertThrows(RuntimeException.class, () -> nova.compileToBytecode(
+                "settings.id = \"other\"", "java-extension-property-readonly.nova"));
+    }
+
     private Nova createNova() {
         JavaTypes javaTypes = JavaTypes.builder()
                 .globalFunction("add", function -> function
@@ -199,5 +233,10 @@ class JavaTypesCompileValidationTest {
         public String echo(String message) {
             return message;
         }
+    }
+
+    public static final class ExtensionPropertyBean {
+        private final String id = "settings";
+        private String label = "initial";
     }
 }

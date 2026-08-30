@@ -2,6 +2,7 @@ package com.novalang.bukkit;
 
 import com.novalang.runtime.Nova;
 import com.novalang.runtime.host.JavaExtensionDescriptor;
+import com.novalang.runtime.host.JavaExtensionPropertyDescriptor;
 import com.novalang.runtime.host.JavaFunctionDescriptor;
 import com.novalang.runtime.host.JavaNamespaceDescriptor;
 import com.novalang.runtime.host.JavaParameterDescriptor;
@@ -44,11 +45,21 @@ class NovaBukkitTest {
     void shouldExposeExpandedBukkitExtensionsWithoutDuplicates() {
         JavaTypes types = NovaBukkit.create();
         assertEquals(1159, types.extensions().size());
+        assertTrue(types.extensionProperties().size() > 100);
+        assertTrue(hasProperty(types, Location.class, "x", true));
+        assertTrue(hasProperty(types, Player.class, "name", false));
 
         Set<String> signatures = new LinkedHashSet<String>();
         for (JavaExtensionDescriptor extension : types.extensions()) {
             String signature = extensionSignature(extension);
             assertTrue(signatures.add(signature), "重复 Bukkit 扩展签名: " + signature);
+        }
+        Set<String> propertySignatures = new LinkedHashSet<String>();
+        for (JavaExtensionPropertyDescriptor extension : types.extensionProperties()) {
+            String signature = extension.getTargetType().getName()
+                    + '#'
+                    + extension.getProperty().getName();
+            assertTrue(propertySignatures.add(signature), "重复 Bukkit 扩展属性: " + signature);
         }
 
         JavaNamespaceDescriptor namespace = types.resolveNamespace("default");
@@ -110,6 +121,10 @@ class NovaBukkitTest {
                 "player(\"Alex\")?.setFoodLevel(\"full\")", "bukkit-expanded-extension-argument-invalid.nova"));
         assertThrows(RuntimeException.class, () -> nova.compileToBytecode(
                 "world(\"world\")?.setTime(\"noon\")", "bukkit-world-extension-argument-invalid.nova"));
+        assertThrows(RuntimeException.class, () -> nova.compileToBytecode(
+                "location(1.0, 2.0, 3.0).x = \"bad\"", "bukkit-location-setter-type-invalid.nova"));
+        assertThrows(RuntimeException.class, () -> nova.compileToBytecode(
+                "location(1.0, 2.0, 3.0).blockX = 4", "bukkit-location-readonly-property-invalid.nova"));
     }
 
     @Test
@@ -124,6 +139,9 @@ class NovaBukkitTest {
                 "color(255, 128, 0)", "bukkit-color-run.nova").run();
         Object extensionResult = nova.compileToBytecode(
                 "location(1.0, 2.0, 3.0).x()", "bukkit-location-extension-run.nova").run();
+        Object setterResult = nova.compileToBytecode(
+                "val point = location(1.0, 2.0, 3.0)\npoint.x = 4.0\npoint.x",
+                "bukkit-location-setter-run.nova").run();
 
         assertTrue(locationResult instanceof Location);
         Location location = (Location) locationResult;
@@ -132,6 +150,7 @@ class NovaBukkitTest {
         assertEquals(3.0, location.getZ());
         assertEquals(Color.fromRGB(255, 128, 0), colorResult);
         assertEquals(1.0, extensionResult);
+        assertEquals(4.0, setterResult);
     }
 
     private List<JavaFunctionDescriptor> overloads(JavaNamespaceDescriptor namespace, String name) {
@@ -171,5 +190,19 @@ class NovaBukkitTest {
         }
         signature.append(')');
         return signature.toString();
+    }
+
+    private boolean hasProperty(JavaTypes types,
+                                Class<?> targetType,
+                                String name,
+                                boolean mutable) {
+        for (JavaExtensionPropertyDescriptor extension : types.extensionProperties()) {
+            if (extension.getTargetType() == targetType
+                    && name.equals(extension.getProperty().getName())
+                    && extension.getProperty().isMutable() == mutable) {
+                return true;
+            }
+        }
+        return false;
     }
 }

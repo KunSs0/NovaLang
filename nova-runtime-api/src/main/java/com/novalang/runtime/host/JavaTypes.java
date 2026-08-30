@@ -11,6 +11,8 @@ import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
+import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
 
 import com.novalang.runtime.Function1;
 import com.novalang.runtime.Function2;
@@ -20,13 +22,17 @@ import com.novalang.runtime.NovaValueConversions;
 public final class JavaTypes {
     private final List<JavaSymbolDescriptor> globals;
     private final List<JavaExtensionDescriptor> extensions;
+    private final List<JavaExtensionPropertyDescriptor> extensionProperties;
     private final Map<String, JavaNamespaceDescriptor> namespaces;
 
     private JavaTypes(List<JavaSymbolDescriptor> globals,
                       List<JavaExtensionDescriptor> extensions,
+                      List<JavaExtensionPropertyDescriptor> extensionProperties,
                       Map<String, JavaNamespaceDescriptor> namespaces) {
         this.globals = Collections.unmodifiableList(new ArrayList<JavaSymbolDescriptor>(globals));
         this.extensions = Collections.unmodifiableList(new ArrayList<JavaExtensionDescriptor>(extensions));
+        this.extensionProperties = Collections.unmodifiableList(
+                new ArrayList<JavaExtensionPropertyDescriptor>(extensionProperties));
         this.namespaces = Collections.unmodifiableMap(new LinkedHashMap<String, JavaNamespaceDescriptor>(namespaces));
     }
 
@@ -46,6 +52,10 @@ public final class JavaTypes {
         return extensions;
     }
 
+    public List<JavaExtensionPropertyDescriptor> extensionProperties() {
+        return extensionProperties;
+    }
+
     public JavaNamespaceDescriptor namespace(String name) {
         return namespaces.get(name);
     }
@@ -59,14 +69,16 @@ public final class JavaTypes {
         LinkedHashMap<String, List<JavaSymbolDescriptor>> merged = new LinkedHashMap<String, List<JavaSymbolDescriptor>>();
         mergeSymbols(globals, merged);
         List<JavaExtensionDescriptor> mergedExtensions = new ArrayList<JavaExtensionDescriptor>(extensions);
+        List<JavaExtensionPropertyDescriptor> mergedProperties =
+                new ArrayList<JavaExtensionPropertyDescriptor>(extensionProperties);
 
         Set<String> visiting = new LinkedHashSet<String>();
         Set<String> visited = new LinkedHashSet<String>();
         if (namespaces.containsKey("default")) {
-            mergeNamespace("default", merged, mergedExtensions, visiting, visited);
+            mergeNamespace("default", merged, mergedExtensions, mergedProperties, visiting, visited);
         }
         if (!"default".equals(effectiveName)) {
-            mergeNamespace(effectiveName, merged, mergedExtensions, visiting, visited);
+            mergeNamespace(effectiveName, merged, mergedExtensions, mergedProperties, visiting, visited);
         }
 
         JavaNamespaceDescriptor original = namespaces.get(effectiveName);
@@ -75,12 +87,14 @@ public final class JavaTypes {
         for (List<JavaSymbolDescriptor> descriptors : merged.values()) {
             flattened.addAll(descriptors);
         }
-        return new JavaNamespaceDescriptor(effectiveName, extendsNamespaces, flattened, mergedExtensions);
+        return new JavaNamespaceDescriptor(
+                effectiveName, extendsNamespaces, flattened, mergedExtensions, mergedProperties);
     }
 
     private void mergeNamespace(String namespaceName,
                                 LinkedHashMap<String, List<JavaSymbolDescriptor>> merged,
                                 List<JavaExtensionDescriptor> mergedExtensions,
+                                List<JavaExtensionPropertyDescriptor> mergedProperties,
                                 Set<String> visiting,
                                 Set<String> visited) {
         if (visited.contains(namespaceName)) {
@@ -99,11 +113,12 @@ public final class JavaTypes {
             if ("default".equals(parent) && visited.contains("default")) {
                 continue;
             }
-            mergeNamespace(parent, merged, mergedExtensions, visiting, visited);
+            mergeNamespace(parent, merged, mergedExtensions, mergedProperties, visiting, visited);
         }
 
         mergeSymbols(descriptor.getGlobals(), merged);
         mergedExtensions.addAll(descriptor.getExtensions());
+        mergedProperties.addAll(descriptor.getExtensionProperties());
         visiting.remove(namespaceName);
         visited.add(namespaceName);
     }
@@ -128,6 +143,8 @@ public final class JavaTypes {
     public static final class Builder {
         private final List<JavaSymbolDescriptor> globals = new ArrayList<JavaSymbolDescriptor>();
         private final List<JavaExtensionDescriptor> extensions = new ArrayList<JavaExtensionDescriptor>();
+        private final List<JavaExtensionPropertyDescriptor> extensionProperties =
+                new ArrayList<JavaExtensionPropertyDescriptor>();
         private final LinkedHashMap<String, NamespaceBuilder> namespaces = new LinkedHashMap<String, NamespaceBuilder>();
 
         public Builder globalVariable(String name, Consumer<VariableBuilder> spec) {
@@ -162,6 +179,145 @@ public final class JavaTypes {
             return this;
         }
 
+        /** 注册同时参与编译检查和运行时分派的 Java 扩展属性。 */
+        public Builder extensionProperty(Class<?> targetType,
+                                         String name,
+                                         Consumer<ExtensionPropertyBuilder> spec) {
+            ExtensionPropertyBuilder builder = new ExtensionPropertyBuilder(targetType, name);
+            spec.accept(builder);
+            extensionProperties.add(builder.build());
+            return this;
+        }
+
+        /**
+         * 将当前扩展函数涉及的 Java 类型的公开 JavaBean getter/setter 注册为扩展属性。
+         * 该动作是显式的，不会影响未选择此能力的普通 JavaTypes。
+         */
+        public Builder javaBeanPropertiesFromExtensions() {
+            Set<Class<?>> targetTypes = new LinkedHashSet<Class<?>>();
+            for (JavaExtensionDescriptor extension : extensions) {
+                targetTypes.add(extension.getTargetType());
+            }
+            for (Class<?> targetType : targetTypes) {
+                javaBeanProperties(targetType);
+            }
+            return this;
+        }
+
+        /** 注册指定 Java 类型的公开 JavaBean 属性。 */
+        public Builder javaBeanProperties(Class<?> targetType) {
+            if (targetType == null) {
+                throw new IllegalArgumentException("targetType must not be null");
+            }
+            Map<String, Method> getters = new LinkedHashMap<String, Method>();
+            Map<String, List<Method>> setters = new LinkedHashMap<String, List<Method>>();
+            for (Method method : targetType.getMethods()) {
+                if (Modifier.isStatic(method.getModifiers())) {
+                    continue;
+                }
+                String propertyName = getterPropertyName(method);
+                if (propertyName != null && !getters.containsKey(propertyName)) {
+                    getters.put(propertyName, method);
+                }
+                propertyName = setterPropertyName(method);
+                if (propertyName != null) {
+                    List<Method> overloads = setters.get(propertyName);
+                    if (overloads == null) {
+                        overloads = new ArrayList<Method>();
+                        setters.put(propertyName, overloads);
+                    }
+                    overloads.add(method);
+                }
+            }
+            for (Map.Entry<String, Method> entry : getters.entrySet()) {
+                String propertyName = entry.getKey();
+                if (hasExtensionProperty(targetType, propertyName)) {
+                    continue;
+                }
+                Method getter = entry.getValue();
+                Method setter = matchingSetter(setters.get(propertyName), getter.getReturnType());
+                JavaTypeRef propertyType = JavaTypeRef.javaType(getter.getReturnType());
+                if (!getter.getReturnType().isPrimitive()) {
+                    propertyType = propertyType.nullable();
+                }
+                final JavaTypeRef finalPropertyType = propertyType;
+                final Method finalSetter = setter;
+                extensionProperty(targetType, propertyName, property -> {
+                    property.type(finalPropertyType)
+                            .getter(arguments -> getter.invoke(arguments[0]));
+                    if (finalSetter != null) {
+                        property.setter(arguments -> {
+                            Object value = NovaValueConversions.convertArg(
+                                    arguments[1], finalSetter.getParameterTypes()[0]);
+                            finalSetter.invoke(arguments[0], value);
+                            return null;
+                        });
+                    }
+                });
+            }
+            return this;
+        }
+
+        private boolean hasExtensionProperty(Class<?> targetType, String propertyName) {
+            for (JavaExtensionPropertyDescriptor extension : extensionProperties) {
+                if (extension.getTargetType() == targetType
+                        && propertyName.equals(extension.getProperty().getName())) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        private static String getterPropertyName(Method method) {
+            if (method.getParameterCount() != 0 || method.getReturnType() == Void.TYPE) {
+                return null;
+            }
+            String name = method.getName();
+            if (name.startsWith("get") && name.length() > 3 && !"getClass".equals(name)) {
+                return decapitalize(name.substring(3));
+            }
+            if (name.startsWith("is") && name.length() > 2
+                    && (method.getReturnType() == Boolean.TYPE
+                    || method.getReturnType() == Boolean.class)) {
+                return decapitalize(name.substring(2));
+            }
+            return null;
+        }
+
+        private static String setterPropertyName(Method method) {
+            String name = method.getName();
+            if (method.getParameterCount() == 1 && name.startsWith("set")
+                    && name.length() > 3) {
+                return decapitalize(name.substring(3));
+            }
+            return null;
+        }
+
+        private static Method matchingSetter(List<Method> setters, Class<?> getterType) {
+            if (setters == null) {
+                return null;
+            }
+            for (Method setter : setters) {
+                if (setter.getParameterTypes()[0] == getterType) {
+                    return setter;
+                }
+            }
+            for (Method setter : setters) {
+                if (setter.getParameterTypes()[0].isAssignableFrom(getterType)) {
+                    return setter;
+                }
+            }
+            return null;
+        }
+
+        private static String decapitalize(String value) {
+            if (value.length() > 1 && Character.isUpperCase(value.charAt(0))
+                    && Character.isUpperCase(value.charAt(1))) {
+                return value;
+            }
+            return Character.toLowerCase(value.charAt(0)) + value.substring(1);
+        }
+
         public Builder namespace(String name, Consumer<NamespaceBuilder> spec) {
             NamespaceBuilder builder = namespaces.computeIfAbsent(name, NamespaceBuilder::new);
             spec.accept(builder);
@@ -173,7 +329,7 @@ public final class JavaTypes {
             for (Map.Entry<String, NamespaceBuilder> entry : namespaces.entrySet()) {
                 builtNamespaces.put(entry.getKey(), entry.getValue().build());
             }
-            return new JavaTypes(globals, extensions, builtNamespaces);
+            return new JavaTypes(globals, extensions, extensionProperties, builtNamespaces);
         }
     }
 
@@ -182,6 +338,8 @@ public final class JavaTypes {
         private final List<String> extendsNamespaces = new ArrayList<String>();
         private final List<JavaSymbolDescriptor> globals = new ArrayList<JavaSymbolDescriptor>();
         private final List<JavaExtensionDescriptor> extensions = new ArrayList<JavaExtensionDescriptor>();
+        private final List<JavaExtensionPropertyDescriptor> extensionProperties =
+                new ArrayList<JavaExtensionPropertyDescriptor>();
 
         private NamespaceBuilder(String name) {
             if (name == null || name.trim().isEmpty()) {
@@ -229,8 +387,64 @@ public final class JavaTypes {
             return this;
         }
 
+        public NamespaceBuilder extensionProperty(Class<?> targetType,
+                                                  String name,
+                                                  Consumer<ExtensionPropertyBuilder> spec) {
+            ExtensionPropertyBuilder builder = new ExtensionPropertyBuilder(targetType, name);
+            spec.accept(builder);
+            extensionProperties.add(builder.build());
+            return this;
+        }
+
         private JavaNamespaceDescriptor build() {
-            return new JavaNamespaceDescriptor(name, extendsNamespaces, globals, extensions);
+            return new JavaNamespaceDescriptor(
+                    name, extendsNamespaces, globals, extensions, extensionProperties);
+        }
+    }
+
+    public static final class ExtensionPropertyBuilder
+            extends BaseSymbolBuilder<ExtensionPropertyBuilder> {
+        private final Class<?> targetType;
+        private JavaTypeRef type = JavaTypeRefs.ANY;
+        private JavaFunctionInvoker getter;
+        private JavaFunctionInvoker setter;
+
+        private ExtensionPropertyBuilder(Class<?> targetType, String name) {
+            super(name);
+            if (targetType == null) {
+                throw new IllegalArgumentException("targetType must not be null");
+            }
+            this.targetType = targetType;
+        }
+
+        public ExtensionPropertyBuilder type(JavaTypeRef type) {
+            this.type = type != null ? type : JavaTypeRefs.ANY;
+            return this;
+        }
+
+        public ExtensionPropertyBuilder type(Class<?> type) {
+            return type(JavaTypeRef.javaType(type));
+        }
+
+        public ExtensionPropertyBuilder getter(JavaFunctionInvoker getter) {
+            this.getter = getter;
+            return this;
+        }
+
+        public ExtensionPropertyBuilder setter(JavaFunctionInvoker setter) {
+            this.setter = setter;
+            return this;
+        }
+
+        private JavaExtensionPropertyDescriptor build() {
+            JavaPropertyDescriptor property = new JavaPropertyDescriptor(
+                    name(), type, setter != null, documentation(), deprecatedMessage(), examples());
+            return new JavaExtensionPropertyDescriptor(targetType, property, getter, setter);
+        }
+
+        @Override
+        protected ExtensionPropertyBuilder self() {
+            return this;
         }
     }
 
