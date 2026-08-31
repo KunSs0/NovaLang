@@ -5713,7 +5713,7 @@ public class HirToMirLowering {
         if (!MethodSemantics.isScopeFunction(methodName, sourceArgs.size())) {
             return false;
         }
-        return sourceArgs.size() == 1 && sourceArgs.get(0) instanceof LambdaExpr;
+        return sourceArgs.size() == 1 && sourceArgs.get(0) instanceof HirLambda;
     }
 
     /**
@@ -6198,7 +6198,10 @@ public class HirToMirLowering {
         if (declaredReturnType != null) {
             return declaredReturnType;
         }
-        return inferReturnType(returnDescriptor, owner);
+        // 未声明返回类型的 Nova 方法会使用 Object 描述符。不能把它猜成接收者类型，
+        // 否则 `val values = keys(...)` 这类调用会被错误地传播成 owner，随后对 values
+        // 的成员调用会在字节码中把实际集合强制转换为单例对象。
+        return descriptorReturnType;
     }
 
     /** 检查继承链是否完整可达（所有父类的方法信息都在当前 lowering 中可用） */
@@ -6274,23 +6277,6 @@ public class HirToMirLowering {
             }
         }
         return null;
-    }
-
-    /**
-     * 从返回类型描述符推断 MirType，优先使用描述符的精确类型，
-     * 仅在无法解析时回退到 owner 类型。
-     */
-    private MirType inferReturnType(String retDescStr, String owner) {
-        if ("V".equals(retDescStr)) return MirType.ofVoid();
-        MirType resolved = descriptorToMirType(retDescStr);
-        // 如果描述符编码了具体类型（如 I/J/D/Ljava/lang/String; 等），直接使用
-        if (resolved.getKind() != MirType.Kind.OBJECT
-                || !"java/lang/Object".equals(resolved.getClassName())) {
-            return resolved;
-        }
-        // 描述符为 Ljava/lang/Object;（Nova 编译方法的通用描述符）→ 回退到 owner 类型
-        // 以保持类型传播（运算符重载、builder 方法链等需要正确的 owner 类型）
-        return MirType.ofObject(owner);
     }
 
     /**

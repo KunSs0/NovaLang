@@ -1081,6 +1081,31 @@ class ScriptModeIntegrationTest {
                     "}\n" +
                     "MathUtil.square(5)"));
         }
+
+        @Test void objectMethodKeepsSingletonReceiverAfterSetFieldInitialization() {
+            assertEquals(true, run(
+                    "object VisibilityState {\n" +
+                    "    val hiddenKeys = mutableMapOf()\n" +
+                    "    fun keys(playerId: String, create: Boolean) {\n" +
+                    "        var values = hiddenKeys.get(playerId)\n" +
+                    "        if (values == null && create) {\n" +
+                    "            values = mutableSetOf()\n" +
+                    "            hiddenKeys.put(playerId, values)\n" +
+                    "        }\n" +
+                    "        return values\n" +
+                    "    }\n" +
+                    "    fun hide(playerId: String) {\n" +
+                    "        val values = keys(playerId, true)!!\n" +
+                    "        values.add(\"conversation\")\n" +
+                    "    }\n" +
+                    "    fun show(playerId: String) {\n" +
+                    "        val values = keys(playerId, false)\n" +
+                    "        return values!!.remove(\"conversation\")\n" +
+                    "    }\n" +
+                    "}\n" +
+                    "VisibilityState.hide(\"player\")\n" +
+                    "VisibilityState.show(\"player\")"));
+        }
     }
 
     // ============ 34. 伴生对象 ============
