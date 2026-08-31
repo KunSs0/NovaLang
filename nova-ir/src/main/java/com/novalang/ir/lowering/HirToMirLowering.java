@@ -5869,6 +5869,13 @@ public class HirToMirLowering {
             DoWhileStmt dws = (DoWhileStmt) node;
             collectVarRefs(dws.getBody(), refs);
             collectVarRefs(dws.getCondition(), refs);
+        } else if (node instanceof HirTry) {
+            HirTry tryStmt = (HirTry) node;
+            collectVarRefs(tryStmt.getTryBlock(), refs);
+            for (HirTry.CatchClause catchClause : tryStmt.getCatches()) {
+                collectVarRefs(catchClause.getBody(), refs);
+            }
+            collectVarRefs(tryStmt.getFinallyBlock(), refs);
         } else if (node instanceof ThrowStmt) {
             collectVarRefs(((ThrowStmt) node).getException(), refs);
         } else if (node instanceof ElvisExpr) {
@@ -5923,6 +5930,13 @@ public class HirToMirLowering {
             collectAssignedVarNames(cfor.getCondition(), result);
             collectAssignedVarNames(cfor.getUpdate(), result);
             collectAssignedVarNames(cfor.getBody(), result);
+        } else if (node instanceof HirTry) {
+            HirTry tryStmt = (HirTry) node;
+            collectAssignedVarNames(tryStmt.getTryBlock(), result);
+            for (HirTry.CatchClause catchClause : tryStmt.getCatches()) {
+                collectAssignedVarNames(catchClause.getBody(), result);
+            }
+            collectAssignedVarNames(tryStmt.getFinallyBlock(), result);
         } else if (node instanceof HirDeclStmt) {
             HirDecl decl = ((HirDeclStmt) node).getDeclaration();
             if (decl instanceof HirField && ((HirField) decl).hasInitializer()) {

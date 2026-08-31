@@ -663,6 +663,24 @@ class StructuredConcurrencyCodegenTest {
         }
 
         @Test
+        @DisplayName("scriptMode: async 在 try/catch 中捕获函数参数")
+        void testScriptModeAsyncTryCatchCapturesFunctionParameter() {
+            Object result = runScript(""
+                + "fun snapshot(player) {\n"
+                + "    val future = async {\n"
+                + "        try {\n"
+                + "            return player\n"
+                + "        } catch (error) {\n"
+                + "            return player\n"
+                + "        }\n"
+                + "    }\n"
+                + "    return await future\n"
+                + "}\n"
+                + "snapshot(\"Dev\")");
+            assertEquals("Dev", String.valueOf(result));
+        }
+
+        @Test
         @DisplayName("scriptMode: launch + parallel 嵌套（复现用户 NPE）")
         void testScriptModeLaunchParallel() {
             Object result = runScript(""
