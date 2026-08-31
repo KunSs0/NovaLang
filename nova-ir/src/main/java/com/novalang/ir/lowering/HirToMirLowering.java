@@ -92,6 +92,10 @@ public class HirToMirLowering {
     private final Map<String, HirFunction> classConstructorDecls = new HashMap<>();
     // 局部函数声明: funcName → HirFunction（用于嵌套函数默认参数填充）
     private final Map<String, HirFunction> localFunctionDecls = new HashMap<>();
+    // 每个 MIR 函数中可作为接收者 lambda 调用的局部变量索引。
+    // 不能仅按名称识别：普通局部变量与成员方法同名时，不应被错误降级为 $ScopeCall。
+    private final Map<MirFunction, Set<Integer>> scopeCallableLocals =
+            new IdentityHashMap<MirFunction, Set<Integer>>();
     // 类字段名: className → Set<fieldName>（用于区分字段调用和方法调用）
     private final Map<String, Set<String>> classFieldNames = new HashMap<>();
     // 类注解数据: className → List<HirAnnotation>（用于运行时 .annotations 访问）
@@ -1022,6 +1026,7 @@ public class HirToMirLowering {
             currentFunctionTypeParams = Collections.emptySet();
         }
         MirBuilder builder = new MirBuilder(func);
+        scopeCallableLocals.put(func, new HashSet<Integer>());
         boxedMutableCaptures.clear();
         scriptExportedVars.clear();
 
@@ -1031,8 +1036,12 @@ public class HirToMirLowering {
         }
 
         // 为参数分配局部变量
-        for (MirParam p : params) {
+        for (int i = 0; i < params.size(); i++) {
+            MirParam p = params.get(i);
             builder.newLocal(p.getName(), p.getType());
+            if (hirFunc.getParams().get(i).getType() instanceof FunctionType) {
+                markScopeCallableLocal(builder, ownerClass == null ? i : i + 1);
+            }
         }
 
         // 为 reified 类型参数分配 __reified_T 局部变量（运行时绑定实际类型名）
@@ -1726,6 +1735,9 @@ public class HirToMirLowering {
                     }
                 }
                 int local = builder.newLocal(field.getName(), localType);
+                if (field.getType() instanceof FunctionType || field.getInitializer() instanceof HirLambda) {
+                    markScopeCallableLocal(builder, local);
+                }
                 // 直接将初始化值 MOVE 到命名的局部变量
                 builder.emitMoveTo(value, local, field.getLocation());
                 // lazy 变量：val x by lazy { expr } → 内联懒加载
@@ -1780,6 +1792,7 @@ public class HirToMirLowering {
                     func.getParams(), func.getBody(), Collections.emptyList());
             int lambdaInst = lowerLambda(lambda, builder);
             if (preLocal >= 0) {
+                markScopeCallableLocal(builder, preLocal);
                 // 自引用：赋值到预分配的 local，并回填捕获字段
                 builder.emitMoveTo(lambdaInst, preLocal, func.getLocation());
                 builder.emitSetField(lambdaInst, func.getName(), preLocal, func.getLocation());
@@ -1787,6 +1800,7 @@ public class HirToMirLowering {
             }
             MirType lambdaType = builder.getFunction().getLocals().get(lambdaInst).getType();
             int local = builder.newLocal(func.getName(), lambdaType);
+            markScopeCallableLocal(builder, local);
             builder.emitMoveTo(lambdaInst, local, func.getLocation());
             return local;
         }
@@ -2815,9 +2829,14 @@ public class HirToMirLowering {
                 MirType.ofObject("java/lang/Object"),
                 invokeParams, EnumSet.of(Modifier.PUBLIC));
         MirBuilder invokeBuilder = new MirBuilder(invokeFunc);
+        scopeCallableLocals.put(invokeFunc, new HashSet<Integer>());
         invokeBuilder.newLocal("this", MirType.ofObject(lambdaName));
-        for (MirParam p : invokeParams) {
+        for (int i = 0; i < invokeParams.size(); i++) {
+            MirParam p = invokeParams.get(i);
             invokeBuilder.newLocal(p.getName(), p.getType());
+            if (effectiveParams.get(i).getType() instanceof FunctionType) {
+                markScopeCallableLocal(invokeBuilder, i + 1);
+            }
         }
 
         // 降级 lambda body（push 当前 lambda 的捕获变量，供嵌套 lambda 的捕获分析使用）
@@ -4636,7 +4655,7 @@ public class HirToMirLowering {
                 break;
             }
         }
-        if (methodLocalIdx >= 0) {
+        if (methodLocalIdx >= 0 && isScopeCallableLocal(builder, methodLocalIdx)) {
             // 检查 receiver 类型是否有同名方法 → 方法优先
             MirType tgtType = target >= 0 && target < builder.getFunction().getLocals().size()
                     ? builder.getFunction().getLocals().get(target).getType() : null;
@@ -4654,6 +4673,23 @@ public class HirToMirLowering {
             }
         }
         return -1;
+    }
+
+    /** 标记能以 receiver.block() 形式调用的局部函数或函数类型参数。 */
+    private void markScopeCallableLocal(MirBuilder builder, int localIndex) {
+        MirFunction function = builder.getFunction();
+        Set<Integer> locals = scopeCallableLocals.get(function);
+        if (locals == null) {
+            locals = new HashSet<Integer>();
+            scopeCallableLocals.put(function, locals);
+        }
+        locals.add(localIndex);
+    }
+
+    /** 仅函数类型局部变量可以触发接收者 lambda 的 $ScopeCall 降级。 */
+    private boolean isScopeCallableLocal(MirBuilder builder, int localIndex) {
+        Set<Integer> locals = scopeCallableLocals.get(builder.getFunction());
+        return locals != null && locals.contains(localIndex);
     }
 
     /** data class copy() 命名参数处理。返回 -1 表示不匹配 */

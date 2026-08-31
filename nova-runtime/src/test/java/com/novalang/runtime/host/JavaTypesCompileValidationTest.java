@@ -117,6 +117,22 @@ class JavaTypesCompileValidationTest {
     }
 
     @Test
+    @DisplayName("与 Java 成员同名的 ArrayList 局部变量不能被当作 receiver lambda")
+    void shouldNotLowerCollectionLocalAsScopeCallable() {
+        Nova nova = createNova();
+        String source = String.join("\n",
+                "fun scan(): List<String> {",
+                "    val find = [\"shadow\"]",
+                "    return api.find()",
+                "}",
+                "scan()"
+        );
+
+        assertEquals(java.util.Collections.singletonList("candidate"),
+                nova.compileToBytecode(source, "java-types-array-list-scope-call.nova").run());
+    }
+
+    @Test
     @DisplayName("Java 泛型接收者的方法返回类型使用实际类型参数")
     void shouldResolveGenericReceiverMethodReturnType() {
         JavaTypeRef referenceType = JavaTypeRef.parameterized(
@@ -257,7 +273,9 @@ class JavaTypesCompileValidationTest {
                                 .readonly())
                         .function("echo", function -> function
                                 .param("message", JavaTypeRefs.STRING)
-                                .returns(JavaTypeRefs.STRING)))
+                                .returns(JavaTypeRefs.STRING))
+                        .function("find", function -> function
+                                .returns(JavaTypeRef.listOf(JavaTypeRefs.STRING))))
                 .build();
 
         Nova nova = new Nova();
@@ -282,6 +300,10 @@ class JavaTypesCompileValidationTest {
 
         public String echo(String message) {
             return message;
+        }
+
+        public java.util.List<String> find() {
+            return java.util.Collections.singletonList("candidate");
         }
     }
 
