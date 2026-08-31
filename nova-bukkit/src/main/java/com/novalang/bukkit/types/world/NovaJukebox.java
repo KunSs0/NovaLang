@@ -21,6 +21,15 @@ final class NovaJukebox {
                     jukebox(arguments).setPlaying(NovaTypeSupport.argument(arguments, 1, Material.class));
                     return null;
                 }));
+        builder.extension(Jukebox.class, "setPlaying", function -> function.param("record", String.class)
+                .returns(Void.TYPE).invoke(arguments -> {
+                    Material record = NovaTypeSupport.findEnum(Material.class,
+                            NovaTypeSupport.argument(arguments, 1, String.class));
+                    if (record != null) {
+                        jukebox(arguments).setPlaying(record);
+                    }
+                    return null;
+                }));
         builder.extension(Jukebox.class, "isPlaying", function -> function.returns(Boolean.class)
                 .invoke(arguments -> jukebox(arguments).isPlaying()));
         builder.extension(Jukebox.class, "eject", function -> function.returns(Boolean.class)

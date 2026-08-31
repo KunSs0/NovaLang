@@ -48,6 +48,13 @@ public final class NovaServerMoreTypes {
                 .invoke(arguments -> plugin(arguments).getDefaultWorldGenerator(
                         NovaTypeSupport.argument(arguments, 1, String.class),
                         NovaTypeSupport.argument(arguments, 2, String.class))));
+        builder.extension(Plugin.class, "getDefaultWorldGenerator", function -> function
+                .param("worldName", String.class)
+                .param("id", String.class)
+                .returns(JavaTypeRef.javaType(ChunkGenerator.class).nullable())
+                .invoke(arguments -> plugin(arguments).getDefaultWorldGenerator(
+                        NovaTypeSupport.argument(arguments, 1, String.class),
+                        NovaTypeSupport.argument(arguments, 2, String.class))));
         builder.extension(PluginDescriptionFile.class, "commands", function -> function
                 .returns(JavaTypeRef.mapOf(JavaTypeRef.javaType(String.class), JavaTypeRef.mapOf(
                         JavaTypeRef.javaType(String.class), JavaTypeRef.javaType(Object.class))))

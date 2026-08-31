@@ -50,6 +50,7 @@ import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.inventory.InventoryView;
 import org.bukkit.inventory.ItemFlag;
 import org.bukkit.inventory.MainHand;
+import org.bukkit.metadata.LazyMetadataValue;
 import org.bukkit.permissions.PermissionDefault;
 import org.bukkit.plugin.PluginLoadOrder;
 import org.bukkit.plugin.ServicePriority;
@@ -77,6 +78,7 @@ public final class NovaEnum {
         registerEnum(builder, "dragType", DragType.class);
         registerEnum(builder, "dyeColor", DyeColor.class);
         registerEnum(builder, "effect", Effect.class);
+        registerEnum(builder, "effectType", Effect.Type.class);
         registerEnum(builder, "entityDamageEventDamageCause", EntityDamageEvent.DamageCause.class);
         registerEnum(builder, "entityEffect", EntityEffect.class);
         registerEnum(builder, "entityTargetEventTargetReason", EntityTargetEvent.TargetReason.class);
@@ -91,6 +93,7 @@ public final class NovaEnum {
         registerEnum(builder, "inventoryTypeSlotType", InventoryType.SlotType.class);
         registerEnum(builder, "inventoryViewProperty", InventoryView.Property.class);
         registerEnum(builder, "itemFlag", ItemFlag.class);
+        registerEnum(builder, "lazyMetadataValueCacheStrategy", LazyMetadataValue.CacheStrategy.class);
         registerEnum(builder, "mainHand", MainHand.class);
         registerEnum(builder, "material", Material.class);
         registerEnum(builder, "netherWartsState", NetherWartsState.class);
@@ -119,7 +122,23 @@ public final class NovaEnum {
         NovaEventEnum.register(builder);
         NovaEventExtraEnum.register(builder);
         NovaPlatformEnum.register(builder);
+        NovaCoalType.register(builder);
+        NovaClickType.register(builder);
+        NovaCropState.register(builder);
+        NovaDifficulty.register(builder);
+        NovaGameMode.register(builder);
+        NovaGrassSpecies.register(builder);
+        NovaInstrument.register(builder);
+        NovaPistonMoveReaction.register(builder);
+        NovaRotation.register(builder);
+        NovaSandstoneType.register(builder);
+        NovaStatistic.register(builder);
+        NovaTreeSpecies.register(builder);
+        NovaWorldType.register(builder);
+        NovaBukkitRegistrar.register(builder, NovaSpellcasterSpell.class, NovaSpellcasterSpell::register);
+        NovaBukkitRegistrar.register(builder, NovaNoteTone.class, NovaNoteTone::register);
         NovaBukkitRegistrar.register(builder, NovaWorldInventoryEnum.class, NovaWorldInventoryEnum::register);
+        NovaBukkitRegistrar.register(builder, NovaCreativeCategory.class, NovaCreativeCategory::register);
         NovaBukkitRegistrar.register(builder, NovaEnumMoreTypes.class, NovaEnumMoreTypes::register);
         NovaBukkitRegistrar.register(builder, NovaLegacyEnumMoreTypes.class, NovaLegacyEnumMoreTypes::register);
     }

@@ -21,6 +21,15 @@ final class NovaCreatureSpawner {
                     spawner(arguments).setSpawnedType(NovaTypeSupport.argument(arguments, 1, EntityType.class));
                     return null;
                 }));
+        builder.extension(CreatureSpawner.class, "setSpawnedType", function -> function.param("type", String.class)
+                .returns(Void.TYPE).invoke(arguments -> {
+                    EntityType type = NovaTypeSupport.findEnum(EntityType.class,
+                            NovaTypeSupport.argument(arguments, 1, String.class));
+                    if (type != null) {
+                        spawner(arguments).setSpawnedType(type);
+                    }
+                    return null;
+                }));
         builder.extension(CreatureSpawner.class, "setCreatureTypeByName", function -> function.param("name", String.class)
                 .returns(Void.TYPE).invoke(arguments -> {
                     spawner(arguments).setCreatureTypeByName(NovaTypeSupport.argument(arguments, 1, String.class));

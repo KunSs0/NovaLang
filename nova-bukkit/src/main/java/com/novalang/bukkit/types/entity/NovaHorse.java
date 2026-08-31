@@ -21,11 +21,29 @@ final class NovaHorse {
                     horse(arguments).setColor(NovaTypeSupport.argument(arguments, 1, Horse.Color.class));
                     return null;
                 }));
+        builder.extension(Horse.class, "setColor", function -> function.param("color", String.class)
+                .returns(Void.TYPE).invoke(arguments -> {
+                    Horse.Color color = NovaTypeSupport.findEnum(Horse.Color.class,
+                            NovaTypeSupport.argument(arguments, 1, String.class));
+                    if (color != null) {
+                        horse(arguments).setColor(color);
+                    }
+                    return null;
+                }));
         builder.extension(Horse.class, "style", function -> function.returns(Horse.Style.class)
                 .invoke(arguments -> horse(arguments).getStyle()));
         builder.extension(Horse.class, "setStyle", function -> function.param("style", Horse.Style.class)
                 .returns(Void.TYPE).invoke(arguments -> {
                     horse(arguments).setStyle(NovaTypeSupport.argument(arguments, 1, Horse.Style.class));
+                    return null;
+                }));
+        builder.extension(Horse.class, "setStyle", function -> function.param("style", String.class)
+                .returns(Void.TYPE).invoke(arguments -> {
+                    Horse.Style style = NovaTypeSupport.findEnum(Horse.Style.class,
+                            NovaTypeSupport.argument(arguments, 1, String.class));
+                    if (style != null) {
+                        horse(arguments).setStyle(style);
+                    }
                     return null;
                 }));
         builder.extension(Horse.class, "isCarryingChest", function -> function.returns(Boolean.class)

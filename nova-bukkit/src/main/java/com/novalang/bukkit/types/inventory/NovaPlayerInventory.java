@@ -4,6 +4,7 @@ import com.novalang.bukkit.types.value.NovaTypeSupport;
 
 import com.novalang.runtime.host.JavaTypeRef;
 import com.novalang.runtime.host.JavaTypes;
+import org.bukkit.entity.HumanEntity;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.PlayerInventory;
 
@@ -26,6 +27,7 @@ final class NovaPlayerInventory {
         builder.extension(PlayerInventory.class, "itemInOffHand", f -> f.returns(item).invoke(a -> pi(a).getItemInOffHand()));
         builder.extension(PlayerInventory.class, "itemInHand", f -> f.returns(item).invoke(a -> pi(a).getItemInHand()));
         builder.extension(PlayerInventory.class, "heldItemSlot", f -> f.returns(Integer.class).invoke(a -> pi(a).getHeldItemSlot()));
+        builder.extension(PlayerInventory.class, "holder", f -> f.returns(HumanEntity.class).invoke(a -> pi(a).getHolder()));
         builder.extension(PlayerInventory.class, "setArmorContents", f -> f.param("contents", items).invoke(a -> { pi(a).setArmorContents(arg(a, 1, ItemStack[].class)); return null; }));
         builder.extension(PlayerInventory.class, "setExtraContents", f -> f.param("contents", items).invoke(a -> { pi(a).setExtraContents(arg(a, 1, ItemStack[].class)); return null; }));
         builder.extension(PlayerInventory.class, "setHelmet", f -> f.param("item", item).invoke(a -> { pi(a).setHelmet(arg(a, 1, ItemStack.class)); return null; }));

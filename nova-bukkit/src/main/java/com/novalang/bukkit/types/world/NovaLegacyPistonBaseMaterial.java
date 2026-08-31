@@ -26,6 +26,8 @@ public final class NovaLegacyPistonBaseMaterial {
         }));
         builder.extension(PistonBaseMaterial.class, "isSticky", function -> function.returns(Boolean.class)
                 .invoke(arguments -> piston(arguments).isSticky()));
+        builder.extension(PistonBaseMaterial.class, "clone", function -> function.returns(PistonBaseMaterial.class)
+                .invoke(arguments -> piston(arguments).clone()));
     }
 
     private static PistonBaseMaterial piston(Object[] arguments) {

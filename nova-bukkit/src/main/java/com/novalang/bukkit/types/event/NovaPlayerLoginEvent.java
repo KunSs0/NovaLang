@@ -2,6 +2,7 @@ package com.novalang.bukkit.types.event;
 
 import com.novalang.bukkit.Requires;
 import com.novalang.bukkit.types.value.NovaTypeSupport;
+import com.novalang.runtime.host.JavaTypeRef;
 import com.novalang.runtime.host.JavaTypes;
 import org.bukkit.event.player.PlayerLoginEvent;
 
@@ -55,7 +56,7 @@ public final class NovaPlayerLoginEvent {
                     return null;
                 }));
         builder.extension(PlayerLoginEvent.class, "address", function -> function
-                .returns(InetAddress.class)
+                .returns(JavaTypeRef.javaType(InetAddress.class).nullable())
                 .invoke(arguments -> event(arguments).getAddress()));
         builder.extension(PlayerLoginEvent.class, "realAddress", function -> function
                 .returns(InetAddress.class)

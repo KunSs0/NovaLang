@@ -13,5 +13,9 @@ public final class NovaLegacyPressurePlate {
     public static void register(JavaTypes.Builder builder) {
         builder.extension(PressurePlate.class, "isPressed", function -> function.returns(Boolean.class)
                 .invoke(arguments -> NovaTypeSupport.argument(arguments, 0, PressurePlate.class).isPressed()));
+        builder.extension(PressurePlate.class, "toString", function -> function.returns(String.class)
+                .invoke(arguments -> NovaTypeSupport.argument(arguments, 0, PressurePlate.class).toString()));
+        builder.extension(PressurePlate.class, "clone", function -> function.returns(PressurePlate.class)
+                .invoke(arguments -> NovaTypeSupport.argument(arguments, 0, PressurePlate.class).clone()));
     }
 }

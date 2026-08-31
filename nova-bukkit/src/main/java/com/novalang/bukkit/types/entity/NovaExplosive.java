@@ -11,6 +11,8 @@ public final class NovaExplosive {
         builder.extension(Explosive.class, "setYield", function -> function.param("yield", Float.class).returns(Void.TYPE).invoke(arguments -> { event(arguments).setYield(NovaTypeSupport.argument(arguments, 1, Float.class)); return null; }));
         builder.extension(Explosive.class, "incendiary", function -> function.returns(Boolean.class).invoke(arguments -> event(arguments).isIncendiary()));
         builder.extension(Explosive.class, "setIncendiary", function -> function.param("incendiary", Boolean.class).returns(Void.TYPE).invoke(arguments -> { event(arguments).setIsIncendiary(NovaTypeSupport.argument(arguments, 1, Boolean.class)); return null; }));
+        builder.extension(Explosive.class, "isIncendiary", function -> function.returns(Boolean.class).invoke(arguments -> event(arguments).isIncendiary()));
+        builder.extension(Explosive.class, "setIsIncendiary", function -> function.param("incendiary", Boolean.class).returns(Void.TYPE).invoke(arguments -> { event(arguments).setIsIncendiary(NovaTypeSupport.argument(arguments, 1, Boolean.class)); return null; }));
     }
     private static Explosive event(Object[] arguments) { return NovaTypeSupport.argument(arguments, 0, Explosive.class); }
 }

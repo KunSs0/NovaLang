@@ -18,6 +18,10 @@ public final class NovaLegacyCrops {
             crops(arguments).setState(argument(arguments, 1, CropState.class));
             return null;
         }));
+        builder.extension(Crops.class, "toString", function -> function.returns(String.class)
+                .invoke(arguments -> crops(arguments).toString()));
+        builder.extension(Crops.class, "clone", function -> function.returns(Crops.class)
+                .invoke(arguments -> crops(arguments).clone()));
     }
 
     private static Crops crops(Object[] arguments) {

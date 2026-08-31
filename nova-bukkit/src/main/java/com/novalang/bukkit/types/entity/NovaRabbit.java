@@ -16,6 +16,13 @@ public final class NovaRabbit {
             rabbit(arguments).setRabbitType(argument(arguments, 1, Rabbit.Type.class));
             return null;
         }));
+        builder.extension(Rabbit.class, "setRabbitType", function -> function.param("type", String.class).returns(Void.TYPE).invoke(arguments -> {
+            Rabbit.Type type = NovaTypeSupport.findEnum(Rabbit.Type.class, argument(arguments, 1, String.class));
+            if (type != null) {
+                rabbit(arguments).setRabbitType(type);
+            }
+            return null;
+        }));
     }
 
     private static Rabbit rabbit(Object[] arguments) {

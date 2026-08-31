@@ -19,6 +19,7 @@ public final class NovaEventTypes {
         NovaInventoryEvent.register(builder);
         NovaPlayerEvent.register(builder);
         NovaBukkitRegistrar.register(builder, NovaBlockDamageEvent.class, NovaBlockDamageEvent::register);
+        NovaBukkitRegistrar.register(builder, NovaBlockBreakState.class, NovaBlockBreakState::register);
         NovaBukkitRegistrar.register(builder, NovaBlockIgniteEvent.class, NovaBlockIgniteEvent::register);
         NovaBukkitRegistrar.register(builder, NovaBlockMultiPlaceEvent.class, NovaBlockMultiPlaceEvent::register);
         NovaBukkitRegistrar.register(builder, NovaBlockGrowEvent.class, NovaBlockGrowEvent::register);
@@ -31,6 +32,8 @@ public final class NovaEventTypes {
         NovaBukkitRegistrar.register(builder, NovaCreatureSpawnEvent.class, NovaCreatureSpawnEvent::register);
         NovaBukkitRegistrar.register(builder, NovaEntityBreedEvent.class, NovaEntityBreedEvent::register);
         NovaBukkitRegistrar.register(builder, NovaEntityCombustEvent.class, NovaEntityCombustEvent::register);
+        NovaBukkitRegistrar.register(builder, NovaEntityDamageModifiers.class, NovaEntityDamageModifiers::register);
+        NovaBukkitRegistrar.register(builder, NovaEntityDeathKiller.class, NovaEntityDeathKiller::register);
         NovaBukkitRegistrar.register(builder, NovaEntityHealthEvent.class, NovaEntityHealthEvent::register);
         NovaBukkitRegistrar.register(builder, NovaEntityPickupItemEvent.class, NovaEntityPickupItemEvent::register);
         NovaBukkitRegistrar.register(builder, NovaEntityPortalEvent.class, NovaEntityPortalEvent::register);
@@ -40,6 +43,7 @@ public final class NovaEventTypes {
         NovaBukkitRegistrar.register(builder, NovaPlayerItemDamageEvent.class, NovaPlayerItemDamageEvent::register);
         NovaBukkitRegistrar.register(builder, NovaPlayerItemBreakEvent.class, NovaPlayerItemBreakEvent::register);
         NovaBukkitRegistrar.register(builder, NovaPlayerInteractEntityEvent.class, NovaPlayerInteractEntityEvent::register);
+        NovaBukkitRegistrar.register(builder, NovaPlayerInteractEvent.class, NovaPlayerInteractEvent::register);
         NovaBukkitRegistrar.register(builder, NovaPlayerInteractAtEntityEvent.class, NovaPlayerInteractAtEntityEvent::register);
         NovaBukkitRegistrar.register(builder, NovaPlayerItemConsumeEvent.class, NovaPlayerItemConsumeEvent::register);
         NovaBukkitRegistrar.register(builder, NovaPlayerItemHeldEvent.class, NovaPlayerItemHeldEvent::register);
@@ -71,6 +75,7 @@ public final class NovaEventTypes {
         NovaBukkitRegistrar.register(builder, NovaLingeringPotionSplashEvent.class, NovaLingeringPotionSplashEvent::register);
         NovaBukkitRegistrar.register(builder, NovaItemSpawnEvent.class, NovaItemSpawnEvent::register);
         NovaBukkitRegistrar.register(builder, NovaPlayerLoginEvent.class, NovaPlayerLoginEvent::register);
+        NovaBukkitRegistrar.register(builder, NovaPlayerLoginResultStrings.class, NovaPlayerLoginResultStrings::register);
         NovaBukkitRegistrar.register(builder, NovaAsyncPlayerPreLoginEvent.class, NovaAsyncPlayerPreLoginEvent::register);
         NovaBukkitRegistrar.register(builder, NovaPlayerSwapHandItemsEvent.class, NovaPlayerSwapHandItemsEvent::register);
         NovaBukkitRegistrar.register(builder, NovaBlockPhysicsEvent.class, NovaBlockPhysicsEvent::register);

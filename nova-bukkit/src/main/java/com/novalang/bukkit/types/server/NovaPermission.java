@@ -7,6 +7,7 @@ import com.novalang.runtime.host.JavaTypes;
 import org.bukkit.permissions.Permission;
 import org.bukkit.permissions.PermissionAttachment;
 import org.bukkit.permissions.PermissionAttachmentInfo;
+import org.bukkit.permissions.PermissionDefault;
 import org.bukkit.permissions.Permissible;
 import org.bukkit.permissions.ServerOperator;
 import org.bukkit.plugin.Plugin;
@@ -62,5 +63,8 @@ final class NovaPermission {
         b.extension(PermissionAttachmentInfo.class, "permission", f -> f.returns(String.class).invoke(a -> NovaTypeSupport.argument(a, 0, PermissionAttachmentInfo.class).getPermission()));
         b.extension(PermissionAttachmentInfo.class, "attachment", f -> f.returns(JavaTypeRef.javaType(PermissionAttachment.class).nullable()).invoke(a -> NovaTypeSupport.argument(a, 0, PermissionAttachmentInfo.class).getAttachment()));
         b.extension(PermissionAttachmentInfo.class, "value", f -> f.returns(Boolean.class).invoke(a -> NovaTypeSupport.argument(a, 0, PermissionAttachmentInfo.class).getValue()));
+        b.extension(PermissionDefault.class, "getValue", f -> f.param("op", Boolean.class).returns(Boolean.class).invoke(a -> NovaTypeSupport.argument(a, 0, PermissionDefault.class).getValue(NovaTypeSupport.argument(a, 1, Boolean.class))));
+        b.extension(PermissionDefault.class, "getByName", f -> f.param("name", String.class).returns(JavaTypeRef.javaType(PermissionDefault.class).nullable()).invoke(a -> PermissionDefault.getByName(NovaTypeSupport.argument(a, 1, String.class))));
+        b.extension(PermissionDefault.class, "toString", f -> f.returns(String.class).invoke(a -> NovaTypeSupport.argument(a, 0, PermissionDefault.class).toString()));
     }
 }

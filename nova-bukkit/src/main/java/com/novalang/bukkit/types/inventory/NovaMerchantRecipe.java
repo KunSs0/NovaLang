@@ -22,6 +22,8 @@ public final class NovaMerchantRecipe {
         builder.extension(MerchantRecipe.class, "setUses", function -> function.param("uses", Integer.class).returns(Void.TYPE).invoke(arguments -> { event(arguments).setUses(NovaTypeSupport.argument(arguments, 1, Integer.class)); return null; }));
         builder.extension(MerchantRecipe.class, "maxUses", function -> function.returns(Integer.class).invoke(arguments -> event(arguments).getMaxUses()));
         builder.extension(MerchantRecipe.class, "setMaxUses", function -> function.param("maxUses", Integer.class).returns(Void.TYPE).invoke(arguments -> { event(arguments).setMaxUses(NovaTypeSupport.argument(arguments, 1, Integer.class)); return null; }));
+        builder.extension(MerchantRecipe.class, "hasExperienceReward", function -> function.returns(Boolean.class).invoke(arguments -> event(arguments).hasExperienceReward()));
+        builder.extension(MerchantRecipe.class, "setExperienceReward", function -> function.param("experienceReward", Boolean.class).returns(Void.TYPE).invoke(arguments -> { event(arguments).setExperienceReward(NovaTypeSupport.argument(arguments, 1, Boolean.class)); return null; }));
     }
     private static MerchantRecipe event(Object[] arguments) {
         return NovaTypeSupport.argument(arguments, 0, MerchantRecipe.class);

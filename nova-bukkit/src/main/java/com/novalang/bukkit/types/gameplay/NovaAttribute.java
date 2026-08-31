@@ -22,6 +22,7 @@ final class NovaAttribute {
         JavaTypeRef nullableInstance = JavaTypeRef.javaType(AttributeInstance.class).nullable();
         JavaTypeRef nullableDouble = JavaTypeRef.javaType(Double.class).nullable();
         builder.extension(Attributable.class, "attribute", f -> f.param("attribute", Attribute.class).returns(nullableInstance).invoke(a -> attributable(a).getAttribute(arg(a, 1, Attribute.class))));
+        builder.extension(Attributable.class, "getAttribute", f -> f.param("attribute", Attribute.class).returns(nullableInstance).invoke(a -> attributable(a).getAttribute(arg(a, 1, Attribute.class))));
         registerConvenience(builder, nullableInstance, nullableDouble);
         builder.extension(AttributeInstance.class, "attribute", f -> f.returns(Attribute.class).invoke(a -> instance(a).getAttribute()));
         builder.extension(AttributeInstance.class, "baseValue", f -> f.returns(Double.class).invoke(a -> instance(a).getBaseValue()));

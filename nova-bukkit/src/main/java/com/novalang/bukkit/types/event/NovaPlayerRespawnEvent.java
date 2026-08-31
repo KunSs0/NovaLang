@@ -27,6 +27,9 @@ public final class NovaPlayerRespawnEvent {
         builder.extension(PlayerRespawnEvent.class, "bedSpawn", function -> function
                 .returns(Boolean.class)
                 .invoke(arguments -> event(arguments).isBedSpawn()));
+        builder.extension(PlayerRespawnEvent.class, "isBedSpawn", function -> function
+                .returns(Boolean.class)
+                .invoke(arguments -> event(arguments).isBedSpawn()));
     }
 
     private static PlayerRespawnEvent event(Object[] arguments) {

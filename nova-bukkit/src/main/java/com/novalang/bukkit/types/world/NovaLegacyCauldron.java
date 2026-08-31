@@ -15,6 +15,10 @@ public final class NovaLegacyCauldron {
                 .invoke(arguments -> cauldron(arguments).isFull()));
         builder.extension(Cauldron.class, "isEmpty", function -> function.returns(Boolean.class)
                 .invoke(arguments -> cauldron(arguments).isEmpty()));
+        builder.extension(Cauldron.class, "toString", function -> function.returns(String.class)
+                .invoke(arguments -> cauldron(arguments).toString()));
+        builder.extension(Cauldron.class, "clone", function -> function.returns(Cauldron.class)
+                .invoke(arguments -> cauldron(arguments).clone()));
     }
 
     private static Cauldron cauldron(Object[] arguments) {

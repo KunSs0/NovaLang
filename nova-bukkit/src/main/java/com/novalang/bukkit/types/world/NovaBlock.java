@@ -39,6 +39,13 @@ final class NovaBlock {
         builder.extension(Block.class, "z", f -> f.returns(Integer.class).invoke(a -> block(a).getZ()));
         builder.extension(Block.class, "biome", f -> f.returns(Biome.class).invoke(a -> block(a).getBiome()));
         builder.extension(Block.class, "setBiome", f -> f.param("biome", Biome.class).invoke(a -> { block(a).setBiome(arg(a, 1, Biome.class)); return null; }));
+        builder.extension(Block.class, "setBiome", f -> f.param("biome", String.class).invoke(a -> {
+            Biome biome = NovaTypeSupport.findEnum(Biome.class, arg(a, 1, String.class));
+            if (biome != null) {
+                block(a).setBiome(biome);
+            }
+            return null;
+        }));
         builder.extension(Block.class, "lightLevel", f -> f.returns(Integer.class).invoke(a -> (int) block(a).getLightLevel()));
         builder.extension(Block.class, "lightFromSky", f -> f.returns(Integer.class).invoke(a -> (int) block(a).getLightFromSky()));
         builder.extension(Block.class, "lightFromBlocks", f -> f.returns(Integer.class).invoke(a -> (int) block(a).getLightFromBlocks()));
@@ -54,9 +61,21 @@ final class NovaBlock {
         builder.extension(Block.class, "isBlockPowered", f -> f.returns(Boolean.class).invoke(a -> block(a).isBlockPowered()));
         builder.extension(Block.class, "isBlockIndirectlyPowered", f -> f.returns(Boolean.class).invoke(a -> block(a).isBlockIndirectlyPowered()));
         builder.extension(Block.class, "isBlockFacePowered", f -> f.param("face", BlockFace.class).returns(Boolean.class).invoke(a -> block(a).isBlockFacePowered(arg(a, 1, BlockFace.class))));
+        builder.extension(Block.class, "isBlockFacePowered", f -> f.param("face", String.class).returns(Boolean.class).invoke(a -> {
+            BlockFace face = NovaTypeSupport.findEnum(BlockFace.class, arg(a, 1, String.class));
+            return face != null && block(a).isBlockFacePowered(face);
+        }));
         builder.extension(Block.class, "isBlockFaceIndirectlyPowered", f -> f.param("face", BlockFace.class).returns(Boolean.class).invoke(a -> block(a).isBlockFaceIndirectlyPowered(arg(a, 1, BlockFace.class))));
+        builder.extension(Block.class, "isBlockFaceIndirectlyPowered", f -> f.param("face", String.class).returns(Boolean.class).invoke(a -> {
+            BlockFace face = NovaTypeSupport.findEnum(BlockFace.class, arg(a, 1, String.class));
+            return face != null && block(a).isBlockFaceIndirectlyPowered(face);
+        }));
         builder.extension(Block.class, "blockPower", f -> f.returns(Integer.class).invoke(a -> block(a).getBlockPower()));
         builder.extension(Block.class, "getBlockPower", f -> f.param("face", BlockFace.class).returns(Integer.class).invoke(a -> block(a).getBlockPower(arg(a, 1, BlockFace.class))));
+        builder.extension(Block.class, "getBlockPower", f -> f.param("face", String.class).returns(Integer.class).invoke(a -> {
+            BlockFace face = NovaTypeSupport.findEnum(BlockFace.class, arg(a, 1, String.class));
+            return face == null ? 0 : block(a).getBlockPower(face);
+        }));
         builder.extension(Block.class, "breakNaturally", f -> f.returns(Boolean.class).invoke(a -> block(a).breakNaturally()));
         builder.extension(Block.class, "breakNaturally", f -> f.param("tool", ItemStack.class).returns(Boolean.class).invoke(a -> block(a).breakNaturally(arg(a, 1, ItemStack.class))));
         builder.extension(Block.class, "drops", f -> f.returns(JavaTypeRef.javaType(Collection.class)).invoke(a -> block(a).getDrops()));

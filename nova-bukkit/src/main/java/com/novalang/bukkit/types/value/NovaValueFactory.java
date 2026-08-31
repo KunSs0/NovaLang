@@ -20,6 +20,7 @@ public final class NovaValueFactory {
         NovaFireworkEffect.register(builder);
         NovaBukkitRegistrar.register(builder, NovaNamespacedKey.class, NovaNamespacedKey::register);
         NovaBukkitRegistrar.register(builder, NovaKeyed.class, NovaKeyed::register);
+        NovaBukkitRegistrar.register(builder, NovaNameable.class, NovaNameable::register);
         builder.globalFunction("vector", function -> function
                 .param("x", Double.class)
                 .param("y", Double.class)

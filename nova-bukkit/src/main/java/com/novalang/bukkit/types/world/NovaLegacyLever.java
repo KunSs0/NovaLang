@@ -24,6 +24,10 @@ public final class NovaLegacyLever {
             lever(arguments).setFacingDirection(argument(arguments, 1, BlockFace.class));
             return null;
         }));
+        builder.extension(Lever.class, "toString", function -> function.returns(String.class)
+                .invoke(arguments -> lever(arguments).toString()));
+        builder.extension(Lever.class, "clone", function -> function.returns(Lever.class)
+                .invoke(arguments -> lever(arguments).clone()));
     }
 
     private static Lever lever(Object[] arguments) {

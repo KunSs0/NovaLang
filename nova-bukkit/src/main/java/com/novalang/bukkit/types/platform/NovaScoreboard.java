@@ -46,6 +46,7 @@ final class NovaScoreboard {
         b.extension(Objective.class, "getScore", f -> f.param("entry", String.class).returns(Score.class).invoke(a -> NovaTypeSupport.argument(a, 0, Objective.class).getScore(NovaTypeSupport.argument(a, 1, String.class))));
 
         b.extension(Score.class, "entry", f -> f.returns(String.class).invoke(a -> NovaTypeSupport.argument(a, 0, Score.class).getEntry()));
+        b.extension(Score.class, "player", f -> f.returns(OfflinePlayer.class).invoke(a -> NovaTypeSupport.argument(a, 0, Score.class).getPlayer()));
         b.extension(Score.class, "score", f -> f.returns(Integer.class).invoke(a -> NovaTypeSupport.argument(a, 0, Score.class).getScore()));
         b.extension(Score.class, "isScoreSet", f -> f.returns(Boolean.class).invoke(a -> NovaTypeSupport.argument(a, 0, Score.class).isScoreSet()));
         b.extension(Score.class, "objective", f -> f.returns(Objective.class).invoke(a -> NovaTypeSupport.argument(a, 0, Score.class).getObjective()));

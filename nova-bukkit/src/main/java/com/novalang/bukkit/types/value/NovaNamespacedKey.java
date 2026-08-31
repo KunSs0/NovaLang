@@ -15,6 +15,11 @@ public final class NovaNamespacedKey {
                 .invoke(arguments -> key(arguments).getNamespace()));
         builder.extension(NamespacedKey.class, "key", function -> function.returns(String.class)
                 .invoke(arguments -> key(arguments).getKey()));
+        builder.extension(NamespacedKey.class, "toString", function -> function.returns(String.class)
+                .invoke(arguments -> key(arguments).toString()));
+        builder.extension(NamespacedKey.class, "minecraft", function -> function.param("key", String.class)
+                .returns(NamespacedKey.class)
+                .invoke(arguments -> NamespacedKey.minecraft(NovaTypeSupport.argument(arguments, 1, String.class))));
     }
 
     private static NamespacedKey key(Object[] arguments) {

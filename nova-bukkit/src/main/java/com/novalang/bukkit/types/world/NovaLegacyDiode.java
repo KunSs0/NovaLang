@@ -26,6 +26,10 @@ public final class NovaLegacyDiode {
                 .invoke(arguments -> diode(arguments).getFacing()));
         builder.extension(Diode.class, "isPowered", function -> function.returns(Boolean.class)
                 .invoke(arguments -> diode(arguments).isPowered()));
+        builder.extension(Diode.class, "toString", function -> function.returns(String.class)
+                .invoke(arguments -> diode(arguments).toString()));
+        builder.extension(Diode.class, "clone", function -> function.returns(Diode.class)
+                .invoke(arguments -> diode(arguments).clone()));
     }
 
     private static Diode diode(Object[] arguments) {

@@ -16,4 +16,12 @@ import java.lang.annotation.Target;
 public @interface Requires {
 
     String[] classes();
+
+    /**
+     * 要求存在的公开实例或静态方法，格式为 {@code 完整类名#方法名}。
+     *
+     * <p>用于同一个 Bukkit 类在不同版本中新增成员的场景。类存在但方法不存在时，
+     * 对应注册器不会安装。</p>
+     */
+    String[] methods() default {};
 }

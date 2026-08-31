@@ -41,6 +41,11 @@ final class NovaPotion {
         builder.extension(PotionData.class, "type", f -> f.returns(PotionType.class).invoke(a -> data(a).getType()));
         builder.extension(PotionData.class, "isUpgraded", f -> f.returns(Boolean.class).invoke(a -> data(a).isUpgraded()));
         builder.extension(PotionData.class, "isExtended", f -> f.returns(Boolean.class).invoke(a -> data(a).isExtended()));
+        builder.extension(PotionType.class, "effectType", f -> f.returns(PotionEffectType.class).invoke(a -> potionType(a).getEffectType()));
+        builder.extension(PotionType.class, "isInstant", f -> f.returns(Boolean.class).invoke(a -> potionType(a).isInstant()));
+        builder.extension(PotionType.class, "isUpgradeable", f -> f.returns(Boolean.class).invoke(a -> potionType(a).isUpgradeable()));
+        builder.extension(PotionType.class, "isExtendable", f -> f.returns(Boolean.class).invoke(a -> potionType(a).isExtendable()));
+        builder.extension(PotionType.class, "maxLevel", f -> f.returns(Integer.class).invoke(a -> potionType(a).getMaxLevel()));
         builder.extension(PotionBrewer.class, "createEffect", f -> f.param("type", PotionEffectType.class).param("duration", Integer.class).param("amplifier", Integer.class).returns(PotionEffect.class).invoke(a -> brewer(a).createEffect(arg(a, 1, PotionEffectType.class), arg(a, 2, Integer.class), arg(a, 3, Integer.class))));
         builder.extension(PotionBrewer.class, "effectsFromDamage", f -> f.param("damage", Integer.class).returns(Collection.class).invoke(a -> brewer(a).getEffectsFromDamage(arg(a, 1, Integer.class))));
         builder.extension(PotionBrewer.class, "effects", f -> f.param("type", PotionType.class).param("upgraded", Boolean.class).param("extended", Boolean.class).returns(Collection.class).invoke(a -> brewer(a).getEffects(arg(a, 1, PotionType.class), arg(a, 2, Boolean.class), arg(a, 3, Boolean.class))));
@@ -49,6 +54,7 @@ final class NovaPotion {
     private static PotionEffect effect(Object[] arguments) { return NovaTypeSupport.argument(arguments, 0, PotionEffect.class); }
     private static PotionEffectType effectType(Object[] arguments) { return NovaTypeSupport.argument(arguments, 0, PotionEffectType.class); }
     private static PotionData data(Object[] arguments) { return NovaTypeSupport.argument(arguments, 0, PotionData.class); }
+    private static PotionType potionType(Object[] arguments) { return NovaTypeSupport.argument(arguments, 0, PotionType.class); }
     private static PotionBrewer brewer(Object[] arguments) { return NovaTypeSupport.argument(arguments, 0, PotionBrewer.class); }
     private static <T> T arg(Object[] arguments, int index, Class<T> type) { return NovaTypeSupport.argument(arguments, index, type); }
 }

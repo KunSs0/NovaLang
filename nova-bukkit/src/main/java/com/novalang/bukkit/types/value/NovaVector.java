@@ -47,6 +47,10 @@ public final class NovaVector {
         builder.extension(EulerAngle.class, "setX", f -> f.param("x", Double.class).returns(EulerAngle.class).invoke(a -> angle(a).setX(arg(a, 1, Double.class))));
         builder.extension(EulerAngle.class, "setY", f -> f.param("y", Double.class).returns(EulerAngle.class).invoke(a -> angle(a).setY(arg(a, 1, Double.class))));
         builder.extension(EulerAngle.class, "setZ", f -> f.param("z", Double.class).returns(EulerAngle.class).invoke(a -> angle(a).setZ(arg(a, 1, Double.class))));
+        builder.extension(EulerAngle.class, "add", f -> f.param("x", Double.class).param("y", Double.class).param("z", Double.class).returns(EulerAngle.class)
+                .invoke(a -> angle(a).add(arg(a, 1, Double.class), arg(a, 2, Double.class), arg(a, 3, Double.class))));
+        builder.extension(EulerAngle.class, "subtract", f -> f.param("x", Double.class).param("y", Double.class).param("z", Double.class).returns(EulerAngle.class)
+                .invoke(a -> angle(a).subtract(arg(a, 1, Double.class), arg(a, 2, Double.class), arg(a, 3, Double.class))));
     }
 
     private static Vector vector(Object[] a) { return NovaTypeSupport.argument(a, 0, Vector.class); }

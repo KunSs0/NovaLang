@@ -22,6 +22,10 @@ public final class NovaLegacyRails {
             rails(arguments).setDirection(argument(arguments, 1, BlockFace.class), argument(arguments, 2, Boolean.class));
             return null;
         }));
+        builder.extension(Rails.class, "toString", function -> function.returns(String.class)
+                .invoke(arguments -> rails(arguments).toString()));
+        builder.extension(Rails.class, "clone", function -> function.returns(Rails.class)
+                .invoke(arguments -> rails(arguments).clone()));
     }
 
     private static Rails rails(Object[] arguments) {

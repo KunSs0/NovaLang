@@ -7,6 +7,7 @@ import com.novalang.runtime.host.JavaTypes;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.FishHook;
 import org.bukkit.entity.Player;
+import org.bukkit.event.HandlerList;
 import org.bukkit.event.player.PlayerFishEvent;
 
 /** 玩家钓鱼事件的可选编译期别名。 */
@@ -39,6 +40,24 @@ public final class NovaPlayerFishEvent {
                     event(arguments).setExpToDrop(NovaTypeSupport.argument(arguments, 1, Integer.class));
                     return null;
                 }));
+        builder.extension(PlayerFishEvent.class, "handlerList", function -> function
+                .returns(HandlerList.class)
+                .invoke(arguments -> PlayerFishEvent.getHandlerList()));
+        builder.extension(PlayerFishEvent.class, "isFishing", function -> function
+                .returns(Boolean.class)
+                .invoke(arguments -> event(arguments).getState() == PlayerFishEvent.State.FISHING));
+        builder.extension(PlayerFishEvent.class, "isCaughtFish", function -> function
+                .returns(Boolean.class)
+                .invoke(arguments -> event(arguments).getState() == PlayerFishEvent.State.CAUGHT_FISH));
+        builder.extension(PlayerFishEvent.class, "isCaughtEntity", function -> function
+                .returns(Boolean.class)
+                .invoke(arguments -> event(arguments).getState() == PlayerFishEvent.State.CAUGHT_ENTITY));
+        builder.extension(PlayerFishEvent.class, "isInGround", function -> function
+                .returns(Boolean.class)
+                .invoke(arguments -> event(arguments).getState() == PlayerFishEvent.State.IN_GROUND));
+        builder.extension(PlayerFishEvent.class, "isFailedAttempt", function -> function
+                .returns(Boolean.class)
+                .invoke(arguments -> event(arguments).getState() == PlayerFishEvent.State.FAILED_ATTEMPT));
     }
 
     private static PlayerFishEvent event(Object[] arguments) {

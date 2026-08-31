@@ -1039,9 +1039,10 @@ public class HirToMirLowering {
         for (int i = 0; i < params.size(); i++) {
             MirParam p = params.get(i);
             builder.newLocal(p.getName(), p.getType());
-            if (hirFunc.getParams().get(i).getType() instanceof FunctionType) {
-                markScopeCallableLocal(builder, ownerClass == null ? i : i + 1);
-            }
+            // 形参在未标注类型时是动态值，仍可能在调用点传入 receiver lambda。
+            // 仅限制为 FunctionType 会把 `fun Any.run(block) = this.block()` 错降为普通成员调用；
+            // 但普通局部变量不会经过这里，因此不会重现 ArrayList 同名误判。
+            markScopeCallableLocal(builder, ownerClass == null ? i : i + 1);
         }
 
         // 为 reified 类型参数分配 __reified_T 局部变量（运行时绑定实际类型名）
@@ -1179,6 +1180,7 @@ public class HirToMirLowering {
         mods.add(Modifier.STATIC);
 
         MirFunction func = new MirFunction(hirFunc.getName(), returnType, params, mods);
+        scopeCallableLocals.put(func, new HashSet<Integer>());
 
         // 计算并设置原始类型描述符（静态方法可安全使用原始类型）
         String nativeDesc = buildNativeStaticDescriptor(func);
@@ -1188,8 +1190,13 @@ public class HirToMirLowering {
 
         // 静态方法: 不分配 class this，参数直接从 local 0 开始
         // local 0 = $this (receiver)，后续为普通参数
-        for (MirParam p : params) {
-            builder.newLocal(p.getName(), p.getType());
+        for (int i = 0; i < params.size(); i++) {
+            MirParam p = params.get(i);
+            int local = builder.newLocal(p.getName(), p.getType());
+            if (i > 0) {
+                // $this 是扩展接收者；其余形参可在 this.block() 语法中作为动态 callable 使用。
+                markScopeCallableLocal(builder, local);
+            }
         }
 
         // 默认参数：在函数体开头生成 null 检查 + 默认值赋值
@@ -2834,9 +2841,8 @@ public class HirToMirLowering {
         for (int i = 0; i < invokeParams.size(); i++) {
             MirParam p = invokeParams.get(i);
             invokeBuilder.newLocal(p.getName(), p.getType());
-            if (effectiveParams.get(i).getType() instanceof FunctionType) {
-                markScopeCallableLocal(invokeBuilder, i + 1);
-            }
+            // lambda 形参同样是调用方提供的动态值，允许 receiver lambda 调用语法。
+            markScopeCallableLocal(invokeBuilder, i + 1);
         }
 
         // 降级 lambda body（push 当前 lambda 的捕获变量，供嵌套 lambda 的捕获分析使用）
@@ -3763,9 +3769,10 @@ public class HirToMirLowering {
             if ("Array".equals(name) && !expr.getArgs().isEmpty())
                 return lowerArrayConstructorCall(name, expr, builder);
             { int r = lowerClassConstructorAndReceiverCall(name, expr, builder); if (r >= 0) return r; }
+            // 最后才解析类实例成员，避免 lambda 中的全局函数被误绑定到 lambda 对象。
             { int r = trySelfMethodCall(name, expr, builder); if (r >= 0) return r; }
-        return lowerPipeCallExpr(name, expr, builder);
-    }
+            return lowerPipeCallExpr(name, expr, builder);
+        }
 
         { int r = tryJavaTypeOrQualifiedCall(expr, builder); if (r >= 0) return r; }
         return lowerFunctionTypeInvocation(expr, builder);
@@ -4037,12 +4044,19 @@ public class HirToMirLowering {
                 int[] args = lowerArgs(expr.getArgs(), builder);
                 String desc = lookupNovaMethodDesc(owner, name, args.length);
                 MirType retType = inferNovaMethodReturnType(owner, name, desc);
+                int result;
                 if (interfaceNames.contains(owner)) {
-                    return builder.emitInvokeInterfaceDesc(thisLocal.getIndex(), name, args,
+                    result = builder.emitInvokeInterfaceDesc(thisLocal.getIndex(), name, args,
+                            owner, desc, retType, expr.getLocation());
+                } else {
+                    result = builder.emitInvokeVirtualDesc(thisLocal.getIndex(), name, args,
                             owner, desc, retType, expr.getLocation());
                 }
-                return builder.emitInvokeVirtualDesc(thisLocal.getIndex(), name, args,
-                        owner, desc, retType, expr.getLocation());
+                if (result >= 0) {
+                    return result;
+                }
+                // void 调用已经完成；返回 Unit/null 寄存器，不能以 -1 让调用方再次走动态回退。
+                return builder.emitConstNull(expr.getLocation());
             }
         }
         return -1;

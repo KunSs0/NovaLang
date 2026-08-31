@@ -59,7 +59,15 @@ final class NovaPlugin {
         b.extension(RegisteredServiceProvider.class, "provider", f -> f.returns(Object.class).invoke(a -> NovaTypeSupport.argument(a, 0, RegisteredServiceProvider.class).getProvider()));
         b.extension(RegisteredServiceProvider.class, "plugin", f -> f.returns(Plugin.class).invoke(a -> NovaTypeSupport.argument(a, 0, RegisteredServiceProvider.class).getPlugin()));
         b.extension(RegisteredServiceProvider.class, "priority", f -> f.returns(ServicePriority.class).invoke(a -> NovaTypeSupport.argument(a, 0, RegisteredServiceProvider.class).getPriority()));
+        b.extension(RegisteredServiceProvider.class, "compareTo", f -> f.param("provider", RegisteredServiceProvider.class).returns(Integer.class).invoke(NovaPlugin::compareProviders));
         b.extension(ServicesManager.class, "unregisterAll", f -> f.param("plugin", Plugin.class).invoke(a -> { NovaTypeSupport.argument(a, 0, ServicesManager.class).unregisterAll(NovaTypeSupport.argument(a, 1, Plugin.class)); return null; }));
         b.extension(ServicesManager.class, "unregister", f -> f.param("provider", Object.class).invoke(a -> { NovaTypeSupport.argument(a, 0, ServicesManager.class).unregister(NovaTypeSupport.argument(a, 1, Object.class)); return null; }));
+    }
+
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    private static Integer compareProviders(Object[] arguments) {
+        RegisteredServiceProvider provider = NovaTypeSupport.argument(arguments, 0, RegisteredServiceProvider.class);
+        RegisteredServiceProvider other = NovaTypeSupport.argument(arguments, 1, RegisteredServiceProvider.class);
+        return provider.compareTo(other);
     }
 }

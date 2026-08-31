@@ -20,6 +20,13 @@ public final class NovaPlayerKickEvent {
         builder.extension(PlayerKickEvent.class, "reason", function -> function
                 .returns(String.class)
                 .invoke(arguments -> event(arguments).getReason()));
+        builder.extension(PlayerKickEvent.class, "setReason", function -> function
+                .param("reason", String.class)
+                .returns(Void.TYPE)
+                .invoke(arguments -> {
+                    event(arguments).setReason(NovaTypeSupport.argument(arguments, 1, String.class));
+                    return null;
+                }));
         builder.extension(PlayerKickEvent.class, "leaveMessage", function -> function
                 .returns(String.class)
                 .invoke(arguments -> event(arguments).getLeaveMessage()));

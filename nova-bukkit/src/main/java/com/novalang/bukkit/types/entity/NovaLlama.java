@@ -17,6 +17,13 @@ public final class NovaLlama {
             llama(arguments).setColor(argument(arguments, 1, Llama.Color.class));
             return null;
         }));
+        builder.extension(Llama.class, "setColor", function -> function.param("color", String.class).returns(Void.TYPE).invoke(arguments -> {
+            Llama.Color color = NovaTypeSupport.findEnum(Llama.Color.class, argument(arguments, 1, String.class));
+            if (color != null) {
+                llama(arguments).setColor(color);
+            }
+            return null;
+        }));
         builder.extension(Llama.class, "strength", function -> function.returns(Integer.class).invoke(arguments -> llama(arguments).getStrength()));
         builder.extension(Llama.class, "setStrength", function -> function.param("strength", Integer.class).returns(Void.TYPE).invoke(arguments -> {
             llama(arguments).setStrength(argument(arguments, 1, Integer.class));

@@ -29,6 +29,8 @@ final class NovaMap {
         builder.extension(MapView.class, "renderers", f -> f.returns(JavaTypeRef.listOf(JavaTypeRef.javaType(MapRenderer.class))).invoke(a -> map(a).getRenderers()));
         builder.extension(MapView.class, "addRenderer", f -> f.param("renderer", MapRenderer.class).invoke(a -> { map(a).addRenderer(arg(a, 1, MapRenderer.class)); return null; }));
         builder.extension(MapView.class, "removeRenderer", f -> f.param("renderer", MapRenderer.class).invoke(a -> { map(a).removeRenderer(arg(a, 1, MapRenderer.class)); return null; }));
+        builder.extension(MapView.class, "isUnlimitedTracking", f -> f.returns(Boolean.class).invoke(a -> map(a).isUnlimitedTracking()));
+        builder.extension(MapView.class, "setUnlimitedTracking", f -> f.param("unlimited", Boolean.class).invoke(a -> { map(a).setUnlimitedTracking(arg(a, 1, Boolean.class)); return null; }));
         builder.extension(MapView.Scale.class, "value", f -> f.returns(Integer.class).invoke(a -> (int) scale(a).getValue()));
         builder.extension(MapView.Scale.class, "valueOf", f -> f.param("value", Integer.class).returns(MapView.Scale.class).invoke(a -> MapView.Scale.valueOf(arg(a, 1, Integer.class).byteValue())));
     }

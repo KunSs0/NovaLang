@@ -33,6 +33,13 @@ final class NovaBlockState {
         builder.extension(BlockState.class, "chunk", f -> f.returns(Chunk.class).invoke(a -> state(a).getChunk()));
         builder.extension(BlockState.class, "setData", f -> f.param("data", MaterialData.class).invoke(a -> { state(a).setData(arg(a, 1, MaterialData.class)); return null; }));
         builder.extension(BlockState.class, "setType", f -> f.param("type", Material.class).invoke(a -> { state(a).setType(arg(a, 1, Material.class)); return null; }));
+        builder.extension(BlockState.class, "setType", f -> f.param("type", String.class).invoke(a -> {
+            Material type = NovaTypeSupport.findEnum(Material.class, arg(a, 1, String.class));
+            if (type != null) {
+                state(a).setType(type);
+            }
+            return null;
+        }));
         builder.extension(BlockState.class, "update", f -> f.returns(Boolean.class).invoke(a -> state(a).update()));
         builder.extension(BlockState.class, "update", f -> f.param("force", Boolean.class).returns(Boolean.class).invoke(a -> state(a).update(arg(a, 1, Boolean.class))));
         builder.extension(BlockState.class, "update", f -> f.param("force", Boolean.class).param("applyPhysics", Boolean.class).returns(Boolean.class).invoke(a -> state(a).update(arg(a, 1, Boolean.class), arg(a, 2, Boolean.class))));

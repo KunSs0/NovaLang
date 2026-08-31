@@ -11,6 +11,27 @@ public final class NovaNote {
     }
 
     public static void register(JavaTypes.Builder builder) {
+        builder.extension(Note.class, "flat", function -> function
+                .param("octave", Integer.class)
+                .param("tone", Note.Tone.class)
+                .returns(Note.class)
+                .invoke(arguments -> Note.flat(
+                        NovaTypeSupport.argument(arguments, 1, Integer.class),
+                        NovaTypeSupport.argument(arguments, 2, Note.Tone.class))));
+        builder.extension(Note.class, "sharp", function -> function
+                .param("octave", Integer.class)
+                .param("tone", Note.Tone.class)
+                .returns(Note.class)
+                .invoke(arguments -> Note.sharp(
+                        NovaTypeSupport.argument(arguments, 1, Integer.class),
+                        NovaTypeSupport.argument(arguments, 2, Note.Tone.class))));
+        builder.extension(Note.class, "natural", function -> function
+                .param("octave", Integer.class)
+                .param("tone", Note.Tone.class)
+                .returns(Note.class)
+                .invoke(arguments -> Note.natural(
+                        NovaTypeSupport.argument(arguments, 1, Integer.class),
+                        NovaTypeSupport.argument(arguments, 2, Note.Tone.class))));
         builder.extension(Note.class, "sharped", function -> function.returns(Note.class)
                 .invoke(arguments -> note(arguments).sharped()));
         builder.extension(Note.class, "flattened", function -> function.returns(Note.class)
@@ -23,6 +44,8 @@ public final class NovaNote {
                 .invoke(arguments -> note(arguments).getTone()));
         builder.extension(Note.class, "isSharped", function -> function.returns(Boolean.class)
                 .invoke(arguments -> note(arguments).isSharped()));
+        builder.extension(Note.class, "toString", function -> function.returns(String.class)
+                .invoke(arguments -> note(arguments).toString()));
     }
 
     private static Note note(Object[] arguments) {

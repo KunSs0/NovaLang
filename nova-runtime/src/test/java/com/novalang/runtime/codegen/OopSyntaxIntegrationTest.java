@@ -76,6 +76,19 @@ class OopSyntaxIntegrationTest {
                  pre + wrap("val b = Box(10)\n    b.value = 20\n    return b.value"), 20);
         }
 
+        @Test void testUnqualifiedInstanceMethodWinsOverInterfaceMethod() throws Exception {
+            String pre = "interface Updatable {\n" +
+                    "  fun update(force: Boolean)\n" +
+                    "}\n" +
+                    "class Focus : Updatable {\n" +
+                    "  var count: Int = 0\n" +
+                    "  override fun update(force: Boolean) { count = count + 1 }\n" +
+                    "  fun tick() { update(false) }\n" +
+                    "}\n";
+            dual(pre + "val focus = Focus()\nfocus.tick()\nfocus.count",
+                 pre + wrap("val focus = Focus()\n    focus.tick()\n    return focus.count"), 1);
+        }
+
         @Test void testClassBodyField() throws Exception {
             String pre = "class Counter {\n  var count: Int = 0\n  fun inc() { count = count + 1 }\n  fun get() = count\n}\n";
             dual(pre + "val c = Counter()\nc.inc()\nc.inc()\nc.inc()\nc.get()",

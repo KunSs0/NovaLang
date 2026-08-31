@@ -63,6 +63,20 @@ final class NovaMapCursor {
                     cursor(arguments).setRawType(argument(arguments, 1, Integer.class).byteValue());
                     return null;
                 }));
+        builder.extension(MapCursor.class, "setType", function -> function
+                .param("type", MapCursor.Type.class)
+                .returns(Void.TYPE)
+                .invoke(arguments -> {
+                    cursor(arguments).setType(argument(arguments, 1, MapCursor.Type.class));
+                    return null;
+                }));
+        builder.extension(MapCursor.class, "setVisible", function -> function
+                .param("visible", Boolean.class)
+                .returns(Void.TYPE)
+                .invoke(arguments -> {
+                    cursor(arguments).setVisible(argument(arguments, 1, Boolean.class));
+                    return null;
+                }));
         builder.extension(MapCursor.Type.class, "value", function -> function
                 .returns(Integer.class)
                 .invoke(arguments -> (int) type(arguments).getValue()));

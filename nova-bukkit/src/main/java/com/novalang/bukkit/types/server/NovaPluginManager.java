@@ -45,6 +45,7 @@ final class NovaPluginManager {
         b.extension(PluginManager.class, "unsubscribeFromDefaultPerms", f -> f.param("op", Boolean.class).param("permissible", Permissible.class).invoke(a -> { NovaTypeSupport.argument(a, 0, PluginManager.class).unsubscribeFromDefaultPerms(NovaTypeSupport.argument(a, 1, Boolean.class), NovaTypeSupport.argument(a, 2, Permissible.class)); return null; }));
         b.extension(PluginManager.class, "getDefaultPermSubscriptions", f -> f.param("op", Boolean.class).returns(JavaTypeRef.javaType(java.util.Set.class)).invoke(a -> NovaTypeSupport.argument(a, 0, PluginManager.class).getDefaultPermSubscriptions(NovaTypeSupport.argument(a, 1, Boolean.class))));
         b.extension(PluginManager.class, "getPermissions", f -> f.returns(JavaTypeRef.javaType(java.util.Set.class)).invoke(a -> NovaTypeSupport.argument(a, 0, PluginManager.class).getPermissions()));
+        b.extension(PluginManager.class, "permissions", f -> f.returns(JavaTypeRef.javaType(java.util.Set.class)).invoke(a -> NovaTypeSupport.argument(a, 0, PluginManager.class).getPermissions()));
         b.extension(PluginManager.class, "useTimings", f -> f.returns(Boolean.class).invoke(a -> NovaTypeSupport.argument(a, 0, PluginManager.class).useTimings()));
     }
 }
