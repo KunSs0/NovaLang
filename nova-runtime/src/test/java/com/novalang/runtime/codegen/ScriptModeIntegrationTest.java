@@ -1805,6 +1805,14 @@ class ScriptModeIntegrationTest {
         @Test void applyWithIt() {
             assertEquals(5, run("var captured = 0\n5.apply { captured = it }\ncaptured"));
         }
+
+        @Test void classMethodNamedApplyAcceptsNonLambdaArgument() {
+            assertEquals(42, run(
+                    "class Receiver {\n" +
+                    "    fun apply(value: Int): Int { return value }\n" +
+                    "}\n" +
+                    "Receiver().apply(42)"));
+        }
     }
 
     // ============ 56. with 函数 ============

@@ -4577,7 +4577,7 @@ public class HirToMirLowering {
         }
         { int r = lowerDataCopyCall(target, methodName, args, expr, builder, loc); if (r >= 0) return r; }
         { int r = tryComponentNCall(target, methodName, args, builder, loc); if (r >= 0) return r; }
-        return lowerStandardMethodCall(target, methodName, args, builder, loc);
+        return lowerStandardMethodCall(target, methodName, args, expr.getArgs(), builder, loc);
     }
 
     /**
@@ -4788,6 +4788,7 @@ public class HirToMirLowering {
 
     /** 标准方法调用: Java反射/Stdlib/集合HOF/扩展/接口默认/虚调用 */
     private int lowerStandardMethodCall(int target, String methodName, int[] args,
+                                        List<Expression> sourceArgs,
                                         MirBuilder builder, SourceLocation loc) {
         // 推断 owner 从 target 的类型
         MirType targetType = target >= 0 && target < builder.getFunction().getLocals().size()
@@ -4852,7 +4853,7 @@ public class HirToMirLowering {
             }
             // 作用域函数路由: obj.let/also/run/apply/takeIf/takeUnless → INVOKESTATIC NovaScopeFunctions
             // 仅当方法未在 Nova 类继承链中注册时才路由（避免拦截用户自定义同名方法）
-            if (MethodSemantics.isScopeFunction(methodName, args.length)
+            if (isScopeFunctionSyntax(methodName, sourceArgs)
                     && lookupNovaMethodDescInherited(owner, methodName) == null) {
                 return emitScopeFunctionCall(target, methodName, args, builder, loc);
             }
@@ -5702,6 +5703,17 @@ public class HirToMirLowering {
         }
         javaMethodCache.put(cacheKey, best);
         return best;
+    }
+
+    /**
+     * 作用域函数只接受尾随 Lambda 语法。普通的 `receiver.apply(value)` 必须保留为
+     * 接收者方法调用，不能因为名称与标准库作用域函数相同而把 value 当成 Lambda。
+     */
+    private boolean isScopeFunctionSyntax(String methodName, List<Expression> sourceArgs) {
+        if (!MethodSemantics.isScopeFunction(methodName, sourceArgs.size())) {
+            return false;
+        }
+        return sourceArgs.size() == 1 && sourceArgs.get(0) instanceof LambdaExpr;
     }
 
     /**
