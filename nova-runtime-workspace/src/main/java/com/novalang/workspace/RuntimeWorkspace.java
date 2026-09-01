@@ -318,10 +318,7 @@ public final class RuntimeWorkspace implements AutoCloseable {
     }
 
     /**
-     * 将完整模块图联合编译一次，再为每个入口创建隔离调用视图。
-     *
-     * <p>公共模块只在联合源码中出现一次；仅属于单个入口的模块由构建器放入独立
-     * object 命名空间，因此不同入口可以继续导出同名函数。</p>
+     * 将模块图中的每个入口编译为独立的隔离字节码程序。
      *
      * @param nova 当前 Workspace 独占的 Nova 编译门面
      * @param graph 完整模块图
@@ -330,28 +327,28 @@ public final class RuntimeWorkspace implements AutoCloseable {
     private Map<String, WorkspaceProgram> compileEntries(Nova nova,
                                                           WorkspaceModuleGraph graph) {
         Map<String, WorkspaceProgram> programs = new LinkedHashMap<String, WorkspaceProgram>();
-        WorkspaceCompilationBundle bundle =
-                new WorkspaceCompilationBundleBuilder().build(graph);
-        try {
-            WorkspaceBytecodeArtifactCache.CacheKey cacheKey =
-                    new WorkspaceBytecodeArtifactCache.CacheKey(
-                            scriptClassLoader,
-                            configFile.toString(),
-                            "@workspace/joint",
-                            bundle.getSource());
-            WorkspaceBytecodeArtifactCache.BytecodeArtifact artifact =
-                    bytecodeArtifactCache.getOrCompile(cacheKey,
-                            () -> nova.compileToBytecodeArtifact(
-                                    bundle.getSource(), "@workspace/joint"));
-            CompiledNova compiled = nova.createCompiledNova(artifact.load(scriptClassLoader));
-            for (Map.Entry<String, String> entry : graph.getEntries().entrySet()) {
+        WorkspaceBundleBuilder bundleBuilder = new WorkspaceBundleBuilder();
+        for (Map.Entry<String, String> entry : graph.getEntries().entrySet()) {
+            WorkspaceModule module = graph.requireModule(entry.getValue());
+            WorkspaceBundle bundle = bundleBuilder.build(graph, entry.getValue());
+            try {
+                WorkspaceBytecodeArtifactCache.CacheKey cacheKey =
+                        new WorkspaceBytecodeArtifactCache.CacheKey(
+                                scriptClassLoader,
+                                configFile.toString(),
+                                module.getSourceUnit().getModuleId(),
+                                bundle.getSource());
+                WorkspaceBytecodeArtifactCache.BytecodeArtifact artifact =
+                        bytecodeArtifactCache.getOrCompile(cacheKey,
+                                () -> nova.compileToBytecodeArtifact(
+                                        bundle.getSource(), module.getSourceUnit().getModuleId()));
+                CompiledNova compiled = nova.createCompiledNova(artifact.load(scriptClassLoader));
                 programs.put(entry.getKey(), new WorkspaceProgram(
-                        entry.getKey(), entry.getValue(), compiled, bundle.getSourceMap(),
-                        bundle.getEntryObjectClass(entry.getKey())));
+                        entry.getKey(), entry.getValue(), compiled, bundle.getSourceMap()));
+            } catch (RuntimeException exception) {
+                throw bundle.getSourceMap().mapFailure(
+                        "Failed to compile Workspace entry '" + entry.getKey() + "'", exception);
             }
-        } catch (RuntimeException exception) {
-            throw bundle.getSourceMap().mapFailure(
-                    "Failed to compile Workspace module graph", exception);
         }
         return programs;
     }

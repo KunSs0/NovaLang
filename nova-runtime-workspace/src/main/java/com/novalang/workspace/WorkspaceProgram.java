@@ -16,7 +16,6 @@ public final class WorkspaceProgram {
     private final String moduleId;
     private final CompiledNova compiled;
     private final WorkspaceSourceMap sourceMap;
-    private final String entryObjectClass;
 
     /**
      * 创建已编译 Workspace 程序。
@@ -25,18 +24,15 @@ public final class WorkspaceProgram {
      * @param moduleId 规范模块标识
      * @param compiled Nova 字节码程序
      * @param sourceMap 合并源码到原始来源的逐行映射
-     * @param entryObjectClass 私有入口对象类名；为空表示入口函数位于顶层
      */
     WorkspaceProgram(String entryName,
                      String moduleId,
                      CompiledNova compiled,
-                     WorkspaceSourceMap sourceMap,
-                     String entryObjectClass) {
+                     WorkspaceSourceMap sourceMap) {
         this.entryName = entryName;
         this.moduleId = moduleId;
         this.compiled = compiled;
         this.sourceMap = sourceMap;
-        this.entryObjectClass = entryObjectClass;
     }
 
     /** @return 配置或虚拟入口名称 */
@@ -56,9 +52,6 @@ public final class WorkspaceProgram {
 
     /** @return 程序导出的不可变函数名集合 */
     public Set<String> getAvailableFunctions() {
-        if (entryObjectClass != null) {
-            return compiled.getObjectFunctions(entryObjectClass);
-        }
         return compiled.getAvailableFunctions();
     }
 
@@ -73,9 +66,6 @@ public final class WorkspaceProgram {
                 ? new LinkedHashMap<String, Object>()
                 : new LinkedHashMap<String, Object>(bindings);
         try {
-            if (entryObjectClass != null) {
-                return compiled.runObjectIsolated(entryObjectClass, isolated);
-            }
             return compiled.runIsolated(isolated);
         } catch (RuntimeException exception) {
             throw sourceMap.mapFailure("Workspace entry initialization failed", exception);
@@ -95,10 +85,6 @@ public final class WorkspaceProgram {
                 ? Collections.<String, Object>emptyMap() : bindings;
         Object[] actualArguments = arguments == null ? new Object[0] : arguments;
         try {
-            if (entryObjectClass != null) {
-                return compiled.callObjectIsolated(entryObjectClass,
-                        functionName, actualBindings, actualArguments);
-            }
             return compiled.callIsolated(functionName, actualBindings, actualArguments);
         } catch (RuntimeException exception) {
             throw sourceMap.mapFailure("Workspace function '" + functionName + "' failed", exception);
