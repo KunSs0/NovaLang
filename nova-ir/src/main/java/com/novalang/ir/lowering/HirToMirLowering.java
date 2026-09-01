@@ -427,6 +427,10 @@ public class HirToMirLowering {
         // 提升嵌套类定义到顶层（支持函数/方法体内的类声明）
         hoistNestedClasses(hirModule.getDeclarations());
 
+        // 类型必须先于描述符、继承关系和方法体完成预声明，确保前向引用不会被
+        // typeToInternalName 误判为 Java 类型并触发失败的 Class.forName 探测。
+        predeclareNovaTypes(hirModule);
+
         // 第一遍：收集顶层函数名、类名、方法描述符、类型别名
         // 预扫描 main() 体内的顶层字段（scriptMode 下 var/val 声明被合成到 main 中）
         if (scriptMode) {
@@ -466,17 +470,6 @@ public class HirToMirLowering {
                 }
             } else if (decl instanceof HirClass) {
                 HirClass hc = (HirClass) decl;
-                classNames.add(hc.getName());
-                unemittedNovaTypeNames.add(hc.getName());
-                if (hc.getClassKind() == ClassKind.OBJECT) {
-                    objectNames.add(hc.getName());
-                }
-                if (hc.getClassKind() == ClassKind.INTERFACE) {
-                    interfaceNames.add(hc.getName());
-                }
-                if (hc.getClassKind() == ClassKind.ENUM) {
-                    enumClassNames.add(hc.getName());
-                }
                 // 记录类实现的接口
                 {
                     List<String> ifaces = new ArrayList<>();
@@ -867,14 +860,19 @@ public class HirToMirLowering {
 
         if (hirClass.getSuperClass() != null) {
             String resolved = typeToInternalName(hirClass.getSuperClass());
-            Class<?> javaClass = resolveJavaClass(resolved);
-            if (javaClass != null && javaClass.isInterface()) {
-                interfaces.add(resolved);
-            } else if (interfaceNames.contains(resolved)) {
+            if (interfaceNames.contains(resolved)) {
                 // Nova 定义的接口
                 interfaces.add(resolved);
-            } else {
+            } else if (isKnownNovaType(resolved)) {
+                // Nova 类型已在本编译单元预声明，不能在字节码输出前反向探测 ClassLoader。
                 superClass = resolved;
+            } else {
+                Class<?> javaClass = resolveJavaClass(resolved);
+                if (javaClass != null && javaClass.isInterface()) {
+                    interfaces.add(resolved);
+                } else {
+                    superClass = resolved;
+                }
             }
         }
         for (HirType iface : hirClass.getInterfaces()) {
@@ -6354,6 +6352,28 @@ public class HirToMirLowering {
                 || interfaceNames.contains(owner)
                 || externalTypeNames.contains(owner)
                 || enumClassNames.contains(owner);
+    }
+
+    /** 为当前编译单元的全部 Nova 类型建立与声明顺序无关的类型表。 */
+    private void predeclareNovaTypes(HirModule hirModule) {
+        for (HirDecl declaration : hirModule.getDeclarations()) {
+            if (!(declaration instanceof HirClass)) {
+                continue;
+            }
+            HirClass hirClass = (HirClass) declaration;
+            String name = hirClass.getName();
+            classNames.add(name);
+            unemittedNovaTypeNames.add(name);
+            if (hirClass.getClassKind() == ClassKind.OBJECT) {
+                objectNames.add(name);
+            }
+            if (hirClass.getClassKind() == ClassKind.INTERFACE) {
+                interfaceNames.add(name);
+            }
+            if (hirClass.getClassKind() == ClassKind.ENUM) {
+                enumClassNames.add(name);
+            }
+        }
     }
 
     /**

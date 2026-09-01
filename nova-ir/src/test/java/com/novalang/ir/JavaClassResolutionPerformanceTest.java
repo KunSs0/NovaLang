@@ -69,6 +69,16 @@ class JavaClassResolutionPerformanceTest {
                 "编译器生成的 Lambda 类尚未输出字节码，Java 重载解析不应尝试通过 Class.forName 加载");
     }
 
+    @Test
+    @DisplayName("Nova 前向类型引用不应探测 Java 类")
+    void forwardNovaTypeReferencesShouldNotProbeJavaClasses() {
+        CountingClassLoader loader = compileWithCountingLoader(
+                forwardNovaTypeReferences(40), "forward-nova-types.nova");
+
+        assertEquals(0, loader.countContaining("ForwardBase"),
+                "后声明的 Nova 父类应在 HIR 降级前完成类型预声明，不应探测 Java 类");
+    }
+
     private CountingClassLoader compileWithCountingLoader(String source, String sourceName) {
         CountingClassLoader loader = new CountingClassLoader(getClass().getClassLoader());
         ClassLoader previousLoader = Thread.currentThread().getContextClassLoader();
@@ -168,6 +178,23 @@ class JavaClassResolutionPerformanceTest {
         source.append("    return holder\n");
         source.append("  }\n");
         source.append("}\n");
+        return source.toString();
+    }
+
+    private String forwardNovaTypeReferences(int count) {
+        StringBuilder source = new StringBuilder();
+        for (int index = 0; index < count; index++) {
+            source.append("class ForwardChild")
+                    .append(index)
+                    .append(" : ForwardBase")
+                    .append(index)
+                    .append("\n");
+        }
+        for (int index = 0; index < count; index++) {
+            source.append("open class ForwardBase")
+                    .append(index)
+                    .append("\n");
+        }
         return source.toString();
     }
 
