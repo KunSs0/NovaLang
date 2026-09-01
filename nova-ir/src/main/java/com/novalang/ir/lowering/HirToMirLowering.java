@@ -4811,7 +4811,7 @@ public class HirToMirLowering {
             returnType = descriptorToMirType(desc.substring(desc.indexOf(')') + 1));
         } else {
             // StdlibRegistry 扩展方法路由（优先于 Java 反射，避免 String.lines 等被 Java 方法截获）
-            Class<?> ownerClass = resolveJavaClass(owner);
+            Class<?> ownerClass = isKnownNovaType(owner) ? null : resolveJavaClass(owner);
             {
                 StdlibRegistry.ExtensionMethodInfo stdlibExt = ownerClass != null
                         ? StdlibMethodResolver.resolveByClass(ownerClass, methodName, args.length)
@@ -6334,6 +6334,20 @@ public class HirToMirLowering {
      */
     private boolean hasNovaMethod(String owner, String methodName) {
         return lookupNovaMethodDescInherited(owner, methodName) != null;
+    }
+
+    /**
+     * 判断 owner 是否已由当前 Nova 编译单元声明或注册。
+     *
+     * <p>这些类型在当前编译尚未输出字节码时不可能由宿主 ClassLoader 加载；继续按
+     * Java 类型探测只会对每个默认包前缀制造一次失败的 Class.forName。</p>
+     */
+    private boolean isKnownNovaType(String owner) {
+        return classNames.contains(owner)
+                || objectNames.contains(owner)
+                || interfaceNames.contains(owner)
+                || externalTypeNames.contains(owner)
+                || enumClassNames.contains(owner);
     }
 
     /**
