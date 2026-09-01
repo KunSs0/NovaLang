@@ -3,6 +3,8 @@ package com.novalang.ir;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -45,6 +47,39 @@ class JavaClassResolutionPerformanceTest {
 
         assertEquals(0, loader.getProbeCount(),
                 "已声明 Nova 类型的方法调用不应通过 Class.forName 反向探测 Java 类型");
+    }
+
+    @Test
+    @DisplayName("Java 方法的 Nova 实参不应探测尚未输出的类")
+    void novaArgumentsOfJavaMethodsShouldNotProbeUnemittedClasses() {
+        CountingClassLoader loader = compileWithCountingLoader(
+                novaArgumentsOfJavaMethods(40), "java-method-nova-arguments.nova");
+
+        assertEquals(0, loader.countContaining("Service"),
+                "Nova 实参类型尚未输出字节码，Java 重载解析不应尝试通过 Class.forName 加载");
+    }
+
+    @Test
+    @DisplayName("Java 方法的 Lambda 实参不应探测编译器生成类")
+    void lambdaArgumentsOfJavaMethodsShouldNotProbeGeneratedClasses() {
+        CountingClassLoader loader = compileWithCountingLoader(
+                lambdaArgumentsOfJavaMethods(40), "java-method-lambda-arguments.nova");
+
+        assertEquals(0, loader.countContaining("$Lambda$"),
+                "编译器生成的 Lambda 类尚未输出字节码，Java 重载解析不应尝试通过 Class.forName 加载");
+    }
+
+    private CountingClassLoader compileWithCountingLoader(String source, String sourceName) {
+        CountingClassLoader loader = new CountingClassLoader(getClass().getClassLoader());
+        ClassLoader previousLoader = Thread.currentThread().getContextClassLoader();
+        Thread.currentThread().setContextClassLoader(loader);
+        try {
+            NovaIrCompiler compiler = new NovaIrCompiler();
+            compiler.compile(source, sourceName);
+        } finally {
+            Thread.currentThread().setContextClassLoader(previousLoader);
+        }
+        return loader;
     }
 
     private String novaNamespaceCalls(int count) {
@@ -94,9 +129,52 @@ class JavaClassResolutionPerformanceTest {
         return source.toString();
     }
 
+    private String novaArgumentsOfJavaMethods(int count) {
+        StringBuilder source = new StringBuilder();
+        source.append("import java java.util.concurrent.atomic.AtomicReference\n");
+        for (int index = 0; index < count; index++) {
+            source.append("class Service")
+                    .append(index)
+                    .append("\n");
+        }
+        source.append("object Test {\n");
+        source.append("  fun run(): Any {\n");
+        source.append("    val holder = AtomicReference()\n");
+        for (int index = 0; index < count; index++) {
+            source.append("    holder.set(Service")
+                    .append(index)
+                    .append("())\n");
+        }
+        source.append("    return holder\n");
+        source.append("  }\n");
+        source.append("}\n");
+        return source.toString();
+    }
+
+    private String lambdaArgumentsOfJavaMethods(int count) {
+        StringBuilder source = new StringBuilder();
+        source.append("import java java.util.concurrent.atomic.AtomicReference\n");
+        source.append("object Test {\n");
+        source.append("  fun run(): Any {\n");
+        source.append("    val holder = AtomicReference()\n");
+        for (int index = 0; index < count; index++) {
+            source.append("    val callback")
+                    .append(index)
+                    .append(" = { value -> value }\n");
+            source.append("    holder.set(callback")
+                    .append(index)
+                    .append(")\n");
+        }
+        source.append("    return holder\n");
+        source.append("  }\n");
+        source.append("}\n");
+        return source.toString();
+    }
+
     private static final class CountingClassLoader extends ClassLoader {
 
         private final AtomicInteger probeCount = new AtomicInteger();
+        private final List<String> probedClassNames = new ArrayList<>();
 
         private CountingClassLoader(ClassLoader parent) {
             super(parent);
@@ -105,11 +183,18 @@ class JavaClassResolutionPerformanceTest {
         @Override
         protected Class<?> loadClass(String name, boolean resolve) throws ClassNotFoundException {
             probeCount.incrementAndGet();
+            probedClassNames.add(name);
             return super.loadClass(name, resolve);
         }
 
         private int getProbeCount() {
             return probeCount.get();
+        }
+
+        private long countContaining(String marker) {
+            return probedClassNames.stream()
+                    .filter(name -> name.contains(marker))
+                    .count();
         }
     }
 }

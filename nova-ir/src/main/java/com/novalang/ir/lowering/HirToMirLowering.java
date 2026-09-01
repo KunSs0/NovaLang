@@ -42,6 +42,8 @@ public class HirToMirLowering {
     private final Set<String> topLevelFunctionNames = new HashSet<>();
     private final Set<String> classNames = new HashSet<>();
     private final Set<String> objectNames = new HashSet<>();
+    /** 当前编译单元声明或生成、但尚未输出为字节码的 Nova 类型。 */
+    private final Set<String> unemittedNovaTypeNames = new HashSet<>();
     // val x by lazy { ... } 的内联懒加载信息: varName → [lambdaLocal, cacheLocal, doneLocal]
     private final Map<String, int[]> lazyVarLocals = new HashMap<>();
     private final Set<String> interfaceNames = new HashSet<>();
@@ -465,6 +467,7 @@ public class HirToMirLowering {
             } else if (decl instanceof HirClass) {
                 HirClass hc = (HirClass) decl;
                 classNames.add(hc.getName());
+                unemittedNovaTypeNames.add(hc.getName());
                 if (hc.getClassKind() == ClassKind.OBJECT) {
                     objectNames.add(hc.getName());
                 }
@@ -2715,7 +2718,7 @@ public class HirToMirLowering {
         if (superCtorDesc != null) {
             anonClass.setSuperCtorDesc(superCtorDesc);
         }
-        additionalClasses.add(anonClass);
+        addGeneratedClass(anonClass);
 
         // 降级构造参数并发射 NEW_OBJECT
         int[] argLocals = new int[ctorArgs.size()];
@@ -2885,7 +2888,7 @@ public class HirToMirLowering {
                 EnumSet.of(Modifier.PUBLIC, Modifier.FINAL),
                 "java/lang/Object", lambdaInterfaces,
                 fields, methods);
-        additionalClasses.add(lambdaClass);
+        addGeneratedClass(lambdaClass);
 
         // 5. 加载捕获变量值并实例化
         int[] captureLocals = new int[captures.size()];
@@ -3022,7 +3025,7 @@ public class HirToMirLowering {
                     EnumSet.of(Modifier.PUBLIC, Modifier.FINAL),
                     "java/lang/Object", ifaces,
                     Collections.emptyList(), methods);
-            additionalClasses.add(refClass);
+            addGeneratedClass(refClass);
             return builder.emitNewObject(refName, new int[0], loc);
         }
 
@@ -3087,7 +3090,7 @@ public class HirToMirLowering {
                     EnumSet.of(Modifier.PUBLIC, Modifier.FINAL),
                     "java/lang/Object", ifaces,
                     Collections.emptyList(), methods);
-            additionalClasses.add(refClass);
+            addGeneratedClass(refClass);
             return builder.emitNewObject(refName, new int[0], loc);
         }
 
@@ -3159,7 +3162,7 @@ public class HirToMirLowering {
                     EnumSet.of(Modifier.PUBLIC, Modifier.FINAL),
                     "java/lang/Object", ifaces,
                     fields, methods);
-            additionalClasses.add(refClass);
+            addGeneratedClass(refClass);
             return builder.emitNewObject(refName, new int[]{targetObj}, loc);
         }
 
@@ -4493,6 +4496,9 @@ public class HirToMirLowering {
             case CHAR: return char.class;
             case OBJECT:
                 if (type.getClassName() != null) {
+                    if (unemittedNovaTypeNames.contains(type.getClassName())) {
+                        return Object.class;
+                    }
                     Class<?> resolved = resolveJavaClass(type.getClassName());
                     if (resolved != null) {
                         return resolved;
@@ -6348,6 +6354,18 @@ public class HirToMirLowering {
                 || interfaceNames.contains(owner)
                 || externalTypeNames.contains(owner)
                 || enumClassNames.contains(owner);
+    }
+
+    /**
+     * 注册本轮 lowering 生成的类，并标记为尚未输出。
+     *
+     * <p>Java 重载解析发生在字节码生成之前，因此这些类不可能由宿主 ClassLoader
+     * 找到。保留独立集合，避免影响 Nova 方法分派，也不阻断已输出外部模块类型的
+     * 正常 Java 类型解析。</p>
+     */
+    private void addGeneratedClass(MirClass generatedClass) {
+        additionalClasses.add(generatedClass);
+        unemittedNovaTypeNames.add(generatedClass.getName());
     }
 
     /**
