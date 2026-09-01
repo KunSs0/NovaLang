@@ -3,6 +3,9 @@ package com.novalang.runtime.interpreter;
 import com.novalang.runtime.*;
 import org.junit.jupiter.api.*;
 
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
@@ -268,6 +271,43 @@ class ConcurrencyTest {
                     "await f"
             );
             assertEquals(42, result.asInt());
+        }
+
+        @Test
+        @DisplayName("异步任务限制按安全策略隔离")
+        void testAsyncTaskLimitIsIsolatedByPolicy() throws InterruptedException {
+            CountDownLatch firstTaskStarted = new CountDownLatch(1);
+            CountDownLatch releaseFirstTask = new CountDownLatch(1);
+            Interpreter firstInterpreter = createInterpreter(NovaSecurityPolicy.custom().maxAsyncTasks(1).build());
+            NovaFuture firstFuture = new NovaFuture(
+                    new NovaNativeFunction("blocking", 0, (context, arguments) -> {
+                        firstTaskStarted.countDown();
+                        try {
+                            releaseFirstTask.await();
+                        } catch (InterruptedException exception) {
+                            Thread.currentThread().interrupt();
+                            throw new AssertionError("等待首个异步任务释放时被中断", exception);
+                        }
+                        return NovaInt.of(1);
+                    }),
+                    firstInterpreter
+            );
+
+            try {
+                assertTrue(firstTaskStarted.await(5, TimeUnit.SECONDS), "首个异步任务未在限定时间内启动");
+
+                Interpreter secondInterpreter = createInterpreter(NovaSecurityPolicy.custom().maxAsyncTasks(1).build());
+                NovaFuture secondFuture = new NovaFuture(
+                        new NovaNativeFunction("immediate", 0, (context, arguments) -> NovaInt.of(2)),
+                        secondInterpreter
+                );
+
+                assertEquals(2, secondFuture.get(secondInterpreter).asInt());
+            } finally {
+                // 始终解除阻塞，避免失败断言使 ForkJoinPool 中的测试任务残留。
+                releaseFirstTask.countDown();
+                assertEquals(1, firstFuture.get(firstInterpreter).asInt());
+            }
         }
 
         @Test

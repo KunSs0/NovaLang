@@ -10,7 +10,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
-import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * 异步计算包装。
@@ -22,9 +22,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 @NovaType(name = "Future", description = "异步计算类型，由 async { } 创建。使用 await 或 .get() 获取结果")
 public final class NovaFuture extends AbstractNovaValue {
 
-    /** 活跃异步任务计数器（全局共享） */
-    private static final AtomicInteger activeTaskCount = new AtomicInteger(0);
-
+    private final NovaSecurityPolicy securityPolicy;
+    private final AtomicBoolean asyncTaskSlotReleased = new AtomicBoolean(false);
     private final CompletableFuture<NovaValue> future;
 
     /**
@@ -32,24 +31,47 @@ public final class NovaFuture extends AbstractNovaValue {
      * 根据 parentInterpreter 类型自动创建对应的子解释器。
      */
     public NovaFuture(com.novalang.runtime.NovaCallable callable, Interpreter parentInterpreter) {
-        int maxTasks = parentInterpreter.getSecurityPolicy().getMaxAsyncTasks();
-        if (maxTasks > 0) {
-            int current = activeTaskCount.incrementAndGet();
-            if (current > maxTasks) {
-                activeTaskCount.decrementAndGet();
-                throw new NovaRuntimeException(NovaException.ErrorKind.ACCESS_DENIED, "安全策略拒绝: 异步任务数超过上限 (" + maxTasks + ")", null);
-            }
-        } else {
-            activeTaskCount.incrementAndGet();
+        this.securityPolicy = parentInterpreter.getSecurityPolicy();
+        if (!securityPolicy.tryAcquireAsyncTaskSlot()) {
+            throw new NovaRuntimeException(
+                    NovaException.ErrorKind.ACCESS_DENIED,
+                    "安全策略拒绝: 异步任务数超过上限 (" + securityPolicy.getMaxAsyncTasks() + ")",
+                    null
+            );
         }
-        this.future = CompletableFuture.supplyAsync(() -> {
-            try {
-                Interpreter child = new Interpreter(parentInterpreter);
-                return callable.call(child, Collections.emptyList());
-            } finally {
-                activeTaskCount.decrementAndGet();
+
+        CompletableFuture<NovaValue> submittedFuture;
+        try {
+            submittedFuture = CompletableFuture.supplyAsync(() -> {
+                try {
+                    Interpreter child = new Interpreter(parentInterpreter);
+                    return callable.call(child, Collections.emptyList());
+                } finally {
+                    releaseAsyncTaskSlot();
+                }
+            });
+        } catch (RuntimeException exception) {
+            releaseAsyncTaskSlot();
+            throw exception;
+        }
+        this.future = submittedFuture;
+        this.future.whenComplete((result, exception) -> {
+            if (this.future.isCancelled()) {
+                releaseAsyncTaskSlot();
             }
         });
+    }
+
+    /**
+     * 仅释放一次当前 Future 已预留的异步任务配额。
+     *
+     * <p>任务正常结束、提交失败与取消任务可能发生在不同线程，使用原子状态确保它们
+     * 不会重复释放同一个配额。</p>
+     */
+    private void releaseAsyncTaskSlot() {
+        if (asyncTaskSlotReleased.compareAndSet(false, true)) {
+            securityPolicy.releaseAsyncTaskSlot();
+        }
     }
 
     /**

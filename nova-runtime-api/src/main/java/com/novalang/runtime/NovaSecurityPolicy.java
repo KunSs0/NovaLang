@@ -1,6 +1,7 @@
 package com.novalang.runtime;
 
 import java.util.*;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
@@ -59,6 +60,7 @@ public final class NovaSecurityPolicy {
 
     // --- 编译模式运行时状态（per-policy 实例） ---
     private final AtomicLong loopCounter = new AtomicLong(0);
+    private final AtomicInteger activeAsyncTaskCount = new AtomicInteger(0);
     private volatile long startNanos;
 
     private NovaSecurityPolicy(Builder builder) {
@@ -331,6 +333,44 @@ public final class NovaSecurityPolicy {
 
     public int getMaxAsyncTasks() {
         return maxAsyncTasks;
+    }
+
+    /**
+     * 尝试为一个异步任务预留执行配额。
+     *
+     * <p>配额计数属于当前安全策略实例，因此不同解释器使用不同策略时互不影响。
+     * 当 {@code maxAsyncTasks} 小于等于零时表示不限制任务数，方法始终成功且不维护计数。</p>
+     *
+     * @return 成功预留配额时为 {@code true}；已达到当前策略上限时为 {@code false}
+     */
+    public boolean tryAcquireAsyncTaskSlot() {
+        if (maxAsyncTasks <= 0) {
+            return true;
+        }
+
+        while (true) {
+            int currentCount = activeAsyncTaskCount.get();
+            if (currentCount >= maxAsyncTasks) {
+                return false;
+            }
+            if (activeAsyncTaskCount.compareAndSet(currentCount, currentCount + 1)) {
+                return true;
+            }
+        }
+    }
+
+    /**
+     * 释放先前为异步任务预留的执行配额。
+     *
+     * <p>调用方必须保证仅对成功预留过配额的任务调用一次。无限制策略不维护配额计数，
+     * 因此该方法在该模式下不执行任何操作。</p>
+     */
+    public void releaseAsyncTaskSlot() {
+        if (maxAsyncTasks <= 0) {
+            return;
+        }
+
+        activeAsyncTaskCount.decrementAndGet();
     }
 
     // ============ 错误工厂 ============
