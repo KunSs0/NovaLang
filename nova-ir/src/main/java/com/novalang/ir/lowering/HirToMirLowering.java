@@ -4891,10 +4891,10 @@ public class HirToMirLowering {
             // 尝试 Nova 类/接口方法描述符注册表（沿继承链查找）
             desc = lookupNovaMethodDesc(owner, methodName, args.length);
             returnType = inferNovaMethodReturnType(owner, methodName, desc);
-            // build() 返回原始类型（去掉 $Builder 后缀）
-            if ("build".equals(methodName) && owner.endsWith("$Builder")) {
-                returnType = MirType.ofObject(
-                        owner.substring(0, owner.length() - "$Builder".length()));
+            MirType compilerGeneratedReturnType = inferCompilerGeneratedMethodReturnType(
+                    owner, methodName, args.length);
+            if (compilerGeneratedReturnType != null) {
+                returnType = compilerGeneratedReturnType;
             }
         }
 
@@ -6202,6 +6202,55 @@ public class HirToMirLowering {
         // 否则 `val values = keys(...)` 这类调用会被错误地传播成 owner，随后对 values
         // 的成员调用会在字节码中把实际集合强制转换为单例对象。
         return descriptorReturnType;
+    }
+
+    /**
+     * 推断编译器合成方法的精确返回类型。
+     *
+     * <p>运行时字节码中，{@code @builder} 的 fluent setter、{@code build()} 以及
+     * {@code @data} 的 {@code copy()} 为了统一调用约定使用 {@code Object} 返回描述符。
+     * 这些方法的返回对象由编译器生成，类型在 lowering 阶段可以无歧义确定；若将其传播为
+     * {@code Object}，后续的字段访问、{@code componentN()} 调用和解构声明会失去静态分派。
+     * 此方法仅处理已注册类的合成方法，普通未声明返回类型的方法仍保持 {@code Object}，
+     * 防止将单例对象的方法返回值错误地推断为接收者类型。</p>
+     *
+     * @param owner 接收者的 JVM 内部类名
+     * @param methodName 被调用的方法名
+     * @param argumentCount 调用实参数量
+     * @return 合成方法的精确返回类型；不是已知合成方法时返回 {@code null}
+     */
+    private MirType inferCompilerGeneratedMethodReturnType(String owner, String methodName,
+                                                           int argumentCount) {
+        if (owner == null) {
+            return null;
+        }
+
+        if (owner.endsWith("$Builder")) {
+            String targetClass = owner.substring(0, owner.length() - "$Builder".length());
+            if (!classNames.contains(targetClass)) {
+                return null;
+            }
+
+            if ("build".equals(methodName) && argumentCount == 0) {
+                return MirType.ofObject(targetClass);
+            }
+
+            Set<String> targetFields = classFieldNames.get(targetClass);
+            if (argumentCount == 1 && targetFields != null && targetFields.contains(methodName)) {
+                return MirType.ofObject(owner);
+            }
+            return null;
+        }
+
+        if (!"copy".equals(methodName) || !isDataClass(owner)) {
+            return null;
+        }
+
+        HirFunction constructor = classConstructorDecls.get(owner);
+        if (constructor == null || constructor.getParams().size() != argumentCount) {
+            return null;
+        }
+        return MirType.ofObject(owner);
     }
 
     /** 检查继承链是否完整可达（所有父类的方法信息都在当前 lowering 中可用） */
