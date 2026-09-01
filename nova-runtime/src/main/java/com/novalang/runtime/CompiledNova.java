@@ -147,6 +147,27 @@ public final class CompiledNova {
     }
 
     /**
+     * 返回联合 Workspace 产物中指定入口对象导出的函数。
+     *
+     * @param objectClassName 入口对象的 JVM 类名
+     * @return 公开实例函数名称
+     */
+    public Set<String> getObjectFunctions(String objectClassName) {
+        Class<?> objectClass = requireCompiledClass(objectClassName);
+        Set<String> functions = new LinkedHashSet<String>();
+        for (java.lang.reflect.Method method : objectClass.getDeclaredMethods()) {
+            int modifiers = method.getModifiers();
+            if (java.lang.reflect.Modifier.isPublic(modifiers)
+                    && !java.lang.reflect.Modifier.isStatic(modifiers)
+                    && !"main".equals(method.getName())
+                    && !"<clinit>".equals(method.getName())) {
+                functions.add(method.getName());
+            }
+        }
+        return Collections.unmodifiableSet(functions);
+    }
+
+    /**
      * 调用预编译代码中定义的函数。
      * 通过 MethodHandleCache 进行类型兼容匹配（支持自动装箱、数值宽化、varargs），
      * 并缓存函数名→编译类的映射以避免重复扫描。
@@ -319,6 +340,71 @@ public final class CompiledNova {
         }
     }
 
+    /**
+     * 使用隔离绑定调用联合 Workspace 产物中的入口对象函数。
+     *
+     * @param objectClassName 入口对象的 JVM 类名
+     * @param funcName 函数名称
+     * @param executionBindings 本次调用绑定
+     * @param args 函数参数
+     * @return 函数结果
+     */
+    public Object callObjectIsolated(String objectClassName,
+                                     String funcName,
+                                     Map<String, Object> executionBindings,
+                                     Object... args) {
+        if (nova != null || compiledClasses == null) {
+            throw new NovaRuntimeException(
+                    "callObjectIsolated is only available in bytecode mode");
+        }
+        Class<?> objectClass = requireCompiledClass(objectClassName);
+        Map<String, Object> localBindings = new HashMap<String, Object>(bindings);
+        if (executionBindings != null) {
+            for (Map.Entry<String, Object> entry : executionBindings.entrySet()) {
+                if (entry.getKey() == null) {
+                    throw new IllegalArgumentException("Binding key must not be null");
+                }
+                localBindings.put(entry.getKey(),
+                        NativeFunctionAdapter.toBindingValue(entry.getValue()));
+            }
+        }
+
+        try {
+            return withScriptExecutionContext(localBindings, false, () -> {
+                java.lang.reflect.Field instanceField = objectClass.getField("INSTANCE");
+                Object instance = instanceField.get(null);
+                Object result = MethodHandleCache.getInstance().invokeMethod(
+                        instance, funcName, args);
+                if (result instanceof NovaValue) {
+                    if (((NovaValue) result).isNull()) {
+                        return null;
+                    }
+                    return ((NovaValue) result).toJavaValue();
+                }
+                return result;
+            });
+        } catch (NovaRuntimeException exception) {
+            throw exception;
+        } catch (Throwable exception) {
+            String message = exception.getMessage() == null
+                    ? exception.getClass().getSimpleName() : exception.getMessage();
+            throw new NovaRuntimeException("Isolated call to object function '"
+                    + objectClassName + "." + funcName + "' failed: " + message, exception);
+        }
+    }
+
+    /**
+     * 执行入口对象的 main 初始化；对象没有 main 时不执行。
+     */
+    public Object runObjectIsolated(String objectClassName,
+                                    Map<String, Object> executionBindings) {
+        Class<?> objectClass = requireCompiledClass(objectClassName);
+        if (!MethodHandleCache.getInstance().hasMethodName(objectClass, "main")) {
+            return null;
+        }
+        return callObjectIsolated(objectClassName, "main", executionBindings);
+    }
+
     /** 扫描编译类，查找包含指定函数名的类 */
     @FunctionalInterface
     private interface ThrowingSupplier<T> {
@@ -357,6 +443,17 @@ public final class CompiledNova {
             if (cache.hasMethodName(cls, funcName)) return cls;
         }
         throw NovaErrors.undefinedFunction(funcName, compiledClasses != null ? compiledClasses.keySet() : null);
+    }
+
+    private Class<?> requireCompiledClass(String className) {
+        if (compiledClasses == null) {
+            throw new NovaRuntimeException("The compiled program has no executable bytecode");
+        }
+        Class<?> type = compiledClasses.get(className);
+        if (type == null) {
+            throw new NovaRuntimeException("Compiled class is not available: " + className);
+        }
+        return type;
     }
 
     /**
@@ -692,6 +789,9 @@ public final class CompiledNova {
         for (Class<?> cls : classes.values()) {
             try {
                 java.lang.reflect.Method method = cls.getMethod("main");
+                if (!java.lang.reflect.Modifier.isStatic(method.getModifiers())) {
+                    continue;
+                }
                 MethodHandle handle = lookup.unreflect(method);
                 return handle.asType(MethodType.methodType(Object.class));
             } catch (NoSuchMethodException | IllegalAccessException e) {
