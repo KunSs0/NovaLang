@@ -270,6 +270,11 @@ public class Parser {
     }
 
     String expectQualifiedNamePart(String message) {
+        if (check(TokenType.DOLLAR)) {
+            advance();
+            Token identifier = expect(TokenType.IDENTIFIER, message);
+            return "$" + identifier.getLexeme();
+        }
         if (check(TokenType.IDENTIFIER) || current.getType().isKeyword()) {
             String lexeme = current.getLexeme();
             if (!lexeme.isEmpty() && Character.isJavaIdentifierStart(lexeme.charAt(0))) {

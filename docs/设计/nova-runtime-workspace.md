@@ -103,7 +103,15 @@ Workspace 首次加载时构建不可变模块图；解释执行和字节码编�
 
 未显式导入、未注入或宿主能力缺失时，编译或加载必须直接失败。
 
-### 4.1 Workspace 配置文件
+### 4.1 Generation 编译分组
+
+一次 Generation 冷加载必须完整编译当前模块图，但同一个模块不能因为被多个入口引用而重复进入词法、语义、HIR 和字节码管线。
+
+Workspace 按“能够到达该模块的入口集合”分组：消费者集合完全相同的模块合并为一个编译组，每组仅编译一次；入口独占模块保留独立编译组，因此不同入口仍可声明同名类型、顶层函数和状态。编译组按依赖顺序生成独立内部包，依赖组的公开类型、对象单例、顶层函数和字段通过显式链接导入提供给调用组。
+
+同一 Generation 的全部编译组必须装入同一个 Generation ClassLoader。缓存只保存不可变字节码产物，不保存已加载 Class、静态字段或脚本状态；新 Generation 即使命中缓存，也必须创建新的 ClassLoader 并重新初始化各组。dispose 后不得复用旧 Generation 的类或状态。
+
+### 4.2 Workspace 配置文件
 
 `WorkspaceConfigFiles.loadYaml(relativePath)` 仅允许读取 `nova.config.yml` 所在目录内的 `.yml` 或 `.yaml` 文件。绝对路径、根目录逃逸、重复 YAML key、非映射根节点和缺失文件均直接失败。
 

@@ -57,6 +57,7 @@ public class HirToMirLowering {
     // 类实现的接口列表: className → [interfaceName, ...]
     private final Map<String, List<String>> classInterfaceMap = new HashMap<>();
     private String moduleClassName = "$Module";
+    private String currentPackagePrefix = "";
 
     // 接收者 Lambda 内联编译上下文（buildString / buildList / buildMap / buildSet）
     private StdlibRegistry.ReceiverLambdaInfo currentReceiverLambda;
@@ -317,6 +318,7 @@ public class HirToMirLowering {
         // 计算模块类名
         String packagePrefix = hirModule.getPackageName() != null && !hirModule.getPackageName().isEmpty()
                 ? hirModule.getPackageName().replace('.', '/') + "/" : "";
+        currentPackagePrefix = packagePrefix;
         moduleClassName = packagePrefix + "$Module";
 
         // 收集 Java import 映射 + Nova import 类名
@@ -472,6 +474,7 @@ public class HirToMirLowering {
                 }
             } else if (decl instanceof HirClass) {
                 HirClass hc = (HirClass) decl;
+                String className = localClassInternalName(hc.getName());
                 // 记录类实现的接口
                 {
                     List<String> ifaces = new ArrayList<>();
@@ -482,7 +485,7 @@ public class HirToMirLowering {
                     for (HirType it : hc.getInterfaces()) {
                         ifaces.add(typeToInternalName(it));
                     }
-                    if (!ifaces.isEmpty()) classInterfaceMap.put(hc.getName(), ifaces);
+                    if (!ifaces.isEmpty()) classInterfaceMap.put(className, ifaces);
                 }
                 // 预收集方法描述符（调用端查找用）
                 Map<String, String> methodDescs = new HashMap<>();
@@ -500,13 +503,13 @@ public class HirToMirLowering {
                     methodDescs.put("name", "()Ljava/lang/Object;");
                     methodDescs.put("ordinal", "()Ljava/lang/Object;");
                 }
-                novaMethodDescs.put(hc.getName(), methodDescs);
+                novaMethodDescs.put(className, methodDescs);
                 if (!methodReturnTypes.isEmpty()) {
-                    novaMethodReturnTypes.put(hc.getName(), methodReturnTypes);
+                    novaMethodReturnTypes.put(className, methodReturnTypes);
                 }
                 // 记录主构造器（用于默认参数填充）
                 if (!hc.getConstructors().isEmpty()) {
-                    classConstructorDecls.put(hc.getName(), hc.getConstructors().get(0));
+                    classConstructorDecls.put(className, hc.getConstructors().get(0));
                 }
                 // 记录字段名（用于区分字段调用和方法调用）
                 // 始终注册（即使为空），使字段保护逻辑能正确区分字段和外部变量
@@ -514,16 +517,16 @@ public class HirToMirLowering {
                 for (HirField f : hc.getFields()) {
                     fieldSet.add(f.getName());
                 }
-                classFieldNames.put(hc.getName(), fieldSet);
+                classFieldNames.put(className, fieldSet);
                 // 记录注解数据（用于 .annotations 访问）
                 if (hc.getAnnotations() != null && !hc.getAnnotations().isEmpty()) {
-                    classAnnotationData.put(hc.getName(), hc.getAnnotations());
+                    classAnnotationData.put(className, hc.getAnnotations());
                 }
                 // 记录继承关系（也检查 externalTypeNames 以支持跨 evalRepl 的继承）
                 if (hc.getSuperClass() != null) {
                     String superName = typeToInternalName(hc.getSuperClass());
                     if (classNames.contains(superName) || externalTypeNames.contains(superName)) {
-                        classSuperClass.put(hc.getName(), superName);
+                        classSuperClass.put(className, superName);
                     }
                 }
             }
@@ -533,9 +536,10 @@ public class HirToMirLowering {
         for (HirDecl decl : hirModule.getDeclarations()) {
             if (decl instanceof HirClass) {
                 HirClass hc = (HirClass) decl;
-                String superName = classSuperClass.get(hc.getName());
+                String className = localClassInternalName(hc.getName());
+                String superName = classSuperClass.get(className);
                 if (superName != null) {
-                    Map<String, String> childDescs = novaMethodDescs.get(hc.getName());
+                    Map<String, String> childDescs = novaMethodDescs.get(className);
                     for (HirFunction m : hc.getMethods()) {
                         if (m.getModifiers().contains(Modifier.OVERRIDE)) {
                             String parentDesc = lookupNovaMethodDescInherited(superName, m.getName());
@@ -550,7 +554,7 @@ public class HirToMirLowering {
                     String javaSuperName = typeToInternalName(hc.getSuperClass());
                     Class<?> javaSuperClass = resolveJavaClass(javaSuperName);
                     if (javaSuperClass != null) {
-                        Map<String, String> childDescs = novaMethodDescs.get(hc.getName());
+                        Map<String, String> childDescs = novaMethodDescs.get(className);
                         if (childDescs != null) {
                             for (HirFunction m : hc.getMethods()) {
                                 java.lang.reflect.Method javaMethod =
@@ -570,10 +574,10 @@ public class HirToMirLowering {
 
         for (HirDecl decl : hirModule.getDeclarations()) {
             if (decl instanceof HirClass) {
-                currentEnclosingClassName = decl.getName();
+                currentEnclosingClassName = localClassInternalName(decl.getName());
                 classes.add(lowerClass((HirClass) decl));
             } else if (decl instanceof HirFunction) {
-                currentEnclosingClassName = "$Module";
+                currentEnclosingClassName = moduleClassName;
                 HirFunction hf = (HirFunction) decl;
                 if (hf.isExtensionFunction()) {
                     // 顶层扩展函数 → 静态方法 + 注册到扩展函数表
@@ -595,7 +599,7 @@ public class HirToMirLowering {
                     topLevel.add(func);
                 }
             } else if (decl instanceof HirField) {
-                currentEnclosingClassName = "$Module";
+                currentEnclosingClassName = moduleClassName;
                 HirField hf = (HirField) decl;
                 if (hf.isExtensionProperty() && hf.getInitializer() != null) {
                     // 扩展属性 → 生成 getter 函数并记录元数据
@@ -721,7 +725,7 @@ public class HirToMirLowering {
             fields.add(mf);
         }
 
-        String className = hirClass.getName();
+        String className = localClassInternalName(hirClass.getName());
 
         // 枚举条目 → 静态字段（使用 Object 描述符以匹配 GETSTATIC/PUTSTATIC）
         List<HirEnumEntry> enumEntries = hirClass.getEnumEntries();
@@ -1979,7 +1983,10 @@ public class HirToMirLowering {
             MemberExpr fa = (MemberExpr) expr;
             if (fa.getTarget() instanceof Identifier) {
                 String cls = ((Identifier) fa.getTarget()).getName();
-                if (enumClassNames.contains(cls)) return fa.getMember();
+                String internalName = resolveKnownNovaClassInternalName(cls);
+                if (internalName != null && enumClassNames.contains(internalName)) {
+                    return fa.getMember();
+                }
             }
         }
         if (expr instanceof Literal) {
@@ -2763,7 +2770,8 @@ public class HirToMirLowering {
             if ("this".equals(name)) continue;
             if (topLevelFunctionNames.contains(name)) continue;
             if (topLevelFieldNames.containsKey(name)) continue; // 顶层变量通过 GETSTATIC 访问，无需捕获
-            if (classNames.contains(name)) continue;
+            if (staticImports.containsKey(name)) continue; // 静态导入字段由导入 owner 读取，无需捕获
+            if (resolveKnownNovaClassInternalName(name) != null) continue;
             // 检查是否存在于外部作用域的局部变量
             boolean existsOuter = false;
             for (MirLocal local : builder.getFunction().getLocals()) {
@@ -3367,6 +3375,18 @@ public class HirToMirLowering {
                     constInfo.jvmDescriptor, descriptorToMirType(constInfo.jvmDescriptor),
                     ref.getLocation());
         }
+        // Java 静态字段导入优先于 lambda/类的 this 成员回退。
+        String staticQualifiedName = staticImports.get(ref.getName());
+        if (staticQualifiedName != null) {
+            int lastDot = staticQualifiedName.lastIndexOf('.');
+            if (lastDot > 0 && lastDot < staticQualifiedName.length() - 1) {
+                String className = staticQualifiedName.substring(0, lastDot);
+                String memberName = staticQualifiedName.substring(lastDot + 1);
+                String extra = "$JavaStaticField|" + className + "|" + memberName;
+                return builder.emitInvokeStatic(extra, new int[0],
+                        MirType.ofObject("java/lang/Object"), ref.getLocation());
+            }
+        }
         // 未找到：如果当前函数有 this（或扩展函数的 $this），尝试作为字段/成员访问
         for (MirLocal local : builder.getFunction().getLocals()) {
             if (local.getName().equals("this") || local.getName().equals("$this")) {
@@ -3446,18 +3466,6 @@ public class HirToMirLowering {
                             MirType.ofObject("java/lang/Object"), ref.getLocation());
                 }
                 return fieldVal;
-            }
-        }
-        // Java 静态字段导入必须在编译期生成运行时标记，不能落到脚本 Bindings 查找。
-        String staticQualifiedName = staticImports.get(ref.getName());
-        if (staticQualifiedName != null) {
-            int lastDot = staticQualifiedName.lastIndexOf('.');
-            if (lastDot > 0 && lastDot < staticQualifiedName.length() - 1) {
-                String className = staticQualifiedName.substring(0, lastDot);
-                String memberName = staticQualifiedName.substring(lastDot + 1);
-                String extra = "$JavaStaticField|" + className + "|" + memberName;
-                return builder.emitInvokeStatic(extra, new int[0],
-                        MirType.ofObject("java/lang/Object"), ref.getLocation());
             }
         }
         if (!staticWildcardImports.isEmpty()) {
@@ -3757,7 +3765,7 @@ public class HirToMirLowering {
             if ("classOf".equals(name) && expr.getArgs().size() == 1)
                 return lowerClassOfCall(expr, builder);
             // 用户定义的类构造器优先于同名 stdlib 函数（允许遮蔽 Ok/Err 等内置名）
-            if (classNames.contains(name)) {
+            if (resolveKnownNovaClassInternalName(name) != null) {
                 int r = lowerClassConstructorAndReceiverCall(name, expr, builder);
                 if (r >= 0) return r;
             }
@@ -3944,10 +3952,11 @@ public class HirToMirLowering {
     /** 类构造器调用 + 接收者 Lambda 上下文路由。返回 -1 表示不匹配 */
     private int lowerClassConstructorAndReceiverCall(String name, HirCall expr, MirBuilder builder) {
         // 类构造器调用 → NEW_OBJECT
-        if (classNames.contains(name)) {
+        String classInternalName = resolveKnownNovaClassInternalName(name);
+        if (classInternalName != null) {
             // 默认参数填充
             List<Expression> effectiveArgs = expr.getArgs();
-            HirFunction ctorDecl = classConstructorDecls.get(name);
+            HirFunction ctorDecl = classConstructorDecls.get(classInternalName);
             if (ctorDecl != null && effectiveArgs.size() < ctorDecl.getParams().size()) {
                 effectiveArgs = new ArrayList<>(effectiveArgs);
                 for (int i = effectiveArgs.size(); i < ctorDecl.getParams().size(); i++) {
@@ -3958,7 +3967,7 @@ public class HirToMirLowering {
                 }
             }
             int[] args = lowerArgs(effectiveArgs, builder);
-            return builder.emitNewObject(name, args, expr.getLocation());
+            return builder.emitNewObject(classInternalName, args, expr.getLocation());
         }
 
         // Java 类构造器调用（显式 import java）→ NEW_OBJECT
@@ -4227,13 +4236,16 @@ public class HirToMirLowering {
 
         // 已知类名 Identifier 走 CONST_CLASS 路径（编译期解析）
         // 变量 Identifier 走表达式路径（运行时解析）
-        if (arg instanceof Identifier && (classNames.contains(((Identifier) arg).getName())
+        if (arg instanceof Identifier && (resolveKnownNovaClassInternalName(((Identifier) arg).getName()) != null
                 || resolveJavaClass(((Identifier) arg).getName()) != null)) {
             String className = ((Identifier) arg).getName();
             // 解析类名
             String internalName = className;
-            Class<?> javaClass = resolveJavaClass(className);
-            if (javaClass != null) {
+            String novaClassName = resolveKnownNovaClassInternalName(className);
+            if (novaClassName != null) {
+                internalName = novaClassName;
+            } else {
+                Class<?> javaClass = resolveJavaClass(className);
                 internalName = javaClass.getName().replace('.', '/');
             }
             int classLocal = builder.emitConstClass(internalName, loc);
@@ -4632,12 +4644,13 @@ public class HirToMirLowering {
         // 检查是否为类名上的方法调用
         if (fieldAccess.getTarget() instanceof Identifier) {
             String targetName = ((Identifier) fieldAccess.getTarget()).getName();
-            if (classNames.contains(targetName)) {
-                if (objectNames.contains(targetName)) {
+            String targetInternalName = resolveKnownNovaClassInternalName(targetName);
+            if (targetInternalName != null) {
+                if (objectNames.contains(targetInternalName)) {
                     // object 单例：GETSTATIC INSTANCE + INVOKEVIRTUAL
-                    return lowerObjectMethodCall(targetName, fieldAccess.getMember(), expr, builder);
+                    return lowerObjectMethodCall(targetInternalName, fieldAccess.getMember(), expr, builder);
                 }
-                return lowerStaticMethodCall(targetName, fieldAccess.getMember(), expr, builder);
+                return lowerStaticMethodCall(targetInternalName, fieldAccess.getMember(), expr, builder);
             }
             // Java import 的静态方法调用（如 System.currentTimeMillis()）
             String javaClass = javaImports.get(targetName);
@@ -5116,23 +5129,24 @@ public class HirToMirLowering {
                 return builder.emitInvokeStatic(extra, new int[0],
                         MirType.ofObject("java/lang/Object"), expr.getLocation());
             }
-            if (classNames.contains(targetName)) {
+            String targetInternalName = resolveKnownNovaClassInternalName(targetName);
+            if (targetInternalName != null) {
                 // 拦截 ClassName.annotations → 内联构建注解列表
                 if ("annotations".equals(expr.getMember())) {
-                    return lowerClassAnnotationsAccess(targetName, builder, expr.getLocation());
+                    return lowerClassAnnotationsAccess(targetInternalName, builder, expr.getLocation());
                 }
                 // object 单例：通过 INSTANCE 访问实例字段
-                if (objectNames.contains(targetName)) {
-                    int instance = builder.emitGetStatic(targetName, "INSTANCE",
-                            "L" + targetName + ";", MirType.ofObject(targetName),
+                if (objectNames.contains(targetInternalName)) {
+                    int instance = builder.emitGetStatic(targetInternalName, "INSTANCE",
+                            "L" + targetInternalName + ";", MirType.ofObject(targetInternalName),
                             expr.getLocation());
                     return builder.emitGetField(instance, expr.getMember(),
                             MirType.ofObject("java/lang/Object"), expr.getLocation());
                 }
                 // 枚举条目/静态字段：GETSTATIC
-                MirType staticFieldType = enumClassNames.contains(targetName)
-                        ? MirType.ofObject(targetName) : MirType.ofObject("java/lang/Object");
-                return builder.emitGetStatic(targetName, expr.getMember(),
+                MirType staticFieldType = enumClassNames.contains(targetInternalName)
+                        ? MirType.ofObject(targetInternalName) : MirType.ofObject("java/lang/Object");
+                return builder.emitGetStatic(targetInternalName, expr.getMember(),
                         MethodDescriptor.OBJECT_DESC, staticFieldType,
                         expr.getLocation());
             }
@@ -5614,10 +5628,12 @@ public class HirToMirLowering {
                 if (boxed != null) return MirType.ofObject(boxed);
             }
             if (!name.contains("/")) {
-                String boxed = NovaTypeNames.toBoxedInternalName(name);
-                if (boxed != null) return MirType.ofObject(boxed);
-                // Nova 类/接口优先
-                if (!classNames.contains(name) && !interfaceNames.contains(name)) {
+                String localName = localClassInternalName(name);
+                if (classNames.contains(localName) || interfaceNames.contains(localName)) {
+                    name = localName;
+                } else {
+                    String boxed = NovaTypeNames.toBoxedInternalName(name);
+                    if (boxed != null) return MirType.ofObject(boxed);
                     Class<?> javaClass = resolveJavaClass(name);
                     if (javaClass != null) name = javaClass.getName().replace('.', '/');
                 }
@@ -5648,8 +5664,11 @@ public class HirToMirLowering {
             HirType aliasTarget = typeAliasMap.get(name);
             if (aliasTarget != null) return typeToInternalName(aliasTarget);
             // 用户定义的类/接口优先于内置类型映射（允许遮蔽 Result 等内置名）
-            if (classNames.contains(name) || interfaceNames.contains(name)
-                    || externalTypeNames.contains(name)) return name;
+            String localName = localClassInternalName(name);
+            if (classNames.contains(localName) || interfaceNames.contains(localName)) {
+                return localName;
+            }
+            if (externalTypeNames.contains(name)) return name;
             // Nova 原始类型名 → JVM 装箱类型（用于 INSTANCEOF 等指令）
             String boxed = NovaTypeNames.toBoxedInternalName(name);
             if (boxed != null) return boxed;
@@ -6356,6 +6375,27 @@ public class HirToMirLowering {
                 || enumClassNames.contains(owner);
     }
 
+    private String localClassInternalName(String simpleName) {
+        if (simpleName == null || simpleName.indexOf('/') >= 0) {
+            return simpleName;
+        }
+        return currentPackagePrefix + simpleName;
+    }
+
+    private String resolveKnownNovaClassInternalName(String name) {
+        if (name == null) {
+            return null;
+        }
+        if (classNames.contains(name)) {
+            return name;
+        }
+        String localName = localClassInternalName(name);
+        if (classNames.contains(localName)) {
+            return localName;
+        }
+        return null;
+    }
+
     /** 为当前编译单元的全部 Nova 类型建立与声明顺序无关的类型表。 */
     private void predeclareNovaTypes(HirModule hirModule) {
         for (HirDecl declaration : hirModule.getDeclarations()) {
@@ -6363,7 +6403,7 @@ public class HirToMirLowering {
                 continue;
             }
             HirClass hirClass = (HirClass) declaration;
-            String name = hirClass.getName();
+            String name = localClassInternalName(hirClass.getName());
             classNames.add(name);
             unemittedNovaTypeNames.add(name);
             if (hirClass.getClassKind() == ClassKind.OBJECT) {

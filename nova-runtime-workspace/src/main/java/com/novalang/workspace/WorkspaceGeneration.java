@@ -3,9 +3,11 @@ package com.novalang.workspace;
 import com.novalang.runtime.Nova;
 
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.Callable;
@@ -29,6 +31,7 @@ public final class WorkspaceGeneration implements AutoCloseable {
     private final ResourceScope rootScope;
     private final ReentrantReadWriteLock lifecycleLock = new ReentrantReadWriteLock(true);
     private final Map<String, WorkspaceProgram> programs;
+    private final List<WorkspaceProgram> initializers;
     private volatile GenerationState state = GenerationState.LOADING;
     private volatile WorkspaceModuleGraph moduleGraph;
     private Nova nova;
@@ -49,12 +52,24 @@ public final class WorkspaceGeneration implements AutoCloseable {
                         WorkspaceModuleGraph moduleGraph,
                         Map<String, WorkspaceProgram> programs,
                         Nova nova) {
+        this(workspaceName, rootDirectory, defaultPolicy, moduleGraph,
+                programs, new ArrayList<WorkspaceProgram>(programs.values()), nova);
+    }
+
+    WorkspaceGeneration(String workspaceName,
+                        Path rootDirectory,
+                        ExecutionPolicy defaultPolicy,
+                        WorkspaceModuleGraph moduleGraph,
+                        Map<String, WorkspaceProgram> programs,
+                        List<WorkspaceProgram> initializers,
+                        Nova nova) {
         this.id = NEXT_ID.getAndIncrement();
         this.workspaceName = workspaceName;
         this.rootDirectory = rootDirectory.toAbsolutePath().normalize();
         this.defaultPolicy = defaultPolicy;
         this.moduleGraph = moduleGraph;
         this.programs = new LinkedHashMap<String, WorkspaceProgram>(programs);
+        this.initializers = new ArrayList<WorkspaceProgram>(initializers);
         this.nova = nova;
         this.rootScope = ResourceScope.generation(workspaceName + "#" + id);
     }
@@ -117,7 +132,7 @@ public final class WorkspaceGeneration implements AutoCloseable {
         if (state != GenerationState.LOADING) {
             throw new WorkspaceException("Workspace Generation cannot be activated from state " + state);
         }
-        for (final WorkspaceProgram program : programs.values()) {
+        for (final WorkspaceProgram program : initializers) {
             // 初始化也安装根 ResourceScope，确保脚本注册的常驻资源可统一销毁。
             Callable<Object> action = new Callable<Object>() {
                 @Override
@@ -355,6 +370,7 @@ public final class WorkspaceGeneration implements AutoCloseable {
 
             // 即使资源清理失败也必须断开程序、模块图和编译器引用。
             programs.clear();
+            initializers.clear();
             moduleGraph = null;
             if (nova != null) {
                 nova.clearCompilationCache();

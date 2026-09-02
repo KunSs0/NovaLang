@@ -174,6 +174,16 @@ public final class WorkspaceBytecodeArtifactCache {
             return loaded;
         }
 
+        /**
+         * 将当前产物装入一个 Generation 统一 ClassLoader。
+         */
+        Map<String, Class<?>> loadInto(WorkspaceGenerationClassLoader generationClassLoader) {
+            if (generationClassLoader == null) {
+                throw new IllegalArgumentException("generationClassLoader must not be null");
+            }
+            return generationClassLoader.install(bytecode);
+        }
+
         private URL createClassPath(Map<String, byte[]> resources) {
             try {
                 return new URL(null, "novalang-cache://workspace/", new ArtifactUrlStreamHandler(resources));

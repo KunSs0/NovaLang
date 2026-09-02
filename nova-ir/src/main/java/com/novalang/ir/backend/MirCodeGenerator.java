@@ -41,6 +41,17 @@ public class MirCodeGenerator {
     /** 当前方法已发射的最后一行号（避免重复 visitLineNumber） */
     private int lastEmittedLine;
 
+    private void putGeneratedClass(String internalName, byte[] bytecode) {
+        generatedClasses.put(internalName.replace('/', '.'), bytecode);
+    }
+
+    private String classInternalName(String name, String packagePrefix) {
+        if (name.indexOf('/') >= 0) {
+            return name;
+        }
+        return packagePrefix + name;
+    }
+
     /**
      * 从 MIR 模块生成字节码。
      * @return className → bytecode 映射
@@ -53,7 +64,7 @@ public class MirCodeGenerator {
         // 静态字段保持装箱描述符；实例字段原始类型用 I/J/D/F/Z，引用类型统一为 Ljava/lang/Object;
         // （与 buildMethodDescriptor 保持一致——参数和返回值都用 Object，避免 PUTFIELD 时类型不匹配）
         for (MirClass cls : module.getClasses()) {
-            String className = packagePrefix + cls.getName();
+            String className = classInternalName(cls.getName(), packagePrefix);
             Map<String, String> descs = new HashMap<>();
             for (MirField field : cls.getFields()) {
                 descs.put(field.getName(), field.getType().getFieldDescriptor());
@@ -66,7 +77,7 @@ public class MirCodeGenerator {
 
         // 预扫描：收集所有类的构造器描述符（必须与 generateMethod 使用相同逻辑）
         for (MirClass cls : module.getClasses()) {
-            String className = packagePrefix + cls.getName();
+            String className = classInternalName(cls.getName(), packagePrefix);
             for (MirFunction method : cls.getMethods()) {
                 if ("<init>".equals(method.getName())) {
                     String desc = method.getOverrideDescriptor() != null
@@ -103,7 +114,7 @@ public class MirCodeGenerator {
 
         ClassWriter cw = new NovaClassWriter(ClassWriter.COMPUTE_FRAMES | ClassWriter.COMPUTE_MAXS);
 
-        String className = packagePrefix + cls.getName();
+        String className = classInternalName(cls.getName(), packagePrefix);
         int access = ACC_PUBLIC;
         if (cls.getKind() == ClassKind.INTERFACE) access |= ACC_INTERFACE | ACC_ABSTRACT;
         if (cls.getKind() == ClassKind.ENUM) access |= ACC_ENUM;
@@ -188,7 +199,7 @@ public class MirCodeGenerator {
         generateAnnotationTriggerClinit(cw, cls, className);
 
         cw.visitEnd();
-        generatedClasses.put(className, cw.toByteArray());
+        putGeneratedClass(className, cw.toByteArray());
     }
 
     private void generateModuleClass(MirModule module, String packagePrefix) {
@@ -215,7 +226,7 @@ public class MirCodeGenerator {
         }
 
         cw.visitEnd();
-        generatedClasses.put(className, cw.toByteArray());
+        putGeneratedClass(className, cw.toByteArray());
     }
 
     private void generateDefaultConstructor(ClassWriter cw, String superName) {
@@ -2916,7 +2927,7 @@ public class MirCodeGenerator {
 
     private void generateObjectClass(MirClass cls, String packagePrefix) {
         ClassWriter cw = new NovaClassWriter(ClassWriter.COMPUTE_FRAMES | ClassWriter.COMPUTE_MAXS);
-        String className = packagePrefix + cls.getName();
+        String className = classInternalName(cls.getName(), packagePrefix);
         String superName = cls.getSuperClass() != null ? cls.getSuperClass() : "java/lang/Object";
 
         cw.visit(V1_8, ACC_PUBLIC | ACC_FINAL, className, null, superName, null);
@@ -3004,14 +3015,14 @@ public class MirCodeGenerator {
         }
 
         cw.visitEnd();
-        generatedClasses.put(className, cw.toByteArray());
+        putGeneratedClass(className, cw.toByteArray());
     }
 
     // ========== Annotation @interface 生成 ==========
 
     private void generateAnnotationClass(MirClass cls, String packagePrefix) {
         ClassWriter cw = new NovaClassWriter(ClassWriter.COMPUTE_FRAMES | ClassWriter.COMPUTE_MAXS);
-        String className = packagePrefix + cls.getName();
+        String className = classInternalName(cls.getName(), packagePrefix);
 
         cw.visit(V1_8,
                 ACC_PUBLIC | ACC_INTERFACE | ACC_ABSTRACT | ACC_ANNOTATION,
@@ -3055,7 +3066,7 @@ public class MirCodeGenerator {
         }
 
         cw.visitEnd();
-        generatedClasses.put(className, cw.toByteArray());
+        putGeneratedClass(className, cw.toByteArray());
     }
 
     // ========== @data 合成方法 ==========
@@ -3334,7 +3345,7 @@ public class MirCodeGenerator {
         }
 
         cw.visitEnd();
-        generatedClasses.put(builderClass, cw.toByteArray());
+        putGeneratedClass(builderClass, cw.toByteArray());
     }
 
     // ========== 运行时注解处理器触发 ==========

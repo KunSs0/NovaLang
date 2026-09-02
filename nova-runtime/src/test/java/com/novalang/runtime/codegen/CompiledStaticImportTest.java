@@ -74,6 +74,38 @@ class CompiledStaticImportTest {
     }
 
     @Test
+    @DisplayName("compiled static import accepts generated dollar-prefixed module class")
+    void compiledStaticImportShouldAcceptGeneratedModuleClass() throws Exception {
+        try (URLClassLoader loader = compileFixture()) {
+            Nova nova = new Nova().setScriptClassLoader(loader);
+            assertEquals(42, nova.compileToBytecode(
+                    "import static dynamic.$Module.answer\n"
+                            + "answer(40, 2)",
+                    "generated-module-static-import.nova").run());
+        }
+    }
+
+    @Test
+    @DisplayName("compiled entry links functions from a packaged Nova module")
+    void compiledEntryShouldLinkPackagedNovaModule() {
+        NovaIrCompiler compiler = new NovaIrCompiler();
+        Map<String, Class<?>> sharedClasses = compiler.compileAndLoad(
+                "package dynamic.shared\n"
+                        + "fun answer(left: Int, right: Int): Int { return left + right }\n",
+                "shared-module.nova", getClass().getClassLoader());
+        Class<?> sharedModule = sharedClasses.get("dynamic.shared.$Module");
+        assertNotNull(sharedModule);
+
+        Nova nova = new Nova().setScriptClassLoader(sharedModule.getClassLoader());
+        assertEquals(42, nova.compileToBytecode(
+                "package dynamic.entry\n"
+                        + "import static dynamic.shared.$Module.answer\n"
+                        + "fun execute(): Int { return answer(40, 2) }\n"
+                        + "execute()\n",
+                "linked-entry.nova").run());
+    }
+
+    @Test
     @DisplayName("interpreter static import keeps alias semantics")
     void interpreterShouldResolveStaticAlias() {
         Nova nova = new Nova();
@@ -269,12 +301,18 @@ class CompiledStaticImportTest {
                         "public interface StaticInterfaceFixture {\n" +
                         "    static int answer(int left, int right) { return left + right; }\n" +
                         "}\n").getBytes(StandardCharsets.UTF_8));
+        Path generatedModuleJavaFile = srcDir.resolve("$Module.java");
+        Files.write(generatedModuleJavaFile,
+                ("package dynamic;\n" +
+                        "public final class $Module {\n" +
+                        "    public static int answer(int left, int right) { return left + right; }\n" +
+                        "}\n").getBytes(StandardCharsets.UTF_8));
         JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
         assertNotNull(compiler, "测试需要 JDK 编译器");
         int exit = compiler.run(null, null, null,
                 "-encoding", "UTF-8", "-d", classesDir.toString(),
                 javaFile.toString(), covariantJavaFile.toString(), initializationJavaFile.toString(),
-                staticInterfaceJavaFile.toString());
+                staticInterfaceJavaFile.toString(), generatedModuleJavaFile.toString());
         assertEquals(0, exit, "静态导入测试夹具应编译成功");
         return new URLClassLoader(new URL[]{classesDir.toUri().toURL()}, null);
     }

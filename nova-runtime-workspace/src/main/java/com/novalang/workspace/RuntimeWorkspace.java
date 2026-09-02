@@ -8,8 +8,10 @@ import com.novalang.runtime.SchedulerHolder;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.locks.ReentrantLock;
 
 /**
@@ -178,10 +180,11 @@ public final class RuntimeWorkspace implements AutoCloseable {
                 }
 
                 // 第四步为每个入口生成依赖闭包、Source Map 和隔离字节码程序。
-                Map<String, WorkspaceProgram> programs = compileEntries(nova, graph);
+                WorkspaceCompilationResult compilation = compileEntries(nova, graph);
                 candidate = new WorkspaceGeneration(loadedConfig.getName(),
                         loadedConfig.getRootDirectory(),
-                        loadedConfig.getExecutionPolicy(), graph, programs, nova);
+                        loadedConfig.getExecutionPolicy(), graph,
+                        compilation.programs, compilation.initializers, nova);
                 // 第五步执行入口初始化；全部成功后才原子发布 ACTIVE Generation。
                 candidate.activate();
 
@@ -318,39 +321,160 @@ public final class RuntimeWorkspace implements AutoCloseable {
     }
 
     /**
-     * 将模块图中的每个入口编译为独立的隔离字节码程序。
-     *
-     * @param nova 当前 Workspace 独占的 Nova 编译门面
-     * @param graph 完整模块图
-     * @return 入口名称到已编译程序的映射
+     * 按模块消费者集合编译整个 Generation，公共模块只进入一次编译管线。
      */
-    private Map<String, WorkspaceProgram> compileEntries(Nova nova,
-                                                          WorkspaceModuleGraph graph) {
-        Map<String, WorkspaceProgram> programs = new LinkedHashMap<String, WorkspaceProgram>();
-        WorkspaceBundleBuilder bundleBuilder = new WorkspaceBundleBuilder();
-        for (Map.Entry<String, String> entry : graph.getEntries().entrySet()) {
-            WorkspaceModule module = graph.requireModule(entry.getValue());
-            WorkspaceBundle bundle = bundleBuilder.build(graph, entry.getValue());
+    private WorkspaceCompilationResult compileEntries(Nova nova,
+                                                        WorkspaceModuleGraph graph) {
+        WorkspaceCompilationPlan plan = new WorkspaceCompilationPlanner().build(
+                graph, configFile.toString());
+        WorkspaceCompilationGroupBuilder bundleBuilder =
+                new WorkspaceCompilationGroupBuilder();
+        WorkspaceGenerationClassLoader generationClassLoader =
+                new WorkspaceGenerationClassLoader(scriptClassLoader);
+        Map<String, CompiledGroup> compiledGroups =
+                new LinkedHashMap<String, CompiledGroup>();
+        Map<String, WorkspaceCompilationExports> exportsByGroup =
+                new LinkedHashMap<String, WorkspaceCompilationExports>();
+        List<WorkspaceProgram> initializers = new ArrayList<WorkspaceProgram>();
+
+        for (WorkspaceCompilationPlan.Group group : plan.getGroups()) {
+            WorkspaceBundle bundle = bundleBuilder.build(
+                    graph, group, exportsByGroup);
             try {
+                nova.setScriptClassLoader(generationClassLoader);
                 WorkspaceBytecodeArtifactCache.CacheKey cacheKey =
                         new WorkspaceBytecodeArtifactCache.CacheKey(
                                 scriptClassLoader,
                                 configFile.toString(),
-                                module.getSourceUnit().getModuleId(),
+                                group.getId(),
                                 bundle.getSource());
                 WorkspaceBytecodeArtifactCache.BytecodeArtifact artifact =
                         bytecodeArtifactCache.getOrCompile(cacheKey,
                                 () -> nova.compileToBytecodeArtifact(
-                                        bundle.getSource(), module.getSourceUnit().getModuleId()));
-                CompiledNova compiled = nova.createCompiledNova(artifact.load(scriptClassLoader));
-                programs.put(entry.getKey(), new WorkspaceProgram(
-                        entry.getKey(), entry.getValue(), compiled, bundle.getSourceMap()));
+                                        bundle.getSource(), group.getId()));
+                Map<String, Class<?>> classes = artifact.loadInto(generationClassLoader);
+                CompiledNova compiled = nova.createCompiledNova(classes);
+                CompiledGroup compiledGroup = new CompiledGroup(
+                        compiled, bundle.getSourceMap());
+                compiledGroups.put(group.getId(), compiledGroup);
+                exportsByGroup.put(group.getId(), exportedSymbols(group, classes));
+                String initializerModuleId = group.getModuleIds().get(
+                        group.getModuleIds().size() - 1);
+                initializers.add(new WorkspaceProgram(
+                        group.getId(), initializerModuleId,
+                        compiled, bundle.getSourceMap()));
             } catch (RuntimeException exception) {
                 throw bundle.getSourceMap().mapFailure(
-                        "Failed to compile Workspace entry '" + entry.getKey() + "'", exception);
+                        "Failed to compile Workspace module group '"
+                                + group.getId() + "'", exception);
             }
         }
-        return programs;
+
+        Map<String, WorkspaceProgram> programs =
+                new LinkedHashMap<String, WorkspaceProgram>();
+        for (Map.Entry<String, String> entry : graph.getEntries().entrySet()) {
+            WorkspaceCompilationPlan.Group rootGroup =
+                    plan.getEntryRootGroup(entry.getKey());
+            List<WorkspaceProgram.CompiledUnit> units =
+                    new ArrayList<WorkspaceProgram.CompiledUnit>();
+            CompiledGroup root = compiledGroups.get(rootGroup.getId());
+            units.add(WorkspaceProgram.unit(root.compiled, root.sourceMap));
+
+            List<WorkspaceCompilationPlan.Group> reachable =
+                    plan.getEntryReachableGroups(entry.getKey());
+            for (int index = reachable.size() - 1; index >= 0; index--) {
+                WorkspaceCompilationPlan.Group group = reachable.get(index);
+                if (group == rootGroup) {
+                    continue;
+                }
+                CompiledGroup dependency = compiledGroups.get(group.getId());
+                units.add(WorkspaceProgram.unit(
+                        dependency.compiled, dependency.sourceMap));
+            }
+            programs.put(entry.getKey(), new WorkspaceProgram(
+                    entry.getKey(), entry.getValue(), units));
+        }
+        return new WorkspaceCompilationResult(programs, initializers);
+    }
+
+    private WorkspaceCompilationExports exportedSymbols(
+            WorkspaceCompilationPlan.Group group,
+            Map<String, Class<?>> classes) {
+        Set<String> typeNames = new LinkedHashSet<String>();
+        Set<String> objectNames = new LinkedHashSet<String>();
+        Set<String> staticMemberNames = new LinkedHashSet<String>();
+        String prefix = group.getPackageName() + ".";
+        for (Map.Entry<String, Class<?>> entry : classes.entrySet()) {
+            String className = entry.getKey();
+            if (!className.startsWith(prefix)) {
+                continue;
+            }
+            String localName = className.substring(prefix.length());
+            if ("$Module".equals(localName)) {
+                Class<?> moduleClass = entry.getValue();
+                for (java.lang.reflect.Method method : moduleClass.getDeclaredMethods()) {
+                    int modifiers = method.getModifiers();
+                    if (java.lang.reflect.Modifier.isPublic(modifiers)
+                            && java.lang.reflect.Modifier.isStatic(modifiers)
+                            && !"main".equals(method.getName())) {
+                        staticMemberNames.add(method.getName());
+                    }
+                }
+                for (java.lang.reflect.Field field : moduleClass.getDeclaredFields()) {
+                    int modifiers = field.getModifiers();
+                    if (java.lang.reflect.Modifier.isPublic(modifiers)
+                            && java.lang.reflect.Modifier.isStatic(modifiers)) {
+                        staticMemberNames.add(field.getName());
+                    }
+                }
+                continue;
+            }
+            if (localName.indexOf('$') < 0) {
+                Class<?> exportedClass = entry.getValue();
+                boolean novaObject = false;
+                try {
+                    java.lang.reflect.Field instanceField =
+                            exportedClass.getDeclaredField("INSTANCE");
+                    int modifiers = instanceField.getModifiers();
+                    novaObject = java.lang.reflect.Modifier.isPublic(modifiers)
+                            && java.lang.reflect.Modifier.isStatic(modifiers)
+                            && instanceField.getType() == exportedClass;
+                } catch (NoSuchFieldException ignored) {
+                    novaObject = false;
+                }
+                if (novaObject) {
+                    objectNames.add(localName);
+                } else {
+                    typeNames.add(localName);
+                }
+            }
+        }
+        return new WorkspaceCompilationExports(
+                typeNames, objectNames, staticMemberNames);
+    }
+
+    private static final class CompiledGroup {
+
+        private final CompiledNova compiled;
+        private final WorkspaceSourceMap sourceMap;
+
+        private CompiledGroup(CompiledNova compiled,
+                              WorkspaceSourceMap sourceMap) {
+            this.compiled = compiled;
+            this.sourceMap = sourceMap;
+        }
+    }
+
+    private static final class WorkspaceCompilationResult {
+
+        private final Map<String, WorkspaceProgram> programs;
+        private final List<WorkspaceProgram> initializers;
+
+        private WorkspaceCompilationResult(Map<String, WorkspaceProgram> programs,
+                                           List<WorkspaceProgram> initializers) {
+            this.programs = programs;
+            this.initializers = initializers;
+        }
     }
 
     /**
