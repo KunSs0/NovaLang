@@ -20,6 +20,8 @@ import com.novalang.runtime.resolution.MethodNameCanonicalizer;
 import com.novalang.runtime.resolution.MethodSemantics;
 import com.novalang.runtime.resolution.JavaOverloadResolver;
 import com.novalang.runtime.resolution.StdlibMethodResolver;
+import com.novalang.runtime.host.JavaExtensionDescriptor;
+import com.novalang.runtime.host.JavaTypes;
 import com.novalang.runtime.stdlib.BuiltinModuleExports;
 import com.novalang.runtime.stdlib.StdlibRegistry;
 
@@ -120,6 +122,7 @@ public class HirToMirLowering {
 
     // Java 方法查找缓存: "className#methodName#argCount" → Method
     private final Map<String, java.lang.reflect.Method> javaMethodCache = new HashMap<>();
+    private List<JavaExtensionDescriptor> javaExtensions = Collections.emptyList();
 
     // try-finally 上下文栈：内层到外层的 finally 块，用于 return/throw 路径上内联 finally
     private final Deque<AstNode> finallyStack = new ArrayDeque<>();
@@ -166,6 +169,14 @@ public class HirToMirLowering {
 
     public void setInterpreterMode(boolean interpreterMode) {
         this.interpreterMode = interpreterMode;
+    }
+
+    public void setJavaTypes(JavaTypes javaTypes, String namespace) {
+        if (javaTypes == null) {
+            javaExtensions = Collections.emptyList();
+            return;
+        }
+        javaExtensions = javaTypes.resolveNamespace(namespace).getExtensions();
     }
 
     /** 脚本上下文 owner（统一使用 JVM 类名，StaticMethodDispatcher 已处理两种格式） */
@@ -4694,8 +4705,7 @@ public class HirToMirLowering {
                     ? builder.getFunction().getLocals().get(target).getType() : null;
             String tgtOwner = tgtType != null && tgtType.getKind() == MirType.Kind.OBJECT
                     && tgtType.getClassName() != null ? tgtType.getClassName() : null;
-            boolean receiverHasMethod = tgtOwner != null
-                    && lookupNovaMethodDescInherited(tgtOwner, methodName) != null;
+            boolean receiverHasMethod = hasKnownReceiverMethod(tgtOwner, methodName, args.length);
             if (!receiverHasMethod) {
                 int[] allOps = new int[2 + args.length];
                 allOps[0] = methodLocalIdx;
@@ -4706,6 +4716,35 @@ public class HirToMirLowering {
             }
         }
         return -1;
+    }
+
+    private boolean hasKnownReceiverMethod(String owner, String methodName, int argumentCount) {
+        if (hasJavaTypesExtension(methodName, argumentCount)) {
+            return true;
+        }
+        if (owner == null) {
+            return false;
+        }
+        if (lookupNovaMethodDescInherited(owner, methodName) != null) {
+            return true;
+        }
+        Class<?> receiverClass = resolveJavaClass(owner);
+        if (receiverClass != null && findJavaMethod(receiverClass, methodName, argumentCount) != null) {
+            return true;
+        }
+        return false;
+    }
+
+    private boolean hasJavaTypesExtension(String methodName, int argumentCount) {
+        for (JavaExtensionDescriptor extension : javaExtensions) {
+            if (!methodName.equals(extension.getFunction().getName())) {
+                continue;
+            }
+            if (extension.getFunction().getParameters().size() == argumentCount) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** 标记能以 receiver.block() 形式调用的局部函数或函数类型参数。 */

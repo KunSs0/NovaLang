@@ -151,6 +151,9 @@ public class PassPipeline {
         lowering.setScriptMode(scriptMode);
         lowering.setInterpreterMode(interpreterMode);
         lowering.setAnonymousClassCounterBase(anonymousClassCounterBase);
+        if (javaTypes != null) {
+            lowering.setJavaTypes(javaTypes, javaTypesNamespace);
+        }
         if (!externalClasses.isEmpty()) {
             lowering.registerExternalClasses(externalClasses);
         }
@@ -303,6 +306,9 @@ public class PassPipeline {
         lowering.setScriptMode(scriptMode);
         lowering.setInterpreterMode(interpreterMode);
         lowering.setAnonymousClassCounterBase(anonymousClassCounterBase);
+        if (javaTypes != null) {
+            lowering.setJavaTypes(javaTypes, javaTypesNamespace);
+        }
         if (!externalClasses.isEmpty()) {
             lowering.registerExternalClasses(externalClasses);
         }

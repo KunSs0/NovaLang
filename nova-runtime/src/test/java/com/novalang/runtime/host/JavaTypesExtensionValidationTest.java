@@ -68,6 +68,21 @@ class JavaTypesExtensionValidationTest {
                 "box.choose(2)", "java-types-extension-int-overload.nova").run());
     }
 
+    @Test
+    @DisplayName("Java 扩展方法优先于同名 receiver lambda 候选")
+    void extensionMethodMustWinOverSameNameScopeCallableParameter() {
+        Nova nova = createNova();
+        String source = String.join("\n",
+                "fun call(plus: Any): Int {",
+                "    return box.plus(4)",
+                "}",
+                "call(\"shadow\")"
+        );
+
+        assertEquals(7, nova.compileToBytecode(
+                source, "java-types-extension-scope-call-priority.nova").run());
+    }
+
     private Nova createNova() {
         TestBox box = new TestBox("box", 3);
         ChildBox child = new ChildBox("child", 5);
