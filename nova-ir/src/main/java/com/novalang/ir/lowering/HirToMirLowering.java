@@ -1,6 +1,8 @@
 package com.novalang.ir.lowering;
 
 import com.novalang.compiler.NovaTypeNames;
+import com.novalang.compiler.analysis.types.JavaTypeDescriptor;
+import com.novalang.compiler.analysis.types.JavaTypeOracle;
 import com.novalang.compiler.ast.AstNode;
 import com.novalang.compiler.ast.Modifier;
 import com.novalang.compiler.ast.SourceLocation;
@@ -335,9 +337,9 @@ public class HirToMirLowering {
                 } else {
                     String simpleName = imp.hasAlias() ? imp.getAlias()
                             : qn.substring(qn.lastIndexOf('.') + 1);
-                    Class<?> importedClass = resolveJavaClass(qn);
-                    String internalName = importedClass != null
-                            ? importedClass.getName().replace('.', '/')
+                    JavaTypeDescriptor importedType = JavaTypeOracle.get().resolve(qn);
+                    String internalName = importedType != null
+                            ? importedType.getQualifiedName().replace('.', '/')
                             : qn.replace('.', '/');
                     javaImports.put(simpleName, internalName);
                     javaImportsMeta.put(simpleName, qn);

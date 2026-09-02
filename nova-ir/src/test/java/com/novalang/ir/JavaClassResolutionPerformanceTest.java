@@ -79,6 +79,35 @@ class JavaClassResolutionPerformanceTest {
                 "后声明的 Nova 父类应在 HIR 降级前完成类型预声明，不应探测 Java 类");
     }
 
+    @Test
+    @DisplayName("多个编译单元的相同 Java 导入只应探测一次")
+    void sharedJavaImportsShouldOnlyBeProbedOnceAcrossCompilationUnits() {
+        CountingClassLoader loader = new CountingClassLoader(getClass().getClassLoader());
+        ClassLoader previousLoader = Thread.currentThread().getContextClassLoader();
+        Thread.currentThread().setContextClassLoader(loader);
+        try {
+            for (int index = 0; index < 20; index++) {
+                NovaIrCompiler compiler = new NovaIrCompiler();
+                compiler.compile(sharedJavaImportSource(), "shared-java-import-" + index + ".nova");
+            }
+        } finally {
+            Thread.currentThread().setContextClassLoader(previousLoader);
+        }
+
+        assertEquals(1, loader.countContaining("SharedJavaImportFixture"),
+                "语义阶段已解析的 Java 导入应由 HIR 复用，不应随入口文件数量重复 Class.forName");
+    }
+
+    @Test
+    @DisplayName("HIR 不应重复探测语义阶段已判定缺失的 Java 导入")
+    void missingJavaImportsShouldNotBeProbedAgainDuringHirLowering() {
+        CountingClassLoader loader = compileWithCountingLoader(
+                missingJavaImportSource(), "missing-java-import.nova");
+
+        assertEquals(4, loader.countContaining("MissingJavaImportFixture"),
+                "缺失导入只允许语义类型解析遍历一次候选名，HIR 不应再按 Java 前缀扩散探测");
+    }
+
     private CountingClassLoader compileWithCountingLoader(String source, String sourceName) {
         CountingClassLoader loader = new CountingClassLoader(getClass().getClassLoader());
         ClassLoader previousLoader = Thread.currentThread().getContextClassLoader();
@@ -196,6 +225,16 @@ class JavaClassResolutionPerformanceTest {
                     .append("\n");
         }
         return source.toString();
+    }
+
+    private String sharedJavaImportSource() {
+        return "import java com.novalang.ir.fixture.SharedJavaImportFixture\n"
+                + "fun keep(value: SharedJavaImportFixture): SharedJavaImportFixture { return value }\n";
+    }
+
+    private String missingJavaImportSource() {
+        return "import java com.novalang.missing.MissingJavaImportFixture\n"
+                + "fun main() { }\n";
     }
 
     private static final class CountingClassLoader extends ClassLoader {
