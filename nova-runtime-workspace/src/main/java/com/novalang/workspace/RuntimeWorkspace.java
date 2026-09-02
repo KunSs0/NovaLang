@@ -353,16 +353,21 @@ public final class RuntimeWorkspace implements AutoCloseable {
                                 () -> nova.compileToBytecodeArtifact(
                                         bundle.getSource(), group.getId()));
                 Map<String, Class<?>> classes = artifact.loadInto(generationClassLoader);
-                CompiledNova compiled = nova.createCompiledNova(classes);
+                CompiledNova compiled = null;
+                if (!classes.isEmpty()) {
+                    compiled = nova.createCompiledNova(classes);
+                }
                 CompiledGroup compiledGroup = new CompiledGroup(
                         compiled, bundle.getSourceMap());
                 compiledGroups.put(group.getId(), compiledGroup);
                 exportsByGroup.put(group.getId(), exportedSymbols(group, classes));
-                String initializerModuleId = group.getModuleIds().get(
-                        group.getModuleIds().size() - 1);
-                initializers.add(new WorkspaceProgram(
-                        group.getId(), initializerModuleId,
-                        compiled, bundle.getSourceMap()));
+                if (compiled != null) {
+                    String initializerModuleId = group.getModuleIds().get(
+                            group.getModuleIds().size() - 1);
+                    initializers.add(new WorkspaceProgram(
+                            group.getId(), initializerModuleId,
+                            compiled, bundle.getSourceMap()));
+                }
             } catch (RuntimeException exception) {
                 throw bundle.getSourceMap().mapFailure(
                         "Failed to compile Workspace module group '"
@@ -378,7 +383,9 @@ public final class RuntimeWorkspace implements AutoCloseable {
             List<WorkspaceProgram.CompiledUnit> units =
                     new ArrayList<WorkspaceProgram.CompiledUnit>();
             CompiledGroup root = compiledGroups.get(rootGroup.getId());
-            units.add(WorkspaceProgram.unit(root.compiled, root.sourceMap));
+            if (root.compiled != null) {
+                units.add(WorkspaceProgram.unit(root.compiled, root.sourceMap));
+            }
 
             List<WorkspaceCompilationPlan.Group> reachable =
                     plan.getEntryReachableGroups(entry.getKey());
@@ -388,11 +395,13 @@ public final class RuntimeWorkspace implements AutoCloseable {
                     continue;
                 }
                 CompiledGroup dependency = compiledGroups.get(group.getId());
-                units.add(WorkspaceProgram.unit(
-                        dependency.compiled, dependency.sourceMap));
+                if (dependency.compiled != null) {
+                    units.add(WorkspaceProgram.unit(
+                            dependency.compiled, dependency.sourceMap));
+                }
             }
             programs.put(entry.getKey(), new WorkspaceProgram(
-                    entry.getKey(), entry.getValue(), units));
+                    entry.getKey(), entry.getValue(), units, root.sourceMap));
         }
         return new WorkspaceCompilationResult(programs, initializers);
     }

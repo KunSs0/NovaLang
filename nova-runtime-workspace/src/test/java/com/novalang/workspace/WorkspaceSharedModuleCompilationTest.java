@@ -132,6 +132,36 @@ class WorkspaceSharedModuleCompilationTest {
         }
     }
 
+    @Test
+    @DisplayName("只有 import 的编译组作为无操作链接节点加载")
+    void shouldLoadImportOnlyCompilationGroupAsNoOpLinkNode() throws Exception {
+        WorkspaceTestSupport.write(tempDirectory, "shared.nova",
+                "fun sharedValue(): Int { return 42 }\n");
+        WorkspaceTestSupport.write(tempDirectory, "entry-a.nova",
+                "import \"@/shared\"\n");
+        WorkspaceTestSupport.write(tempDirectory, "entry-b.nova",
+                "import \"@/shared\"\n"
+                        + "fun execute(): Int { return sharedValue() }\n");
+        Path configFile = WorkspaceTestSupport.writeConfig(
+                tempDirectory, "caller",
+                "  - \"entry-a.nova\"\n"
+                        + "  - \"entry-b.nova\"\n");
+        RuntimeWorkspace workspace = new RuntimeWorkspace(configFile, nova -> { });
+
+        try {
+            workspace.load();
+
+            assertEquals(42, ((Number) workspace.invoke(
+                    "entry-a.nova", "sharedValue",
+                    Collections.<String, Object>emptyMap(), null)).intValue());
+            assertEquals(42, ((Number) workspace.invoke(
+                    "entry-b.nova", "execute",
+                    Collections.<String, Object>emptyMap(), null)).intValue());
+        } finally {
+            workspace.dispose();
+        }
+    }
+
     private String entryWithPrivateRecord(int offset) {
         return "import \"@/main\"\n"
                 + "val records = mutableListOf()\n"

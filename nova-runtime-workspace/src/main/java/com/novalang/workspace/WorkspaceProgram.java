@@ -18,24 +18,30 @@ public final class WorkspaceProgram {
     private final String entryName;
     private final String moduleId;
     private final List<CompiledUnit> units;
+    private final WorkspaceSourceMap rootSourceMap;
 
     WorkspaceProgram(String entryName,
                      String moduleId,
                      CompiledNova compiled,
                      WorkspaceSourceMap sourceMap) {
         this(entryName, moduleId,
-                Collections.singletonList(new CompiledUnit(compiled, sourceMap)));
+                Collections.singletonList(new CompiledUnit(compiled, sourceMap)), sourceMap);
     }
 
     WorkspaceProgram(String entryName,
                      String moduleId,
-                     List<CompiledUnit> units) {
-        if (units == null || units.isEmpty()) {
-            throw new IllegalArgumentException("Workspace program units must not be empty");
+                     List<CompiledUnit> units,
+                     WorkspaceSourceMap rootSourceMap) {
+        if (units == null) {
+            throw new IllegalArgumentException("Workspace program units must not be null");
+        }
+        if (rootSourceMap == null) {
+            throw new IllegalArgumentException("Workspace program root Source Map must not be null");
         }
         this.entryName = entryName;
         this.moduleId = moduleId;
         this.units = Collections.unmodifiableList(new ArrayList<CompiledUnit>(units));
+        this.rootSourceMap = rootSourceMap;
     }
 
     /** @return 配置或虚拟入口名称 */
@@ -50,7 +56,7 @@ public final class WorkspaceProgram {
 
     /** @return 入口根编译组的 Source Map */
     public WorkspaceSourceMap getSourceMap() {
-        return units.get(0).sourceMap;
+        return rootSourceMap;
     }
 
     /** @return 入口及其依赖模块导出的不可变函数名集合 */
@@ -64,6 +70,9 @@ public final class WorkspaceProgram {
 
     /** 使用隔离绑定执行当前编译组的 main 初始化。 */
     Object run(Map<String, Object> bindings) {
+        if (units.isEmpty()) {
+            return null;
+        }
         Map<String, Object> isolated = bindings == null
                 ? new LinkedHashMap<String, Object>()
                 : new LinkedHashMap<String, Object>(bindings);

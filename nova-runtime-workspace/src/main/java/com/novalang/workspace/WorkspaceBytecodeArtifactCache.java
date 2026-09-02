@@ -126,8 +126,8 @@ public final class WorkspaceBytecodeArtifactCache {
         private final Map<String, byte[]> bytecode;
 
         BytecodeArtifact(Map<String, byte[]> source) {
-            if (source == null || source.isEmpty()) {
-                throw new IllegalArgumentException("Compiled bytecode must not be empty");
+            if (source == null) {
+                throw new IllegalArgumentException("Compiled bytecode must not be null");
             }
             Map<String, byte[]> copied = new LinkedHashMap<String, byte[]>();
             for (Map.Entry<String, byte[]> entry : source.entrySet()) {
