@@ -94,10 +94,12 @@ class WorkspaceSharedModuleCompilationTest {
     @DisplayName("入口私有类型和状态隔离且可以调用共享模块")
     void shouldIsolateEntryTypesAndStateWhileLinkingSharedModule() throws Exception {
         WorkspaceTestSupport.write(tempDirectory, "lib/shared.nova",
-                "object SharedValues {\n"
+                "import java com.novalang.workspace.SourceUnit\n"
+                        + "object SharedValues {\n"
                         + "    fun base(): Int { return 40 }\n"
                         + "    fun zero(): Int { return 0 }\n"
                         + "}\n"
+                        + "fun sharedSource(): SourceUnit? { return null }\n"
                         + "fun sharedValue(): Int { return SharedValues.base() }\n");
         WorkspaceTestSupport.write(tempDirectory, "main.nova",
                 "import \"@/lib/shared\"\n"
@@ -170,6 +172,7 @@ class WorkspaceSharedModuleCompilationTest {
                 + "}\n"
                 + "fun execute(): Int {\n"
                 + "    records.add(" + offset + ")\n"
+                + "    val sharedSourceValue: SourceUnit? = sharedSource()\n"
                 + "    val record = CaptionRecord(mainValue())\n"
                 + "    val zeroSupplier = { SharedValues.zero() }\n"
                 + "    return record.total() + " + offset + " + zeroSupplier()\n"

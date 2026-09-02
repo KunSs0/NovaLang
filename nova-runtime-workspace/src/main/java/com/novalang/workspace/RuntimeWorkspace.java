@@ -360,7 +360,10 @@ public final class RuntimeWorkspace implements AutoCloseable {
                 CompiledGroup compiledGroup = new CompiledGroup(
                         compiled, bundle.getSourceMap());
                 compiledGroups.put(group.getId(), compiledGroup);
-                exportsByGroup.put(group.getId(), exportedSymbols(group, classes));
+                Set<String> javaImportDeclarations =
+                        bundleBuilder.collectJavaImportDeclarations(graph, group);
+                exportsByGroup.put(group.getId(), exportedSymbols(
+                        group, classes, javaImportDeclarations));
                 if (compiled != null) {
                     String initializerModuleId = group.getModuleIds().get(
                             group.getModuleIds().size() - 1);
@@ -408,7 +411,8 @@ public final class RuntimeWorkspace implements AutoCloseable {
 
     private WorkspaceCompilationExports exportedSymbols(
             WorkspaceCompilationPlan.Group group,
-            Map<String, Class<?>> classes) {
+            Map<String, Class<?>> classes,
+            Set<String> javaImportDeclarations) {
         Set<String> typeNames = new LinkedHashSet<String>();
         Set<String> objectNames = new LinkedHashSet<String>();
         Set<String> staticMemberNames = new LinkedHashSet<String>();
@@ -459,7 +463,7 @@ public final class RuntimeWorkspace implements AutoCloseable {
             }
         }
         return new WorkspaceCompilationExports(
-                typeNames, objectNames, staticMemberNames);
+                typeNames, objectNames, staticMemberNames, javaImportDeclarations);
     }
 
     private static final class CompiledGroup {

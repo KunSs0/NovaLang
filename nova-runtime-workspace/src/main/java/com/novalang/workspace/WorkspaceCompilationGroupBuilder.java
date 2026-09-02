@@ -63,6 +63,9 @@ final class WorkspaceCompilationGroupBuilder {
                 throw new WorkspaceException(
                         "Workspace dependency group is not compiled: " + dependency.getId());
             }
+            for (String importDeclaration : exports.getJavaImportDeclarations()) {
+                appendImport(importDeclaration, imports, source, mappings, null, 0);
+            }
             for (String memberName : exports.getStaticMemberNames()) {
                 appendImport("import static " + dependency.getPackageName()
                                 + ".$Module." + memberName,
@@ -78,6 +81,21 @@ final class WorkspaceCompilationGroupBuilder {
                         imports, source, mappings, null, 0);
             }
         }
+    }
+
+    Set<String> collectJavaImportDeclarations(WorkspaceModuleGraph graph,
+                                              WorkspaceCompilationPlan.Group group) {
+        Set<String> imports = new LinkedHashSet<String>();
+        for (String moduleId : group.getModuleIds()) {
+            WorkspaceModule module = graph.requireModule(moduleId);
+            String[] lines = module.getTransformedSource().split("\\r?\\n", -1);
+            for (String line : lines) {
+                if (JAVA_IMPORT.matcher(line).matches()) {
+                    imports.add(line.trim());
+                }
+            }
+        }
+        return imports;
     }
 
     private void appendJavaImports(WorkspaceModuleGraph graph,
