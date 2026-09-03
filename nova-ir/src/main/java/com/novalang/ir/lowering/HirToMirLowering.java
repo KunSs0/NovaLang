@@ -2798,6 +2798,14 @@ public class HirToMirLowering {
                     if (enclosingCaptures.contains(name)) { existsOuter = true; break; }
                 }
             }
+            // 当前实例字段也必须显式捕获。否则 lambda 降级后会在自身对象上
+            // 解析同名字段，而不是读取定义 lambda 的外层实例字段。
+            if (!existsOuter && currentEnclosingClassName != null) {
+                Set<String> enclosingFields = classFieldNames.get(currentEnclosingClassName);
+                if (enclosingFields != null && enclosingFields.contains(name)) {
+                    existsOuter = true;
+                }
+            }
             if (existsOuter) captures.add(name);
         }
 

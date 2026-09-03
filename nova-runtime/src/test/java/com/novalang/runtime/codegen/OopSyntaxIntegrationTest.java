@@ -519,6 +519,23 @@ class OopSyntaxIntegrationTest {
     // ============ init 块 ============
 
     @Nested
+    @DisplayName("Lambda 捕获")
+    class LambdaCaptureTests {
+
+        @Test void testLambdaCapturesEnclosingInstanceField() throws Exception {
+            String pre =
+                "class Camera(val fov: Double) {\n" +
+                "  fun render(): Double {\n" +
+                "    val callback = { value: Double -> fov + value }\n" +
+                "    return callback(2.0)\n" +
+                "  }\n" +
+                "}\n";
+            dual(pre + "Camera(70.0).render()",
+                 pre + wrap("return Camera(70.0).render()"), 72.0D);
+        }
+    }
+
+    @Nested
     @DisplayName("init 块")
     class InitBlockTests {
 
