@@ -166,6 +166,7 @@ public final class NovaTypeRegistry {
             MethodInfo.method("capitalize", 0, "首字母大写", "String"),
             MethodInfo.method("decapitalize", 0, "首字母小写", "String"),
             MethodInfo.method("split", 1, "按分隔符拆分", "List"),
+            MethodInfo.method("splitRegex", 1, "按正则表达式拆分", "List"),
             MethodInfo.method("contains", 1, "是否包含子串", "Boolean"),
             MethodInfo.method("startsWith", 1, "是否以指定前缀开头", "Boolean"),
             MethodInfo.method("endsWith", 1, "是否以指定后缀结尾", "Boolean"),
@@ -489,8 +490,10 @@ public final class NovaTypeRegistry {
         registerFunction("async", "async(block)", 1, "异步执行代码块，返回 Future", "Future");
         registerFunction("coroutineScope", "coroutineScope(block)", 1, "创建结构化并发作用域，自动等待所有子任务", "Any");
         registerFunction("supervisorScope", "supervisorScope(block)", 1, "创建监督作用域，子任务失败不影响兄弟任务", "Any");
+        registerFunction("schedule", "schedule(delayMs, block)", 2,
+                "延迟指定时间后执行一次任务", "NovaTask");
         registerFunction("scheduleRepeat", "scheduleRepeat(delayMs, periodMs, block)", 3,
-                "延迟指定时间后按固定周期重复执行代码块", "Task");
+                "延迟指定时间后按固定周期重复执行代码块", "NovaTask");
         // 时间
         registerFunction("sleep", "sleep(millis)", 1, "暂停当前线程指定毫秒数", "Unit");
         registerFunction("measureTimeMillis", "measureTimeMillis(block)", 1, "测量代码块执行时间（毫秒）", "Long");

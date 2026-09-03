@@ -66,6 +66,7 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
     /** 诊断专用模式：跳过 exprNovaTypeMap / nodeToScope / scopeRanges 记录，节省内存 */
     private boolean diagnosticsOnly = false;
     private boolean strictJavaTypes = false;
+    private boolean rejectUnknownGlobalCalls = false;
     private int loopDepth = 0;
     private int lambdaDepth = 0;
 
@@ -96,6 +97,14 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
     public void setDiagnosticsOnly(boolean diagnosticsOnly) {
         this.diagnosticsOnly = diagnosticsOnly;
         symbolTable.setRecordPositionInfo(!diagnosticsOnly);
+    }
+
+    /**
+     * 在 Workspace 等封闭运行时中拒绝未声明的顶层函数调用。
+     * 普通嵌入式 Nova 仍可由宿主按需保留动态函数注入。
+     */
+    public void setRejectUnknownGlobalCalls(boolean rejectUnknownGlobalCalls) {
+        this.rejectUnknownGlobalCalls = rejectUnknownGlobalCalls;
     }
 
     public void registerKnownType(String typeName) {
@@ -555,6 +564,80 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
         currentScope.define(symbol);
     }
 
+    private Symbol novaStaticImportedFunction(ImportDecl node, String localName,
+                                               String qualifiedName) {
+        if (qualifiedName == null || localName == null) {
+            return null;
+        }
+        int separator = qualifiedName.lastIndexOf('.');
+        if (separator <= 0 || separator == qualifiedName.length() - 1) {
+            return null;
+        }
+        String ownerName = qualifiedName.substring(0, separator);
+        String memberName = qualifiedName.substring(separator + 1);
+        JavaTypeDescriptor owner = JavaTypeOracle.get().resolve(ownerName);
+        if (owner == null) {
+            return null;
+        }
+        List<JavaTypeDescriptor.JavaExecutableDescriptor> overloads =
+                owner.novaStaticMethodOverloads(memberName);
+        if (overloads.isEmpty()) {
+            return null;
+        }
+        Symbol root = null;
+        for (JavaTypeDescriptor.JavaExecutableDescriptor executable : overloads) {
+            FunctionNovaType functionType = new FunctionNovaType(null,
+                    executable.getParamTypes(), executable.getReturnType(), false);
+            Symbol function = new Symbol(localName, SymbolKind.FUNCTION,
+                    functionType.toDisplayString(), false,
+                    node.getLocation(), null, Modifier.PUBLIC);
+            function.setResolvedNovaType(executable.getReturnType());
+            List<Symbol> parameters = new ArrayList<Symbol>();
+            for (int index = 0; index < executable.getParamTypes().size(); index++) {
+                NovaType parameterType = executable.getParamTypes().get(index);
+                Symbol parameter = new Symbol("arg" + index, SymbolKind.PARAMETER,
+                        parameterType.toDisplayString(), false,
+                        node.getLocation(), null, Modifier.PUBLIC);
+                parameter.setResolvedNovaType(parameterType);
+                parameters.add(parameter);
+            }
+            function.setParameters(parameters);
+            function.setVararg(executable.isVarArgs());
+            if (root == null) {
+                root = function;
+            } else {
+                root.addOverload(function);
+            }
+        }
+        return root;
+    }
+
+    private Symbol javaStaticImportedValue(ImportDecl node, String localName,
+                                           String qualifiedName) {
+        if (qualifiedName == null || localName == null) {
+            return null;
+        }
+        int separator = qualifiedName.lastIndexOf('.');
+        if (separator <= 0 || separator == qualifiedName.length() - 1) {
+            return null;
+        }
+        String ownerName = qualifiedName.substring(0, separator);
+        String memberName = qualifiedName.substring(separator + 1);
+        JavaTypeDescriptor owner = JavaTypeOracle.get().resolve(ownerName);
+        if (owner == null) {
+            return null;
+        }
+        NovaType valueType = owner.resolveProperty(memberName, true);
+        if (valueType == null) {
+            return null;
+        }
+        Symbol value = new Symbol(localName, SymbolKind.VARIABLE,
+                valueType.toDisplayString(), false,
+                node.getLocation(), null, Modifier.PUBLIC);
+        value.setResolvedNovaType(valueType);
+        return value;
+    }
+
     private String baseType(String typeName) {
         if (typeName == null) return null;
         int idx = typeName.indexOf('<');
@@ -871,7 +954,7 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
         }
 
         return descriptor.resolveMethod(memberExpr.getMember(), analyzedCallArgumentTypes(node),
-                staticOnly, javaReceiverType.getTypeArgs());
+                staticOnly, javaReceiverType.getTypeArgs(), superTypeRegistry);
     }
 
     private boolean isStaticJavaMemberAccess(MemberExpr memberExpr) {
@@ -922,7 +1005,7 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
             }
             JavaTypeDescriptor.JavaExecutableDescriptor resolved =
                     descriptor.resolveMethod(memberName, argTypes, staticOnly,
-                            receiverType.getTypeArgs());
+                            receiverType.getTypeArgs(), superTypeRegistry);
             if (resolved != null) {
                 NovaType expectedReturnType = expectedType.getReturnType();
                 if (expectedReturnType == null
@@ -2052,6 +2135,7 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
                 String qualifiedName = qualifyTopLevelTypeName(packageName, classDecl.getName());
                 typeResolver.registerKnownType(classDecl.getName());
                 typeResolver.registerKnownType(qualifiedName);
+                predeclareTopLevelClassSymbol(classDecl);
                 if (classDecl.getTypeParams() != null && !classDecl.getTypeParams().isEmpty()) {
                     typeResolver.registerTypeDeclaration(classDecl.getName(), classDecl.getTypeParams());
                     typeResolver.registerTypeDeclaration(qualifiedName, classDecl.getTypeParams());
@@ -2088,6 +2172,41 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
             return simpleName;
         }
         return packageName + "." + simpleName;
+    }
+
+    /**
+     * 预声明顶层类构造器，使同一模块中出现在类声明之前的工厂方法也能静态解析构造调用。
+     */
+    private void predeclareTopLevelClassSymbol(ClassDecl classDecl) {
+        Symbol existing = currentScope.resolveLocalType(classDecl.getName());
+        if (existing != null) {
+            return;
+        }
+        Symbol classSymbol = new Symbol(classDecl.getName(), SymbolKind.CLASS,
+                classDecl.getName(), false, classDecl.getLocation(), classDecl,
+                extractVisibility(classDecl.getModifiers()));
+        classSymbol.setResolvedNovaType(new ClassNovaType(classDecl.getName(), false));
+        currentScope.defineType(classSymbol);
+
+        String superClass = null;
+        List<String> interfaceNames = new ArrayList<String>();
+        if (classDecl.getSuperTypes() != null) {
+            for (TypeRef superType : classDecl.getSuperTypes()) {
+                NovaType resolvedSuperType = typeResolver.resolve(superType);
+                String resolvedName = resolvedSuperTypeName(superType, resolvedSuperType);
+                if (resolvedName == null) {
+                    continue;
+                }
+                if (isInterfaceSuperType(superType, resolvedSuperType)) {
+                    interfaceNames.add(resolvedName);
+                } else if (superClass == null) {
+                    superClass = resolvedName;
+                } else {
+                    interfaceNames.add(resolvedName);
+                }
+            }
+        }
+        superTypeRegistry.registerClass(classDecl.getName(), superClass, interfaceNames);
     }
 
     private void validateTypeRef(TypeRef ref, AstNode node) {
@@ -2165,6 +2284,18 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
         }
         String name = node.hasAlias() ? node.getAlias() : node.getName().getSimpleName();
         String qualifiedName = node.getName() != null ? node.getName().getFullName() : null;
+        if (node.isStatic() && !node.isWildcard()) {
+            Symbol function = novaStaticImportedFunction(node, name, qualifiedName);
+            if (function != null) {
+                defineImportedSymbol(function);
+                return null;
+            }
+            Symbol value = javaStaticImportedValue(node, name, qualifiedName);
+            if (value != null) {
+                defineImportedSymbol(value);
+                return null;
+            }
+        }
         String builtinModule = !node.isJava() && !node.isStatic()
                 ? BuiltinModuleExports.resolveModuleName(qualifiedName)
                 : null;
@@ -2450,11 +2581,14 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
 
     @Override
     public Void visitClassDecl(ClassDecl node, Void ctx) {
-        checker.checkTypeRedefinition(currentScope, node.getName(), node);
-        Symbol classSym = new Symbol(node.getName(), SymbolKind.CLASS,
-                node.getName(), false, node.getLocation(), node, extractVisibility(node.getModifiers()));
-        classSym.setResolvedNovaType(new ClassNovaType(node.getName(), false));
-        currentScope.defineType(classSym);
+        Symbol classSym = currentScope.resolveLocalType(node.getName());
+        if (classSym == null || classSym.getDeclaration() != node) {
+            checker.checkTypeRedefinition(currentScope, node.getName(), node);
+            classSym = new Symbol(node.getName(), SymbolKind.CLASS,
+                    node.getName(), false, node.getLocation(), node, extractVisibility(node.getModifiers()));
+            classSym.setResolvedNovaType(new ClassNovaType(node.getName(), false));
+            currentScope.defineType(classSym);
+        }
 
         if (node.getTypeParams() != null && !node.getTypeParams().isEmpty()) {
             typeResolver.registerTypeDeclaration(node.getName(), node.getTypeParams());
@@ -3354,9 +3488,15 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
                                 "No matching Java constructor found for '" + funcName + "'",
                                 node);
                     }
+                } else if (typeCallee instanceof ClassNovaType) {
+                    setNovaType(node, typeCallee.withNullable(false));
                 } else if (strictJavaTypes) {
                     checker.addDiagnostic(SemanticDiagnostic.Severity.ERROR,
                             "未注册的 Java 函数: '" + funcName + "'",
+                            node);
+                } else if (rejectUnknownGlobalCalls) {
+                    checker.addDiagnostic(SemanticDiagnostic.Severity.ERROR,
+                            "未声明的全局函数: '" + funcName + "'",
                             node);
                 }
             }
@@ -4403,7 +4543,7 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
                 JavaTypeDescriptor descriptor = javaReceiverType.getDescriptor();
                 JavaTypeDescriptor.JavaExecutableDescriptor javaMethod = descriptor != null
                         ? descriptor.resolveMethod(node.getMember(), argumentTypes, false,
-                        javaReceiverType.getTypeArgs())
+                        javaReceiverType.getTypeArgs(), superTypeRegistry)
                         : null;
                 if (javaMethod != null) {
                     resultType = javaMethod.getReturnType();

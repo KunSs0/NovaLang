@@ -93,6 +93,7 @@ public final class StdlibContractMetadata {
         registerMemberContract("String", "capitalize", "string.capitalize");
         registerMemberContract("String", "decapitalize", "string.decapitalize");
         registerMemberContract("String", "split", "string.split");
+        registerMemberContract("String", "splitRegex", "string.splitRegex");
         registerMemberContract("String", "contains", "string.contains");
         registerMemberContract("String", "startsWith", "string.startsWith");
         registerMemberContract("String", "endsWith", "string.endsWith");

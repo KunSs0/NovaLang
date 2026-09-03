@@ -324,6 +324,12 @@ public final class StdlibContracts {
                 .returns(TypeExpr.concrete("List", TypeExpr.concrete("String")))
                 .build());
 
+        register(NovaContract.member("string.splitRegex")
+                .receiver(TypeExpr.concrete("String"))
+                .valueArg("regex", TypeExpr.concrete("String"))
+                .returns(TypeExpr.concrete("List", TypeExpr.concrete("String")))
+                .build());
+
         register(NovaContract.member("string.contains")
                 .receiver(TypeExpr.concrete("String"))
                 .valueArg("substring", TypeExpr.concrete("String"))

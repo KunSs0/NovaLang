@@ -59,6 +59,7 @@ public final class Nova {
     private final List<PreludeSource> preludeSources = new ArrayList<>();
     private int evaluatedPreludeCount = 0;
     private JavaTypes javaTypes;
+    private boolean rejectUnknownGlobalCalls;
     private String javaTypesNamespace = "default";
 
     private static final class PreludeSource {
@@ -124,6 +125,16 @@ public final class Nova {
         javaTypes.resolveNamespace(effectiveNamespace);
         this.javaTypes = javaTypes;
         this.javaTypesNamespace = effectiveNamespace;
+        clearCompilationCache();
+        return this;
+    }
+
+    /**
+     * 设置编译期是否拒绝未声明的全局函数调用。
+     * Workspace 应启用该选项，普通嵌入式宿主可保留动态函数注入。
+     */
+    public Nova setRejectUnknownGlobalCalls(boolean rejectUnknownGlobalCalls) {
+        this.rejectUnknownGlobalCalls = rejectUnknownGlobalCalls;
         clearCompilationCache();
         return this;
     }
@@ -1134,6 +1145,7 @@ public final class Nova {
         compiler.setScriptMode(true);
         compiler.setEnableSemanticAnalysis(true);
         compiler.setStrictSemanticMode(true);
+        compiler.setRejectUnknownGlobalCalls(rejectUnknownGlobalCalls);
         configureJavaTypes(compiler, javaTypesNamespace);
         configureRelocate(compiler);
         ClassLoader previousContextLoader = Thread.currentThread().getContextClassLoader();
@@ -1165,6 +1177,7 @@ public final class Nova {
         compiler.setScriptMode(true);
         compiler.setEnableSemanticAnalysis(true);
         compiler.setStrictSemanticMode(true);
+        compiler.setRejectUnknownGlobalCalls(rejectUnknownGlobalCalls);
         configureJavaTypes(compiler, javaTypesNamespace);
         configureRelocate(compiler);
         return compiler.compileAndLoad(actualCode, actualFileName, scriptClassLoader);
@@ -1217,6 +1230,7 @@ public final class Nova {
         compiler.setScriptMode(true);
         compiler.setEnableSemanticAnalysis(true);
         compiler.setStrictSemanticMode(true);
+        compiler.setRejectUnknownGlobalCalls(rejectUnknownGlobalCalls);
         configureJavaTypes(compiler, namespace);
         configureRelocate(compiler);
         Map<String, Class<?>> classes = compiler.compileAndLoad(actualCode, actualFileName, scriptClassLoader);

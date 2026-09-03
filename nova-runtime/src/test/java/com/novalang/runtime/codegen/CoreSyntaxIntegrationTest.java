@@ -1518,6 +1518,47 @@ class CoreSyntaxIntegrationTest {
             dual("fun add(a: Int?, b: Int?): Int { return (a ?: 0) + (b ?: 0) }\nadd(3, null)",
                  wrap("fun add(a: Int?, b: Int?): Int { return (a ?: 0) + (b ?: 0) }\n    return add(3, null)"), 3);
         }
+
+        @Test void nullableNumericClassFields_initializeWithNull() throws Exception {
+            String declaration = "class Holder {\n"
+                    + "  var intValue: Int? = null\n"
+                    + "  var longValue: Long? = null\n"
+                    + "  var floatValue: Float? = null\n"
+                    + "  var doubleValue: Double? = null\n"
+                    + "  fun allNull(): Boolean {\n"
+                    + "    return intValue == null && longValue == null"
+                    + " && floatValue == null && doubleValue == null\n"
+                    + "  }\n"
+                    + "}\n";
+            dual(declaration + "Holder().allNull()",
+                    wrap(declaration + "    return Holder().allNull()"), true);
+        }
+
+        @Test void nullableNumericClassField_canBeResetToNull() throws Exception {
+            String declaration = "class Holder {\n"
+                    + "  var value: Double? = 12.5\n"
+                    + "  fun clear(): Double? {\n"
+                    + "    value = null\n"
+                    + "    return value\n"
+                    + "  }\n"
+                    + "}\n";
+            dual(declaration + "Holder().clear() ?: -1.0",
+                    wrap(declaration + "    return Holder().clear() ?: -1.0"), -1.0);
+        }
+
+        @Test void nullableNumericClassField_acceptsNullableParameter() throws Exception {
+            String declaration = "class Holder {\n"
+                    + "  var value: Double? = 12.5\n"
+                    + "  fun replace(next: Double?) { value = next }\n"
+                    + "}\n"
+                    + "fun replaceWithNull(): Double {\n"
+                    + "  val holder = Holder()\n"
+                    + "  holder.replace(null)\n"
+                    + "  return holder.value ?: -1.0\n"
+                    + "}\n";
+            dual(declaration + "replaceWithNull()",
+                    wrap(declaration + "    return replaceWithNull()"), -1.0);
+        }
     }
 
     // ============ 用户类遮蔽内置类型 + nova. 限定名 ============

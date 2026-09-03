@@ -3,6 +3,8 @@ package com.novalang.ir.backend;
 import com.novalang.compiler.ast.Modifier;
 import com.novalang.ir.hir.ClassKind;
 import com.novalang.ir.mir.*;
+import com.novalang.runtime.metadata.NovaFunctionSignature;
+import com.novalang.runtime.metadata.NovaPropertySignature;
 import org.objectweb.asm.*;
 
 import java.util.Collections;
@@ -144,7 +146,14 @@ public class MirCodeGenerator {
             if (field.getModifiers().contains(Modifier.STATIC)) fieldAccess |= ACC_STATIC;
             if (field.getModifiers().contains(Modifier.FINAL)) fieldAccess |= ACC_FINAL;
             String desc = field.getType().getFieldDescriptor();
-            cw.visitField(fieldAccess, field.getName(), desc, null, null);
+            FieldVisitor fieldVisitor = cw.visitField(
+                    fieldAccess, field.getName(), desc, null, null);
+            AnnotationVisitor propertySignature = fieldVisitor.visitAnnotation(
+                    Type.getDescriptor(NovaPropertySignature.class), true);
+            propertySignature.visit("type", field.getType().getDescriptor());
+            propertySignature.visit("nullable", Boolean.valueOf(field.getType().isNullable()));
+            propertySignature.visitEnd();
+            fieldVisitor.visitEnd();
         }
 
         // 默认构造器（如果类没有自己的构造器）
@@ -295,6 +304,25 @@ public class MirCodeGenerator {
         }
 
         MethodVisitor mv = cw.visitMethod(access, func.getName(), desc, null, null);
+
+        if (!"<init>".equals(func.getName()) && !"<clinit>".equals(func.getName())) {
+            AnnotationVisitor signature = mv.visitAnnotation(
+                    Type.getDescriptor(NovaFunctionSignature.class), true);
+            signature.visit("returnType", func.getReturnType().getDescriptor());
+            signature.visit("returnNullable", Boolean.valueOf(func.getReturnType().isNullable()));
+            AnnotationVisitor parameterTypes = signature.visitArray("parameterTypes");
+            for (com.novalang.ir.mir.MirParam parameter : func.getParams()) {
+                parameterTypes.visit(null, parameter.getType().getDescriptor());
+            }
+            parameterTypes.visitEnd();
+            AnnotationVisitor parameterNullable = signature.visitArray("parameterNullable");
+            for (com.novalang.ir.mir.MirParam parameter : func.getParams()) {
+                parameterNullable.visit(null, Boolean.valueOf(parameter.getType().isNullable()));
+            }
+            parameterNullable.visitEnd();
+            signature.visit("vararg", Boolean.valueOf(func.isVararg()));
+            signature.visitEnd();
+        }
 
         // 写入 MethodParameters 属性（必须在 visitCode 之前）
         if (!func.getParams().isEmpty() && !"<clinit>".equals(func.getName())) {
@@ -892,17 +920,9 @@ public class MirCodeGenerator {
                     }
                 } else if (isBoxedNumericDesc(fieldDesc)) {
                     // 装箱数值类型字段：通过 Number 拆箱再装箱，确保类型安全
-                    // （如 Integer → Double: Number.doubleValue() → Double.valueOf()）
-                    switch (fieldDesc) {
-                        case "Ljava/lang/Integer;":   loadInt(mv, value); boxInt(mv); break;
-                        case "Ljava/lang/Long;":      unboxLong(mv, value); boxLong(mv); break;
-                        case "Ljava/lang/Float;":     unboxFloat(mv, value); boxFloat(mv); break;
-                        case "Ljava/lang/Double;":    unboxDouble(mv, value); boxDouble(mv); break;
-                        case "Ljava/lang/Boolean;":   unboxBoolean(mv, value); boxBoolean(mv); break;
-                        case "Ljava/lang/Character;": loadObject(mv, value);
-                            mv.visitTypeInsn(CHECKCAST, "java/lang/Character"); break;
-                        default: loadObject(mv, value); break;
-                    }
+                    // （如 Integer → Double: Number.doubleValue() → Double.valueOf()）。
+                    // 可空原始类型也使用包装描述符，null 必须原样写入而不能拆箱。
+                    loadBoxedFieldValue(mv, value, fieldDesc);
                 } else {
                     loadObject(mv, value);
                     if (!MethodDescriptor.OBJECT_DESC.equals(fieldDesc)) {
@@ -2532,6 +2552,47 @@ public class MirCodeGenerator {
         }
     }
 
+    /** 加载包装数值字段值；非 null 值按目标包装类型规范化，null 原样保留。 */
+    private void loadBoxedFieldValue(MethodVisitor mv, int local, String fieldDesc) {
+        loadObject(mv, local);
+        Label done = new Label();
+        mv.visitInsn(DUP);
+        mv.visitJumpInsn(IFNULL, done);
+        mv.visitInsn(POP);
+        switch (fieldDesc) {
+            case "Ljava/lang/Integer;":
+                loadInt(mv, local);
+                boxInt(mv);
+                break;
+            case "Ljava/lang/Long;":
+                unboxLong(mv, local);
+                boxLong(mv);
+                break;
+            case "Ljava/lang/Float;":
+                unboxFloat(mv, local);
+                boxFloat(mv);
+                break;
+            case "Ljava/lang/Double;":
+                unboxDouble(mv, local);
+                boxDouble(mv);
+                break;
+            case "Ljava/lang/Boolean;":
+                unboxBoolean(mv, local);
+                boxBoolean(mv);
+                break;
+            case "Ljava/lang/Character;":
+                loadObject(mv, local);
+                mv.visitTypeInsn(CHECKCAST, "java/lang/Character");
+                break;
+            default:
+                loadObject(mv, local);
+                break;
+        }
+        mv.visitLabel(done);
+        String wrapperType = fieldDesc.substring(1, fieldDesc.length() - 1);
+        mv.visitTypeInsn(CHECKCAST, wrapperType);
+    }
+
     /** 将栈顶原始类型值装箱为对应包装类 */
     private void boxFieldValue(MethodVisitor mv, String fieldDesc) {
         switch (fieldDesc) {
@@ -2944,7 +3005,14 @@ public class MirCodeGenerator {
             int fieldAccess = ACC_PUBLIC;
             if (field.getModifiers().contains(Modifier.STATIC)) fieldAccess |= ACC_STATIC;
             String desc = field.getType().getFieldDescriptor();
-            cw.visitField(fieldAccess, field.getName(), desc, null, null);
+            FieldVisitor fieldVisitor = cw.visitField(
+                    fieldAccess, field.getName(), desc, null, null);
+            AnnotationVisitor signature = fieldVisitor.visitAnnotation(
+                    Type.getDescriptor(NovaPropertySignature.class), true);
+            signature.visit("type", field.getType().getDescriptor());
+            signature.visit("nullable", Boolean.valueOf(field.getType().isNullable()));
+            signature.visitEnd();
+            fieldVisitor.visitEnd();
         }
 
         // 构造器: 使用 MIR 生成的 <init>（含字段初始化），否则用空构造器

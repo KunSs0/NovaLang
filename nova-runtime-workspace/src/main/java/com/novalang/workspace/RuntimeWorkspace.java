@@ -374,7 +374,8 @@ public final class RuntimeWorkspace implements AutoCloseable {
             } catch (RuntimeException exception) {
                 throw bundle.getSourceMap().mapFailure(
                         "Failed to compile Workspace module group '"
-                                + group.getId() + "'", exception);
+                                + group.getId() + "' (modules: "
+                                + group.getModuleIds() + ")", exception);
             }
         }
 

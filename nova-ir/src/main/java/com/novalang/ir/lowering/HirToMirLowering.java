@@ -1032,6 +1032,10 @@ public class HirToMirLowering {
         }
         MirFunction func = new MirFunction(hirFunc.getName(), returnType,
                 params, funcModifiers);
+        if (!hirFunc.getParams().isEmpty()) {
+            HirParam lastParameter = hirFunc.getParams().get(hirFunc.getParams().size() - 1);
+            func.setVararg(lastParameter.isVararg());
+        }
         func.setMemoized(hasAnnotation(hirFunc.getAnnotations(), "memoized", "memoize")
                 && ownerClass == null && !hirFunc.isConstructor() && !hirFunc.hasReifiedTypeParams());
         if (hirFunc.getAnnotations() != null && !hirFunc.getAnnotations().isEmpty()) {
@@ -5640,7 +5644,9 @@ public class HirToMirLowering {
         if (type == null) return MirType.ofObject("java/lang/Object");
         if (type instanceof PrimitiveType) {
             // 可空原始类型（Int?, Long? 等）→ Object，因为 JVM 原始类型不能为 null
-            if (type.isNullable()) return MirType.ofObject("java/lang/Object");
+            if (type.isNullable()) {
+                return MirType.ofObject(typeToInternalName(type), true);
+            }
             switch (((PrimitiveType) type).getKind()) {
                 case INT: return MirType.ofInt();
                 case LONG: return MirType.ofLong();
@@ -5677,7 +5683,7 @@ public class HirToMirLowering {
                     if (javaClass != null) name = javaClass.getName().replace('.', '/');
                 }
             }
-            return MirType.ofObject(name);
+            return MirType.ofObject(name, type.isNullable());
         }
         return MirType.ofObject("java/lang/Object");
     }

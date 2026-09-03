@@ -352,6 +352,17 @@ class SemanticAnalyzerLanguageSemanticsTest {
     }
 
     @Test
+    @DisplayName("顶层工厂函数应能构造后声明的同模块类")
+    void topLevelFactoryShouldConstructLaterClassDeclaration() {
+        AnalysisResult result = analyze(
+                "fun create(): User { return User(\"Alice\") }\n"
+                        + "class User(val name: String) { }\n");
+
+        assertNoDiagnostics(result,
+                "Top-level class constructors should be available before their declarations are visited");
+    }
+
+    @Test
     @DisplayName("explicit builtin module function imports should preserve callable type information")
     void explicitBuiltinModuleFunctionImportsShouldPreserveCallableTypeInformation() {
         AnalysisResult result = analyze(
@@ -1918,6 +1929,7 @@ class SemanticAnalyzerLanguageSemanticsTest {
                 "val c = \"abc\".isNotEmpty\n" +
                 "val d = \" \".isBlank\n" +
                 "val e = \"a,b\".split(\",\")\n" +
+                "val eRegex = \"a  b\".splitRegex(\"\\\\s+\")\n" +
                 "val f = \"abc\".contains(\"b\")\n" +
                 "val g = \"abc\".startsWith(\"a\")\n" +
                 "val h = \"abc\".endsWith(\"c\")\n" +
@@ -1941,6 +1953,7 @@ class SemanticAnalyzerLanguageSemanticsTest {
         assertSymbolType(result, "c", "Boolean");
         assertSymbolType(result, "d", "Boolean");
         assertSymbolType(result, "e", "List<String>");
+        assertSymbolType(result, "eRegex", "List<String>");
         assertSymbolType(result, "f", "Boolean");
         assertSymbolType(result, "g", "Boolean");
         assertSymbolType(result, "h", "Boolean");
@@ -2031,6 +2044,20 @@ class SemanticAnalyzerLanguageSemanticsTest {
         assertNoDiagnostics(result,
                 "The global toFloat conversion should be available during semantic analysis");
         assertSymbolType(result, "value", "Float");
+    }
+
+    @Test
+    @DisplayName("schedule helpers should expose the concrete NovaTask handle type")
+    void scheduleHelpersShouldExposeNovaTask() {
+        AnalysisResult result = analyze(
+                "import java com.novalang.runtime.NovaTask\n" +
+                "val once: NovaTask = schedule(1) { }\n" +
+                "val repeat: NovaTask = scheduleRepeat(1, 1) { }");
+
+        assertNoDiagnostics(result,
+                "Scheduled task helpers should return their concrete cancellable NovaTask handle");
+        assertSymbolType(result, "once", "NovaTask");
+        assertSymbolType(result, "repeat", "NovaTask");
     }
 
     @Test

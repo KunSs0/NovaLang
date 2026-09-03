@@ -16,6 +16,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -38,6 +39,27 @@ class WorkspaceSharedModuleCompilationTest {
     @AfterEach
     void clearScheduler() {
         Interpreter.resetGlobalSchedulerState();
+    }
+
+    @Test
+    @DisplayName("Workspace 必须在编译期拒绝未声明的全局函数")
+    void shouldRejectUnknownGlobalFunctionAtWorkspaceCompileTime() throws Exception {
+        WorkspaceTestSupport.write(tempDirectory, "entry.nova",
+                "fun execute() { regex(\"\\\\s+\") }\n");
+        Path configFile = WorkspaceTestSupport.writeConfig(
+                tempDirectory, "caller", "  - \"entry.nova\"\n");
+        RuntimeWorkspace workspace = new RuntimeWorkspace(configFile,
+                nova -> nova.setRejectUnknownGlobalCalls(true));
+
+        try {
+            WorkspaceException exception = assertThrows(WorkspaceException.class, workspace::load);
+            String message = describeFailure(exception);
+            assertTrue(message.contains("未声明的全局函数: 'regex'"));
+            assertTrue(message.contains("modules: ["));
+            assertTrue(message.contains("entry.nova"));
+        } finally {
+            workspace.dispose();
+        }
     }
 
     @Test
@@ -69,6 +91,156 @@ class WorkspaceSharedModuleCompilationTest {
             assertTrue(message.contains("No matching Java method overload found for 'getX'"));
             assertTrue(message.contains("No matching Java method overload found for 'getY'"));
             assertTrue(message.contains("No matching Java method overload found for 'getZ'"));
+        } finally {
+            workspace.dispose();
+        }
+    }
+
+    @Test
+    @DisplayName("共享模块函数返回的 Nova 类型必须在消费组保留静态类型")
+    void shouldRejectMissingSetterOnTypeReturnedBySharedFunction() throws Exception {
+        WorkspaceTestSupport.write(tempDirectory, "lib/runtime.nova",
+                "class RuntimeState {\n"
+                        + "    var value: String? = null\n"
+                        + "}\n"
+                        + "fun runtimeState(): RuntimeState { return RuntimeState() }\n");
+        WorkspaceTestSupport.write(tempDirectory, "entry.nova",
+                "import \"@/lib/runtime\"\n"
+                        + "fun execute() {\n"
+                        + "    val runtime = runtimeState()\n"
+                        + "    runtime.setValue(\"invalid\")\n"
+                        + "}\n");
+        Path configFile = WorkspaceTestSupport.writeConfig(
+                tempDirectory, "caller", "  - \"entry.nova\"\n");
+        RuntimeWorkspace workspace = new RuntimeWorkspace(configFile, nova -> { });
+
+        try {
+            WorkspaceException exception = assertThrows(WorkspaceException.class, workspace::load);
+            String message = describeFailure(exception);
+            assertTrue(message.contains(
+                    "Nova 类型 'RuntimeState' 的属性 'value' 应使用属性语法；未声明方法 'setValue'"));
+        } finally {
+            workspace.dispose();
+        }
+    }
+
+    @Test
+    @DisplayName("共享模块函数返回的 Nova 类型支持属性写入")
+    void shouldWritePropertyOnTypeReturnedBySharedFunction() throws Exception {
+        WorkspaceTestSupport.write(tempDirectory, "lib/runtime.nova",
+                "class RuntimeState {\n"
+                        + "    var value: String? = null\n"
+                        + "}\n"
+                        + "fun runtimeState(): RuntimeState { return RuntimeState() }\n");
+        WorkspaceTestSupport.write(tempDirectory, "entry.nova",
+                "import \"@/lib/runtime\"\n"
+                        + "fun execute(): String? {\n"
+                        + "    val runtime = runtimeState()\n"
+                        + "    runtime.value = \"valid\"\n"
+                        + "    return runtime.value\n"
+                        + "}\n");
+        Path configFile = WorkspaceTestSupport.writeConfig(
+                tempDirectory, "caller", "  - \"entry.nova\"\n");
+        RuntimeWorkspace workspace = new RuntimeWorkspace(configFile, nova -> { });
+
+        try {
+            workspace.load();
+            assertEquals("valid", workspace.invoke(
+                    "entry.nova", "execute",
+                    Collections.<String, Object>emptyMap(), null));
+        } finally {
+            workspace.dispose();
+        }
+    }
+
+    @Test
+    @DisplayName("共享模块导出的可空 Nova 属性允许写入 null")
+    void shouldClearNullablePropertyOnTypeReturnedBySharedFunction() throws Exception {
+        WorkspaceTestSupport.write(tempDirectory, "lib/runtime.nova",
+                "class Notice { }\n"
+                        + "class RuntimeState {\n"
+                        + "    var value: Notice? = null\n"
+                        + "}\n"
+                        + "fun runtimeState(): RuntimeState { return RuntimeState() }\n");
+        WorkspaceTestSupport.write(tempDirectory, "entry.nova",
+                "import \"@/lib/runtime\"\n"
+                        + "fun execute(): Notice? {\n"
+                        + "    val runtime = runtimeState()\n"
+                        + "    runtime.value = null\n"
+                        + "    return runtime.value\n"
+                        + "}\n");
+        Path configFile = WorkspaceTestSupport.writeConfig(
+                tempDirectory, "caller", "  - \"entry.nova\"\n");
+        RuntimeWorkspace workspace = new RuntimeWorkspace(configFile, nova -> { });
+
+        try {
+            workspace.load();
+            assertNull(workspace.invoke(
+                    "entry.nova", "execute",
+                    Collections.<String, Object>emptyMap(), null));
+        } finally {
+            workspace.dispose();
+        }
+    }
+
+    @Test
+    @DisplayName("共享模块导出的 Nova object 方法必须校验参数类型")
+    void shouldRejectWrongArgumentTypeForExportedNovaObjectMethod() throws Exception {
+        WorkspaceTestSupport.write(tempDirectory, "lib/lifecycle.nova",
+                "class Callback { }\n"
+                        + "object Lifecycle {\n"
+                        + "    fun register(callback: Callback): String { return \"registered\" }\n"
+                        + "}\n");
+        WorkspaceTestSupport.write(tempDirectory, "entry-a.nova",
+                "import \"@/lib/lifecycle\"\n"
+                        + "fun execute() {\n"
+                        + "    Lifecycle.register(listOf(Callback()))\n"
+                        + "}\n");
+        WorkspaceTestSupport.write(tempDirectory, "entry-b.nova",
+                "import \"@/lib/lifecycle\"\n"
+                        + "fun execute(): String { return \"ready\" }\n");
+        Path configFile = WorkspaceTestSupport.writeConfig(
+                tempDirectory, "caller",
+                "  - \"entry-a.nova\"\n"
+                        + "  - \"entry-b.nova\"\n");
+        RuntimeWorkspace workspace = new RuntimeWorkspace(configFile, nova -> { });
+
+        try {
+            WorkspaceException exception = assertThrows(WorkspaceException.class, workspace::load);
+            String message = describeFailure(exception);
+            assertTrue(message.contains("No matching Java method overload found for 'register'"));
+        } finally {
+            workspace.dispose();
+        }
+    }
+
+    @Test
+    @DisplayName("共享模块导出的 Nova object 方法支持正确参数调用")
+    void shouldInvokeExportedNovaObjectMethodWithTypedArgument() throws Exception {
+        WorkspaceTestSupport.write(tempDirectory, "lib/lifecycle.nova",
+                "class Callback { }\n"
+                        + "object Lifecycle {\n"
+                        + "    fun register(callback: Callback): String { return \"registered\" }\n"
+                        + "}\n");
+        WorkspaceTestSupport.write(tempDirectory, "entry-a.nova",
+                "import \"@/lib/lifecycle\"\n"
+                        + "fun execute(): String {\n"
+                        + "    return Lifecycle.register(Callback())\n"
+                        + "}\n");
+        WorkspaceTestSupport.write(tempDirectory, "entry-b.nova",
+                "import \"@/lib/lifecycle\"\n"
+                        + "fun execute(): String { return \"ready\" }\n");
+        Path configFile = WorkspaceTestSupport.writeConfig(
+                tempDirectory, "caller",
+                "  - \"entry-a.nova\"\n"
+                        + "  - \"entry-b.nova\"\n");
+        RuntimeWorkspace workspace = new RuntimeWorkspace(configFile, nova -> { });
+
+        try {
+            workspace.load();
+            assertEquals("registered", workspace.invoke(
+                    "entry-a.nova", "execute",
+                    Collections.<String, Object>emptyMap(), null));
         } finally {
             workspace.dispose();
         }

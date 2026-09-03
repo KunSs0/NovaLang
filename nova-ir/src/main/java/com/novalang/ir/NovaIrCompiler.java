@@ -71,6 +71,13 @@ public class NovaIrCompiler implements NovaCompilerApi {
         pipeline.setStrictSemanticMode(strict);
     }
 
+    /**
+     * 拒绝未声明的顶层函数调用，供封闭 Workspace 编译边界使用。
+     */
+    public void setRejectUnknownGlobalCalls(boolean rejectUnknownGlobalCalls) {
+        pipeline.setRejectUnknownGlobalCalls(rejectUnknownGlobalCalls);
+    }
+
     public void setJavaTypes(JavaTypes javaTypes, String namespace) {
         pipeline.setJavaTypes(javaTypes, namespace);
     }

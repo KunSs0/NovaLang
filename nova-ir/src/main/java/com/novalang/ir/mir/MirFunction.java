@@ -44,6 +44,8 @@ public class MirFunction {
     private List<com.novalang.ir.hir.HirAnnotation> hirAnnotations = Collections.emptyList();
     /** 是否缓存（@memoize） */
     private boolean memoized;
+    /** 最后一个声明参数是否为 vararg。 */
+    private boolean vararg;
     /** ????? */
     private transient Map<Object, Object> memoCache;
     /** int ??? memo cache??? HashMap ???? */
@@ -116,6 +118,8 @@ public class MirFunction {
 
     public boolean isMemoized() { return memoized; }
     public void setMemoized(boolean memoized) { this.memoized = memoized; }
+    public boolean isVararg() { return vararg; }
+    public void setVararg(boolean vararg) { this.vararg = vararg; }
     /** @memoized 缓存上限 */
     private static final int MEMO_MAX_SIZE = 4096;
 

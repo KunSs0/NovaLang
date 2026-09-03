@@ -50,6 +50,7 @@ public class PassPipeline {
     private boolean enableSemanticAnalysis = false;
     /** strict 模式：ERROR 级诊断抛异常中止 */
     private boolean strictSemanticMode = false;
+    private boolean rejectUnknownGlobalCalls = false;
     private JavaTypes javaTypes;
     private String javaTypesNamespace = "default";
 
@@ -67,6 +68,10 @@ public class PassPipeline {
 
     public void setStrictSemanticMode(boolean strict) {
         this.strictSemanticMode = strict;
+    }
+
+    public void setRejectUnknownGlobalCalls(boolean rejectUnknownGlobalCalls) {
+        this.rejectUnknownGlobalCalls = rejectUnknownGlobalCalls;
     }
 
     public void setJavaTypes(JavaTypes javaTypes, String namespace) {
@@ -190,6 +195,7 @@ public class PassPipeline {
     private void runSemanticAnalysis(Program program) {
         try {
             SemanticAnalyzer analyzer = new SemanticAnalyzer();
+            analyzer.setRejectUnknownGlobalCalls(rejectUnknownGlobalCalls);
             if (javaTypes != null) {
                 analyzer.registerJavaTypes(javaTypes, javaTypesNamespace);
             }

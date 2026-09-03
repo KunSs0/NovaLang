@@ -1,6 +1,8 @@
 package com.novalang.compiler.analysis.types;
 
 import com.novalang.runtime.resolution.JavaOverloadResolver;
+import com.novalang.runtime.metadata.NovaFunctionSignature;
+import com.novalang.runtime.metadata.NovaPropertySignature;
 
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
@@ -147,8 +149,26 @@ public final class JavaTypeDescriptor {
     }
 
     public JavaExecutableDescriptor resolveMethod(String methodName, List<NovaType> argTypes,
-                                                  boolean staticOnly,
-                                                  List<NovaTypeArgument> receiverTypeArguments) {
+                                                   boolean staticOnly,
+                                                   List<NovaTypeArgument> receiverTypeArguments) {
+        return resolveMethod(methodName, argTypes, staticOnly, receiverTypeArguments, null);
+    }
+
+    /**
+     * 解析方法重载，并在 Nova 声明的参数类型参与匹配时保留当前语义分析的继承关系。
+     *
+     * <p>跨 Workspace 编译组导出的 Nova object 会由 Java 静态导入链接；其函数签名
+     * 来自 {@link NovaFunctionSignature}，参数却可能是当前组刚声明的 Nova 类。此时
+     * 不能丢弃 {@code superTypeRegistry}，否则接口实现关系无法参与重载匹配。</p>
+     */
+    public JavaExecutableDescriptor resolveMethod(String methodName, List<NovaType> argTypes,
+                                                   boolean staticOnly,
+                                                   List<NovaTypeArgument> receiverTypeArguments,
+                                                   SuperTypeRegistry superTypeRegistry) {
+        List<JavaExecutableDescriptor> novaOverloads = novaMethodOverloads(methodName, staticOnly);
+        if (!novaOverloads.isEmpty()) {
+            return selectNovaMethod(novaOverloads, argTypes, superTypeRegistry);
+        }
         Class<?> javaClass = loadJavaClass();
         if (javaClass == null) return null;
         List<Method> candidates = new ArrayList<Method>();
@@ -180,6 +200,10 @@ public final class JavaTypeDescriptor {
 
     public List<JavaExecutableDescriptor> methodOverloads(String methodName, boolean staticOnly,
                                                          List<NovaTypeArgument> receiverTypeArguments) {
+        List<JavaExecutableDescriptor> novaOverloads = novaMethodOverloads(methodName, staticOnly);
+        if (!novaOverloads.isEmpty()) {
+            return novaOverloads;
+        }
         Class<?> javaClass = loadJavaClass();
         if (javaClass == null) return Collections.emptyList();
         List<JavaExecutableDescriptor> overloads = new ArrayList<JavaExecutableDescriptor>();
@@ -201,6 +225,121 @@ public final class JavaTypeDescriptor {
         return overloads;
     }
 
+    /**
+     * 读取 Nova 字节码保留的源码函数签名。
+     *
+     * <p>生成的方法本身使用全 Object JVM 描述符，普通 Java 反射只能得到 Any。
+     * Workspace 跨编译组静态导入必须走此元数据，才能保留 Nova 返回类型。</p>
+     */
+    public List<JavaExecutableDescriptor> novaStaticMethodOverloads(String methodName) {
+        return novaMethodOverloads(methodName, true);
+    }
+
+    private List<JavaExecutableDescriptor> novaMethodOverloads(String methodName,
+                                                               boolean staticOnly) {
+        Class<?> javaClass = loadJavaClass();
+        if (javaClass == null) {
+            return Collections.emptyList();
+        }
+        List<JavaExecutableDescriptor> overloads = new ArrayList<JavaExecutableDescriptor>();
+        for (Method method : javaClass.getDeclaredMethods()) {
+            if (!methodName.equals(method.getName())
+                    || Modifier.isStatic(method.getModifiers()) != staticOnly) {
+                continue;
+            }
+            NovaFunctionSignature signature = method.getAnnotation(NovaFunctionSignature.class);
+            if (signature == null) {
+                continue;
+            }
+            List<NovaType> parameterTypes = new ArrayList<NovaType>();
+            boolean[] nullableParameters = signature.parameterNullable();
+            int parameterIndex = 0;
+            for (String descriptor : signature.parameterTypes()) {
+                boolean nullable = parameterIndex < nullableParameters.length
+                        && nullableParameters[parameterIndex];
+                parameterTypes.add(novaTypeFromDescriptor(descriptor, nullable));
+                parameterIndex++;
+            }
+            NovaType returnType = novaTypeFromDescriptor(
+                    signature.returnType(), signature.returnNullable());
+            overloads.add(new JavaExecutableDescriptor(
+                    parameterTypes, returnType, signature.vararg()));
+        }
+        return overloads;
+    }
+
+    private JavaExecutableDescriptor selectNovaMethod(List<JavaExecutableDescriptor> overloads,
+                                                       List<NovaType> argumentTypes,
+                                                       SuperTypeRegistry superTypeRegistry) {
+        for (JavaExecutableDescriptor overload : overloads) {
+            List<NovaType> parameterTypes = overload.getParamTypes();
+            int minimumCount = overload.isVarArgs()
+                    ? Math.max(parameterTypes.size() - 1, 0)
+                    : parameterTypes.size();
+            if (argumentTypes.size() < minimumCount) {
+                continue;
+            }
+            if (!overload.isVarArgs() && argumentTypes.size() != parameterTypes.size()) {
+                continue;
+            }
+            boolean compatible = true;
+            for (int index = 0; index < argumentTypes.size(); index++) {
+                int parameterIndex = index;
+                if (parameterIndex >= parameterTypes.size()) {
+                    parameterIndex = parameterTypes.size() - 1;
+                }
+                if (parameterIndex < 0 || !TypeCompatibility.isAssignable(
+                        parameterTypes.get(parameterIndex), argumentTypes.get(index), superTypeRegistry)) {
+                    compatible = false;
+                    break;
+                }
+            }
+            if (compatible) {
+                return overload;
+            }
+        }
+        return null;
+    }
+
+    private NovaType novaTypeFromDescriptor(String descriptor, boolean nullable) {
+        if (descriptor == null || descriptor.isEmpty()) {
+            return NovaTypes.DYNAMIC.withNullable(nullable);
+        }
+        if ("V".equals(descriptor)) {
+            return NovaTypes.UNIT;
+        }
+        if ("I".equals(descriptor)) {
+            return NovaTypes.INT.withNullable(nullable);
+        }
+        if ("J".equals(descriptor)) {
+            return NovaTypes.LONG.withNullable(nullable);
+        }
+        if ("F".equals(descriptor)) {
+            return NovaTypes.FLOAT.withNullable(nullable);
+        }
+        if ("D".equals(descriptor)) {
+            return NovaTypes.DOUBLE.withNullable(nullable);
+        }
+        if ("Z".equals(descriptor)) {
+            return NovaTypes.BOOLEAN.withNullable(nullable);
+        }
+        if ("C".equals(descriptor)) {
+            return NovaTypes.CHAR.withNullable(nullable);
+        }
+        if ("Ljava/lang/Object;".equals(descriptor)) {
+            return NovaTypes.DYNAMIC.withNullable(nullable);
+        }
+        if (descriptor.charAt(0) == 'L' && descriptor.endsWith(";")) {
+            String qualifiedName = descriptor.substring(1, descriptor.length() - 1)
+                    .replace('/', '.');
+            JavaTypeDescriptor resolved = JavaTypeOracle.get().resolve(qualifiedName);
+            if (resolved != null) {
+                return new JavaClassNovaType(resolved, nullable);
+            }
+        }
+        return NovaTypes.DYNAMIC.withNullable(nullable);
+    }
+
     public NovaType resolveProperty(String memberName, boolean staticOnly) {
         return resolveProperty(memberName, staticOnly,
                 Collections.<NovaTypeArgument>emptyList());
@@ -217,6 +356,10 @@ public final class JavaTypeDescriptor {
         try {
             Field field = javaClass.getField(memberName);
             if (Modifier.isStatic(field.getModifiers()) == staticOnly) {
+                NovaPropertySignature signature = field.getAnnotation(NovaPropertySignature.class);
+                if (signature != null) {
+                    return novaTypeFromDescriptor(signature.type(), signature.nullable());
+                }
                 return toNovaType(field.getGenericType(), typeBindings);
             }
         } catch (NoSuchFieldException ignored) {
@@ -297,8 +440,14 @@ public final class JavaTypeDescriptor {
             Field field = javaClass.getField(memberName);
             int modifiers = field.getModifiers();
             if (Modifier.isStatic(modifiers) == staticOnly && !Modifier.isFinal(modifiers)) {
-                List<NovaType> parameterTypes = Collections.singletonList(
-                        toNovaType(field.getGenericType(), typeBindings));
+                NovaPropertySignature signature = field.getAnnotation(NovaPropertySignature.class);
+                NovaType fieldType;
+                if (signature != null) {
+                    fieldType = novaTypeFromDescriptor(signature.type(), signature.nullable());
+                } else {
+                    fieldType = toNovaType(field.getGenericType(), typeBindings);
+                }
+                List<NovaType> parameterTypes = Collections.singletonList(fieldType);
                 return new JavaExecutableDescriptor(parameterTypes, NovaTypes.UNIT, false);
             }
         } catch (NoSuchFieldException ignored) {

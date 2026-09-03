@@ -12,32 +12,39 @@ public class MirType {
     private final Kind kind;
     private final String className;     // OBJECT 时使用（JVM 内部名）
     private final MirType elementType;  // ARRAY 时使用
+    private final boolean nullable;
 
-    private MirType(Kind kind, String className, MirType elementType) {
+    private MirType(Kind kind, String className, MirType elementType, boolean nullable) {
         this.kind = kind;
         this.className = className;
         this.elementType = elementType;
+        this.nullable = nullable;
     }
 
-    public static MirType ofInt()     { return new MirType(Kind.INT, null, null); }
-    public static MirType ofLong()    { return new MirType(Kind.LONG, null, null); }
-    public static MirType ofFloat()   { return new MirType(Kind.FLOAT, null, null); }
-    public static MirType ofDouble()  { return new MirType(Kind.DOUBLE, null, null); }
-    public static MirType ofBoolean() { return new MirType(Kind.BOOLEAN, null, null); }
-    public static MirType ofChar()    { return new MirType(Kind.CHAR, null, null); }
-    public static MirType ofVoid()    { return new MirType(Kind.VOID, null, null); }
+    public static MirType ofInt()     { return new MirType(Kind.INT, null, null, false); }
+    public static MirType ofLong()    { return new MirType(Kind.LONG, null, null, false); }
+    public static MirType ofFloat()   { return new MirType(Kind.FLOAT, null, null, false); }
+    public static MirType ofDouble()  { return new MirType(Kind.DOUBLE, null, null, false); }
+    public static MirType ofBoolean() { return new MirType(Kind.BOOLEAN, null, null, false); }
+    public static MirType ofChar()    { return new MirType(Kind.CHAR, null, null, false); }
+    public static MirType ofVoid()    { return new MirType(Kind.VOID, null, null, false); }
 
     public static MirType ofObject(String className) {
-        return new MirType(Kind.OBJECT, className, null);
+        return new MirType(Kind.OBJECT, className, null, false);
+    }
+
+    public static MirType ofObject(String className, boolean nullable) {
+        return new MirType(Kind.OBJECT, className, null, nullable);
     }
 
     public static MirType ofArray(MirType elementType) {
-        return new MirType(Kind.ARRAY, null, elementType);
+        return new MirType(Kind.ARRAY, null, elementType, false);
     }
 
     public Kind getKind() { return kind; }
     public String getClassName() { return className; }
     public MirType getElementType() { return elementType; }
+    public boolean isNullable() { return nullable; }
 
     public boolean isPrimitive() {
         switch (kind) {
