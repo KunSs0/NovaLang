@@ -16,6 +16,8 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * 多入口引用同一模块时的冷编译回归测试。
@@ -36,6 +38,76 @@ class WorkspaceSharedModuleCompilationTest {
     @AfterEach
     void clearScheduler() {
         Interpreter.resetGlobalSchedulerState();
+    }
+
+    @Test
+    @DisplayName("共享模块导出的 Nova 构造器属性 getter 必须在编译期被拒绝")
+    void shouldRejectMissingExportedNovaPropertyGetter() throws Exception {
+        WorkspaceTestSupport.write(tempDirectory, "lib/frame.nova",
+                "class Frame(val x: Double, val y: Double, val z: Double) { }\n"
+                        + "fun createFrame(): Frame { return Frame(1.0, 2.0, 3.0) }\n");
+        WorkspaceTestSupport.write(tempDirectory, "lib/consumer.nova",
+                "import \"@/lib/frame\"\n"
+                        + "fun frameTotal(frame: Frame): Double {\n"
+                        + "    return frame.getX() + frame.getY() + frame.getZ()\n"
+                        + "}\n");
+        WorkspaceTestSupport.write(tempDirectory, "entry-a.nova",
+                "import \"@/lib/frame\"\n"
+                        + "fun execute(): Double { return createFrame().x }\n");
+        WorkspaceTestSupport.write(tempDirectory, "entry-b.nova",
+                "import \"@/lib/consumer\"\n"
+                        + "fun execute(): Double { return frameTotal(createFrame()) }\n");
+        Path configFile = WorkspaceTestSupport.writeConfig(
+                tempDirectory, "caller",
+                "  - \"entry-a.nova\"\n"
+                        + "  - \"entry-b.nova\"\n");
+        RuntimeWorkspace workspace = new RuntimeWorkspace(configFile, nova -> { });
+
+        try {
+            WorkspaceException exception = assertThrows(WorkspaceException.class, workspace::load);
+            String message = describeFailure(exception);
+            assertTrue(message.contains("No matching Java method overload found for 'getX'"));
+            assertTrue(message.contains("No matching Java method overload found for 'getY'"));
+            assertTrue(message.contains("No matching Java method overload found for 'getZ'"));
+        } finally {
+            workspace.dispose();
+        }
+    }
+
+    @Test
+    @DisplayName("共享模块导出的 Nova 构造器属性可以通过属性语法读取")
+    void shouldReadExportedNovaPropertyThroughPropertySyntax() throws Exception {
+        WorkspaceTestSupport.write(tempDirectory, "lib/frame.nova",
+                "class Frame(val x: Double, val y: Double, val z: Double) { }\n"
+                        + "fun createFrame(): Frame { return Frame(1.0, 2.0, 3.0) }\n");
+        WorkspaceTestSupport.write(tempDirectory, "lib/consumer.nova",
+                "import \"@/lib/frame\"\n"
+                        + "fun frameTotal(frame: Frame): Double {\n"
+                        + "    return frame.x + frame.y + frame.z\n"
+                        + "}\n");
+        WorkspaceTestSupport.write(tempDirectory, "entry-a.nova",
+                "import \"@/lib/frame\"\n"
+                        + "fun execute(): Double { return createFrame().x }\n");
+        WorkspaceTestSupport.write(tempDirectory, "entry-b.nova",
+                "import \"@/lib/consumer\"\n"
+                        + "fun execute(): Double { return frameTotal(createFrame()) }\n");
+        Path configFile = WorkspaceTestSupport.writeConfig(
+                tempDirectory, "caller",
+                "  - \"entry-a.nova\"\n"
+                        + "  - \"entry-b.nova\"\n");
+        RuntimeWorkspace workspace = new RuntimeWorkspace(configFile, nova -> { });
+
+        try {
+            workspace.load();
+            assertEquals(1.0D, ((Number) workspace.invoke(
+                    "entry-a.nova", "execute",
+                    Collections.<String, Object>emptyMap(), null)).doubleValue());
+            assertEquals(6.0D, ((Number) workspace.invoke(
+                    "entry-b.nova", "execute",
+                    Collections.<String, Object>emptyMap(), null)).doubleValue());
+        } finally {
+            workspace.dispose();
+        }
     }
 
     @Test
@@ -190,5 +262,19 @@ class WorkspaceSharedModuleCompilationTest {
             count++;
             offset = found + expected.length();
         }
+    }
+
+    private String describeFailure(Throwable failure) {
+        StringBuilder description = new StringBuilder();
+        Throwable current = failure;
+        while (current != null) {
+            if (description.length() > 0) {
+                description.append(" -> ");
+            }
+            description.append(current.getClass().getName())
+                    .append(": ").append(current.getMessage());
+            current = current.getCause();
+        }
+        return description.toString();
     }
 }

@@ -3466,6 +3466,17 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
                         "Java 对象上不存在成员 '" + memberCallee.getMember() + "'",
                         node);
             } else {
+                NovaType declaredReceiverType = resolveMemberReceiverType(memberCallee);
+                if (isMissingNovaPropertyAccessorCall(
+                        declaredReceiverType, memberCallee.getMember(), actualCallArgumentCount(node))) {
+                    String propertyName = novaPropertyNameFromAccessor(memberCallee.getMember());
+                    checker.addDiagnostic(SemanticDiagnostic.Severity.ERROR,
+                            "Nova 类型 '" + declaredReceiverType.toDisplayString() + "' 的属性 '"
+                                    + propertyName + "' 应使用属性语法；未声明方法 '"
+                                    + memberCallee.getMember() + "'",
+                            node);
+                    return null;
+                }
                 NovaType specialType = inferSpecialMemberCallType(memberCallee, node);
                 if (specialType != null) {
                     setNovaType(node, specialType);
@@ -3497,6 +3508,72 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
             }
         }
         return null;
+    }
+
+    private NovaType resolveMemberReceiverType(MemberExpr memberExpr) {
+        if (memberExpr == null) {
+            return null;
+        }
+        NovaType expressionType = getNovaType(memberExpr.getTarget());
+        if (memberExpr.getTarget() instanceof Identifier) {
+            String targetName = ((Identifier) memberExpr.getTarget()).getName();
+            Symbol targetSymbol = currentScope.resolve(targetName);
+            NovaType symbolType = resolvedSymbolType(targetSymbol);
+            if (symbolType != null) {
+                return symbolType;
+            }
+        }
+        return expressionType;
+    }
+
+    private boolean isMissingNovaPropertyAccessorCall(NovaType receiverType,
+                                                       String memberName,
+                                                       int argumentCount) {
+        if (!(receiverType instanceof ClassNovaType)
+                || receiverType instanceof JavaClassNovaType
+                || NovaTypes.isDynamicType(receiverType)) {
+            return false;
+        }
+        Symbol receiverSymbol = resolveTypeSymbol(receiverType.getTypeName());
+        if (receiverSymbol == null || receiverSymbol.getMembers() == null) {
+            return false;
+        }
+        Symbol declaredMethod = receiverSymbol.getMembers().get(memberName);
+        if (declaredMethod != null && declaredMethod.getKind() == SymbolKind.FUNCTION) {
+            return false;
+        }
+        String propertyName = novaPropertyNameFromAccessor(memberName);
+        if (propertyName == null) {
+            return false;
+        }
+        boolean getter = memberName.startsWith("get") || memberName.startsWith("is");
+        if ((getter && argumentCount != 0) || (!getter && argumentCount != 1)) {
+            return false;
+        }
+        Symbol property = receiverSymbol.getMembers().get(propertyName);
+        return property != null
+                && (property.getKind() == SymbolKind.PROPERTY
+                || property.getKind() == SymbolKind.VARIABLE);
+    }
+
+    private String novaPropertyNameFromAccessor(String memberName) {
+        if (memberName == null) {
+            return null;
+        }
+        int prefixLength;
+        if (memberName.startsWith("get") || memberName.startsWith("set")) {
+            prefixLength = 3;
+        } else if (memberName.startsWith("is")) {
+            prefixLength = 2;
+        } else {
+            return null;
+        }
+        if (memberName.length() <= prefixLength
+                || !Character.isUpperCase(memberName.charAt(prefixLength))) {
+            return null;
+        }
+        String suffix = memberName.substring(prefixLength);
+        return Character.toLowerCase(suffix.charAt(0)) + suffix.substring(1);
     }
 
     @Override
