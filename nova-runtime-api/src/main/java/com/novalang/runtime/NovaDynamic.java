@@ -1769,12 +1769,21 @@ public final class NovaDynamic {
         });
     }
 
-    /** 获取按字段名索引的字段映射（每个类只调用一次 getFields()） */
+    /** 按 Class.getField 的字段遮蔽规则缓存公开字段，不依赖 getFields 的枚举顺序。 */
     private static Map<String, Field> getFieldIndex(Class<?> clazz) {
         return fieldIndexCache.computeIfAbsent(clazz, c -> {
             Map<String, Field> index = new HashMap<>();
             for (Field f : c.getFields()) {
-                index.put(f.getName(), f);
+                String name = f.getName();
+                if (!index.containsKey(name)) {
+                    try {
+                        // getFields 同时列出子类和父类的同名字段；直接 put 会覆盖子类声明。
+                        // getField 还负责接口与父类之间的查找优先级，统一沿用 Java 规则。
+                        index.put(name, c.getField(name));
+                    } catch (NoSuchFieldException e) {
+                        throw new IllegalStateException("Public field disappeared: " + c.getName() + "." + name, e);
+                    }
+                }
             }
             return index;
         });

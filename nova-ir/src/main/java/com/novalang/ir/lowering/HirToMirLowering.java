@@ -4511,9 +4511,24 @@ public class HirToMirLowering {
 
     private java.lang.reflect.Method findJavaStaticMethod(Class<?> cls, String name, Class<?>[] argTypes) {
         List<java.lang.reflect.Method> candidates = new ArrayList<>();
+        int applicableArityCount = 0;
         for (java.lang.reflect.Method m : cls.getMethods()) {
-            if (m.getName().equals(name)) {
-                candidates.add(m);
+            if (!m.getName().equals(name) || !java.lang.reflect.Modifier.isStatic(m.getModifiers())) {
+                continue;
+            }
+            candidates.add(m);
+            if (m.isVarArgs() ? argTypes.length >= m.getParameterCount() - 1
+                    : argTypes.length == m.getParameterCount()) {
+                applicableArityCount++;
+            }
+        }
+        // Object 表示实参的编译期类型未知，不是运行时一定为 Object。
+        // 多个重载仍可能匹配时，使用现有静态分派按真实值选择，不能硬编码 String 等签名。
+        if (applicableArityCount > 1) {
+            for (Class<?> argType : argTypes) {
+                if (argType == Object.class) {
+                    return null;
+                }
             }
         }
         return JavaOverloadResolver.selectBestMethod(candidates, true, argTypes);
@@ -4903,6 +4918,11 @@ public class HirToMirLowering {
             java.lang.reflect.Method javaMethod = ownerClass != null
                     ? findJavaInstanceMethod(ownerClass, methodName, args, builder) : null;
             if (javaMethod != null) {
+                if (javaMethod.isVarArgs() && !hasExplicitVarargsArray(javaMethod, args, builder)) {
+                    // 展开的可变参数使用现有 MethodHandle collector 分派；不能把单个元素
+                    // 直接 CHECKCAST 成 JVM 签名末尾的数组。已匹配的显式数组仍直接调用。
+                    return emitDynamicInvoke(target, methodName, args, builder, loc);
+                }
                 desc = buildJavaMethodDesc(javaMethod);
                 returnType = javaReturnTypeToMir(javaMethod.getReturnType());
                 boolean isInterface = ownerClass.isInterface();
@@ -5803,6 +5823,18 @@ public class HirToMirLowering {
         return sourceArgs.size() == 1 && sourceArgs.get(0) instanceof HirLambda;
     }
 
+    /** 显式传入兼容数组时保留 JVM 固定参数调用，不能由 collector 再包装一层。 */
+    private boolean hasExplicitVarargsArray(java.lang.reflect.Method method, int[] args, MirBuilder builder) {
+        Class<?>[] parameterTypes = method.getParameterTypes();
+        if (args.length != parameterTypes.length) {
+            return false;
+        }
+        Class<?>[] argumentTypes = inferJavaArgTypes(args, builder);
+        Class<?> lastArgumentType = argumentTypes[argumentTypes.length - 1];
+        return lastArgumentType != null && lastArgumentType.isArray()
+                && parameterTypes[parameterTypes.length - 1].isAssignableFrom(lastArgumentType);
+    }
+
     /**
      * 按 MIR 实参类型解析 Java 实例方法。参数仍为 Object 时，如果同名同参数数量存在
      * 多个候选，就必须留给运行时用真实值选择，不能按反射枚举顺序硬编码描述符。
@@ -6366,6 +6398,9 @@ public class HirToMirLowering {
             case "Z": return MirType.ofBoolean();
             case "V": return MirType.ofVoid();
             default:
+                if (desc.startsWith("[")) {
+                    return MirType.ofObject(desc);
+                }
                 if (desc.startsWith("L") && desc.endsWith(";")) {
                     return MirType.ofObject(desc.substring(1, desc.length() - 1));
                 }
