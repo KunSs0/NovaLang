@@ -2583,6 +2583,15 @@ public class HirToMirLowering {
                 }
                 return builder.emitConstClass(javaInternalName, loc);
             }
+            // object 名称作为值使用时读取单例，不能落入普通变量的 Bindings 查询。
+            // 局部变量、参数和接收者字段仍优先，避免单例名称抢占同名值。
+            String objectInternalName = resolveKnownNovaClassInternalName(identifier.getName());
+            if (objectInternalName != null
+                    && objectNames.contains(objectInternalName)
+                    && !hasVisibleValueBinding(identifier.getName(), builder)) {
+                return builder.emitGetStatic(objectInternalName, "INSTANCE",
+                        "L" + objectInternalName + ";", MirType.ofObject(objectInternalName), loc);
+            }
             return lowerVarRef(identifier, builder);
         }
         if (expr instanceof BinaryExpr) return lowerBinary((BinaryExpr) expr, builder);

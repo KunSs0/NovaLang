@@ -8,7 +8,9 @@ import com.novalang.ir.hir.stmt.*;
 import com.novalang.ir.hir.expr.*;
 
 import java.util.ArrayList;
+import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * HIR 恒等变换基类（copy-on-change）。
@@ -288,13 +290,45 @@ public class HirTransformer implements HirVisitor<HirNode, Void> {
         List<HirFunction> methods = transformDecls(node.getMethods());
         List<HirFunction> constructors = transformDecls(node.getConstructors());
         List<HirEnumEntry> entries = transformDecls(node.getEnumEntries());
+        List<AstNode> initializers = transformInstanceInitializers(node, fields);
         if (fields == node.getFields() && methods == node.getMethods()
                 && constructors == node.getConstructors()
-                && entries == node.getEnumEntries()) return node;
+                && entries == node.getEnumEntries()
+                && initializers == node.getInstanceInitializers()) return node;
         return new HirClass(node.getLocation(), node.getName(), node.getModifiers(),
                 node.getAnnotations(), node.getClassKind(), node.getTypeParams(),
                 fields, methods, constructors, node.getSuperClass(),
-                node.getInterfaces(), entries, node.getSuperConstructorArgs());
+                node.getInterfaces(), entries, node.getSuperConstructorArgs(), initializers);
+    }
+
+    /** 保留声明顺序；字段复用已经变换的节点，避免同一初始化表达式被重复变换。 */
+    private List<AstNode> transformInstanceInitializers(HirClass node, List<HirField> fields) {
+        List<AstNode> initializers = node.getInstanceInitializers();
+        if (initializers.isEmpty()) {
+            return initializers;
+        }
+        Map<HirField, HirField> transformedFields = new IdentityHashMap<>();
+        for (int i = 0; i < node.getFields().size(); i++) {
+            transformedFields.put(node.getFields().get(i), fields.get(i));
+        }
+        List<AstNode> result = null;
+        for (int i = 0; i < initializers.size(); i++) {
+            AstNode original = initializers.get(i);
+            AstNode transformed;
+            if (original instanceof HirField) {
+                transformed = transformedFields.get(original);
+            } else {
+                transformed = transformBody(original);
+            }
+            if (transformed != original && result == null) {
+                result = new ArrayList<>(initializers.size());
+                result.addAll(initializers.subList(0, i));
+            }
+            if (result != null) {
+                result.add(transformed);
+            }
+        }
+        return result != null ? result : initializers;
     }
 
     @Override
