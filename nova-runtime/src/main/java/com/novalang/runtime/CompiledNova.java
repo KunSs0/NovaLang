@@ -170,10 +170,10 @@ public final class CompiledNova {
                     return result;
                 });
             } catch (NovaRuntimeException e) {
-                throw e;
+                throw attachCallLocation(e);
             } catch (Throwable e) {
                 String msg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
-                throw new NovaRuntimeException("Call to function '" + funcName + "' failed: " + msg, e);
+                throw attachCallLocation(new NovaRuntimeException("Call to function '" + funcName + "' failed: " + msg, e));
             }
         }
         // 字节码模式：初始化脚本上下文（使编译函数能访问注入的全局函数），调用后清理
@@ -192,10 +192,10 @@ public final class CompiledNova {
             }
             return result;
         } catch (NovaRuntimeException e) {
-            throw e;
+            throw attachCallLocation(e);
         } catch (Throwable e) {
             String msg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
-            throw new NovaRuntimeException("Call to function '" + funcName + "' failed: " + msg, e);
+            throw attachCallLocation(new NovaRuntimeException("Call to function '" + funcName + "' failed: " + msg, e));
         } finally {
             NovaScriptContext.clear();
         }
@@ -227,10 +227,10 @@ public final class CompiledNova {
                     return result;
                 });
             } catch (NovaRuntimeException e) {
-                throw e;
+                throw attachCallLocation(e);
             } catch (Throwable e) {
                 String msg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
-                throw new NovaRuntimeException("Call to function '" + funcName + "' failed: " + msg, e);
+                throw attachCallLocation(new NovaRuntimeException("Call to function '" + funcName + "' failed: " + msg, e));
             }
         }
         NovaScriptContext prev = NovaScriptContext.current();
@@ -250,10 +250,10 @@ public final class CompiledNova {
             }
             return result;
         } catch (NovaRuntimeException e) {
-            throw e;
+            throw attachCallLocation(e);
         } catch (Throwable e) {
             String msg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
-            throw new NovaRuntimeException("Call to function '" + funcName + "' failed: " + msg, e);
+            throw attachCallLocation(new NovaRuntimeException("Call to function '" + funcName + "' failed: " + msg, e));
         } finally {
             NovaScriptContext.setCurrent(prev);
         }
@@ -310,13 +310,23 @@ public final class CompiledNova {
                 return result;
             });
         } catch (NovaRuntimeException exception) {
-            throw exception;
+            throw attachCallLocation(exception);
         } catch (Throwable exception) {
             String message = exception.getMessage() == null
                     ? exception.getClass().getSimpleName() : exception.getMessage();
-            throw new NovaRuntimeException("Isolated call to function '" + funcName + "' failed: "
-                    + message, exception);
+            throw attachCallLocation(new NovaRuntimeException("Isolated call to function '" + funcName + "' failed: "
+                    + message, exception));
         }
+    }
+
+    /** 从原始异常链提取本程序的脚本帧，避免把宿主插件位置当作脚本位置。 */
+    private NovaRuntimeException attachCallLocation(NovaRuntimeException exception) {
+        if (compiledClasses == null || exception.getLocation() != null
+                || exception.getSourceLineNumber() > 0) {
+            return exception;
+        }
+        exception.attachStackLocation(frame -> compiledClasses.containsKey(frame.getClassName()));
+        return exception;
     }
 
     /** 扫描编译类，查找包含指定函数名的类 */

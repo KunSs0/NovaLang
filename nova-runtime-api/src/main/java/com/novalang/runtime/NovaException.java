@@ -1,5 +1,10 @@
 package com.novalang.runtime;
 
+import java.util.Collections;
+import java.util.IdentityHashMap;
+import java.util.Set;
+import java.util.function.Predicate;
+
 /**
  * NovaLang 基础运行时异常（无源位置信息）。
  *
@@ -80,18 +85,33 @@ public class NovaException extends RuntimeException {
      * 找到第一个有正整数行号的帧——即编译生成的 Nova 字节码类。
      */
     public NovaException attachStackLocation() {
-        if (this.sourceLineNumber > 0) return this;
-        for (StackTraceElement frame : getStackTrace()) {
+        return attachStackLocation(frame -> {
             String cls = frame.getClassName();
-            if (cls.startsWith("com.novalang.runtime.")) continue;
-            if (cls.startsWith("com.novalang.ir.")) continue;
-            if (cls.startsWith("java.") || cls.startsWith("jdk.") || cls.startsWith("sun.")) continue;
-            int line = frame.getLineNumber();
-            if (line > 0) {
-                this.sourceFile = frame.getFileName();
-                this.sourceLineNumber = line;
-                break;
+            return !cls.startsWith("com.novalang.runtime.")
+                    && !cls.startsWith("com.novalang.ir.")
+                    && !cls.startsWith("java.") && !cls.startsWith("jdk.") && !cls.startsWith("sun.");
+        });
+    }
+
+    /**
+     * 从异常链提取脚本位置，优先使用深层原因的第一个有效脚本帧。
+     * 调用方可按本次编译的类限定范围，避免将宿主 Java 行号当作脚本行号。
+     */
+    public NovaException attachStackLocation(Predicate<StackTraceElement> scriptFrameFilter) {
+        if (sourceLineNumber > 0) {
+            return this;
+        }
+        Set<Throwable> visited = Collections.newSetFromMap(new IdentityHashMap<Throwable, Boolean>());
+        Throwable current = this;
+        while (current != null && visited.add(current)) {
+            for (StackTraceElement frame : current.getStackTrace()) {
+                if (frame.getLineNumber() > 0 && scriptFrameFilter.test(frame)) {
+                    sourceFile = frame.getFileName();
+                    sourceLineNumber = frame.getLineNumber();
+                    break;
+                }
             }
+            current = current.getCause();
         }
         return this;
     }
