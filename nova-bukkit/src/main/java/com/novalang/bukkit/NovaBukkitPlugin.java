@@ -2,6 +2,8 @@ package com.novalang.bukkit;
 
 import org.bukkit.plugin.java.JavaPlugin;
 
+import java.io.File;
+
 /**
  * NovaLang 在 Bukkit/Paper 服务端中的独立运行时插件。
  *
@@ -26,6 +28,11 @@ public final class NovaBukkitPlugin extends JavaPlugin {
         instance = this;
         // STARTUP 加载顺序配合业务插件硬依赖，保证 Workspace 启动前调度器已就绪。
         try {
+            File librariesDirectory = new File(getDataFolder(), "libs");
+            if (!librariesDirectory.isDirectory() && !librariesDirectory.mkdirs()) {
+                throw new IllegalStateException("Failed to create NovaLang libraries directory: "
+                        + librariesDirectory.getAbsolutePath());
+            }
             scheduler = BukkitSchedulers.register(this);
             getLogger().info("NovaLang runtime " + getDescription().getVersion() + " loaded.");
         } catch (RuntimeException exception) {
