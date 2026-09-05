@@ -88,7 +88,6 @@ public final class CompiledNova {
             for (java.lang.reflect.Method m : cls.getDeclaredMethods()) {
                 if (java.lang.reflect.Modifier.isPublic(m.getModifiers())
                         && java.lang.reflect.Modifier.isStatic(m.getModifiers())
-                        && !"main".equals(m.getName())
                         && !"<clinit>".equals(m.getName())) {
                     funcClassCache.putIfAbsent(m.getName(), cls);
                 }

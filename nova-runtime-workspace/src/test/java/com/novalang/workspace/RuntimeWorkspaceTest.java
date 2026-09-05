@@ -516,6 +516,32 @@ class RuntimeWorkspaceTest {
     }
 
     @Test
+    @DisplayName("可调用虚拟入口的 main 不在 Workspace 加载阶段执行")
+    void shouldNotInitializeCallableVirtualEntry() throws Exception {
+        WorkspaceTestSupport.write(tempDirectory, "placeholder.nova", "fun placeholder(): Int = 0");
+        Path config = WorkspaceTestSupport.writeConfig(
+                tempDirectory, "caller", "  - \"placeholder\"\n");
+        Path yaml = WorkspaceTestSupport.write(tempDirectory, "skills.yml", "skills: {}");
+        SourceUnit generated = new SourceUnit("@generated/main-action",
+                "var executions = 0\n"
+                        + "fun main(): Int { executions++; return executions }\n"
+                        + "fun executionCount(): Int = executions",
+                yaml, "skills.main.action", 12, 0, null);
+        RuntimeWorkspace workspace = new RuntimeWorkspace(config, nova -> { });
+        workspace.registerVirtualSource(generated, true, false);
+        try {
+            workspace.load();
+
+            assertEquals(0, ((Number) workspace.invoke("@generated/main-action", "executionCount",
+                    Collections.<String, Object>emptyMap(), null)).intValue());
+            assertEquals(1, ((Number) workspace.invoke("@generated/main-action", "main",
+                    Collections.<String, Object>emptyMap(), null)).intValue());
+        } finally {
+            workspace.dispose();
+        }
+    }
+
+    @Test
     @DisplayName("dispose 清除当前配置和 Generation 引用")
     void shouldClearReferencesOnDispose() throws Exception {
         WorkspaceTestSupport.write(tempDirectory, "main.nova", "fun value(): Int = 1");

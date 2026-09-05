@@ -31,6 +31,7 @@ public final class RuntimeWorkspace implements AutoCloseable {
     private final ReentrantLock lifecycleLock = new ReentrantLock(true);
     private final List<SourceUnit> virtualSources = new ArrayList<SourceUnit>();
     private final List<String> virtualEntries = new ArrayList<String>();
+    private final Set<String> nonInitializingVirtualSources = new LinkedHashSet<String>();
     private volatile WorkspaceState state = WorkspaceState.NEW;
     private volatile WorkspaceConfig config;
     private volatile WorkspaceGeneration generation;
@@ -114,6 +115,24 @@ public final class RuntimeWorkspace implements AutoCloseable {
      * @throws WorkspaceException Workspace 已经开始加载时抛出
      */
     public RuntimeWorkspace registerVirtualSource(SourceUnit sourceUnit, boolean entry) {
+        return registerVirtualSource(sourceUnit, entry, true);
+    }
+
+    /**
+     * 在加载前登记虚拟源码，并明确控制其 {@code main()} 是否参与启动初始化。
+     *
+     * <p>业务动作可以作为独立入口编译并在运行时调用 {@code main()}，同时通过
+     * {@code initialize=false} 禁止 Workspace 加载阶段提前执行该函数。</p>
+     *
+     * @param sourceUnit 虚拟源码单元
+     * @param entry 是否将该源码作为独立编译入口
+     * @param initialize 是否在 Workspace 激活阶段执行该源码的 {@code main()}
+     * @return 当前 Workspace
+     * @throws WorkspaceException Workspace 已经开始加载时抛出
+     */
+    public RuntimeWorkspace registerVirtualSource(SourceUnit sourceUnit,
+                                                   boolean entry,
+                                                   boolean initialize) {
         if (sourceUnit == null) {
             throw new IllegalArgumentException("sourceUnit must not be null");
         }
@@ -128,6 +147,9 @@ public final class RuntimeWorkspace implements AutoCloseable {
             virtualSources.add(sourceUnit);
             if (entry) {
                 virtualEntries.add(sourceUnit.getModuleId());
+            }
+            if (!initialize) {
+                nonInitializingVirtualSources.add(sourceUnit.getModuleId());
             }
             return this;
         } finally {
@@ -303,6 +325,7 @@ public final class RuntimeWorkspace implements AutoCloseable {
             // 清除业务生成源码引用，确保旧 Workspace 不再持有 YAML 配置对象。
             virtualSources.clear();
             virtualEntries.clear();
+            nonInitializingVirtualSources.clear();
             state = WorkspaceState.DISPOSED;
             if (failure != null) {
                 throw failure;
@@ -364,7 +387,7 @@ public final class RuntimeWorkspace implements AutoCloseable {
                         bundleBuilder.collectJavaImportDeclarations(graph, group);
                 exportsByGroup.put(group.getId(), exportedSymbols(
                         group, classes, javaImportDeclarations));
-                if (compiled != null) {
+                if (compiled != null && shouldInitialize(group)) {
                     String initializerModuleId = group.getModuleIds().get(
                             group.getModuleIds().size() - 1);
                     initializers.add(new WorkspaceProgram(
@@ -408,6 +431,16 @@ public final class RuntimeWorkspace implements AutoCloseable {
                     entry.getKey(), entry.getValue(), units, root.sourceMap));
         }
         return new WorkspaceCompilationResult(programs, initializers);
+    }
+
+    /** 判断一个编译组是否包含禁止启动初始化的虚拟源码。 */
+    private boolean shouldInitialize(WorkspaceCompilationPlan.Group group) {
+        for (String moduleId : group.getModuleIds()) {
+            if (nonInitializingVirtualSources.contains(moduleId)) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private WorkspaceCompilationExports exportedSymbols(
