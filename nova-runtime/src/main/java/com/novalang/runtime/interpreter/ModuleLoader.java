@@ -9,11 +9,15 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Collection;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -27,6 +31,9 @@ public final class ModuleLoader {
     /** 模块缓存上限，防止无限增长 */
     private static final int MAX_CACHE_SIZE = 256;
 
+    /** 由宿主插件注册、供所有 Workspace 解析的共享逻辑模块。 */
+    private static final Map<String, String> SHARED_VIRTUAL_MODULES = new ConcurrentHashMap<>();
+
     private final Path basePath;
     private final Map<Path, Environment> moduleCache = new HashMap<>();
     private final Map<Path, Long> moduleTimestamps = new HashMap<>();
@@ -36,6 +43,83 @@ public final class ModuleLoader {
 
     public ModuleLoader(Path basePath) {
         this.basePath = basePath;
+    }
+
+    /**
+     * 注册进程级共享逻辑模块。
+     *
+     * <p>共享模块不属于任一 Workspace。相同 ID 只能重复注册完全相同的源码，避免不同
+     * 插件对同一稳定模块标识产生不确定覆盖。</p>
+     */
+    public static void registerSharedModule(String moduleId, String source) {
+        if (moduleId == null || moduleId.trim().isEmpty()) {
+            throw new IllegalArgumentException("moduleId must not be blank");
+        }
+        if (source == null) {
+            throw new IllegalArgumentException("module source must not be null");
+        }
+        String previous = SHARED_VIRTUAL_MODULES.putIfAbsent(moduleId, source);
+        if (previous != null && !previous.equals(source)) {
+            throw new IllegalStateException("Shared module ID is already registered: " + moduleId);
+        }
+    }
+
+    /**
+     * 将 Java 类型注册为进程级共享逻辑模块。
+     *
+     * <p>类型到 Nova {@code import java} 源码的转换由模块系统统一完成，宿主插件只需
+     * 声明稳定模块标识与需要导出的类型。</p>
+     */
+    public static void registerSharedModule(String moduleId, Collection<Class<?>> types) {
+        registerSharedModule(moduleId, types, "");
+    }
+
+    /** 将 Java 类型与自定义 Nova 源码合并注册为进程级共享逻辑模块。 */
+    public static void registerSharedModule(String moduleId,
+                                            Collection<Class<?>> types,
+                                            String source) {
+        registerSharedModule(moduleId, createJavaModuleSource(types, source));
+    }
+
+    /** 注销进程级共享逻辑模块。 */
+    public static boolean unregisterSharedModule(String moduleId) {
+        if (moduleId == null || moduleId.trim().isEmpty()) {
+            return false;
+        }
+        return SHARED_VIRTUAL_MODULES.remove(moduleId) != null;
+    }
+
+    /** 返回当前共享逻辑模块的稳定快照，供一次 Workspace 模块图解析使用。 */
+    public static Map<String, String> sharedModuleSnapshot() {
+        return Collections.unmodifiableMap(new LinkedHashMap<>(SHARED_VIRTUAL_MODULES));
+    }
+
+    private static String createJavaModuleSource(Collection<Class<?>> types, String moduleSource) {
+        if (types == null) {
+            throw new IllegalArgumentException("module types must not be null");
+        }
+        if (moduleSource == null) {
+            throw new IllegalArgumentException("module source must not be null");
+        }
+        Set<String> importedTypes = new HashSet<>();
+        StringBuilder source = new StringBuilder();
+        for (Class<?> type : types) {
+            if (type == null) {
+                throw new IllegalArgumentException("module type must not be null");
+            }
+            String canonicalName = type.getCanonicalName();
+            if (canonicalName == null || canonicalName.trim().isEmpty()) {
+                throw new IllegalArgumentException("module type has no canonical name: " + type);
+            }
+            if (!importedTypes.add(canonicalName)) {
+                throw new IllegalArgumentException("duplicate module type: " + canonicalName);
+            }
+            source.append("import java ");
+            source.append(canonicalName);
+            source.append('\n');
+        }
+        source.append(moduleSource);
+        return source.toString();
     }
 
     /** 清空所有已缓存的模块 */
@@ -49,6 +133,16 @@ public final class ModuleLoader {
             return;
         }
         virtualModules.put(moduleId, source);
+    }
+
+    public void registerVirtualModule(String moduleId, Collection<Class<?>> types) {
+        registerVirtualModule(moduleId, types, "");
+    }
+
+    public void registerVirtualModule(String moduleId,
+                                      Collection<Class<?>> types,
+                                      String source) {
+        registerVirtualModule(moduleId, createJavaModuleSource(types, source));
     }
 
     public void copyVirtualModulesFrom(ModuleLoader other) {

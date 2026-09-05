@@ -520,5 +520,53 @@ class ModuleSystemTest {
             assertNotNull(path);
             assertTrue(path.toString().endsWith("math.nova"));
         }
+
+        @Test
+        @DisplayName("共享模块允许相同源码幂等注册")
+        void testRegisterSameSharedModuleTwice() {
+            String moduleId = "test.shared.same";
+            try {
+                ModuleLoader.registerSharedModule(moduleId, "fun value(): Int { return 1 }");
+                ModuleLoader.registerSharedModule(moduleId, "fun value(): Int { return 1 }");
+
+                assertEquals("fun value(): Int { return 1 }",
+                        ModuleLoader.sharedModuleSnapshot().get(moduleId));
+            } finally {
+                ModuleLoader.unregisterSharedModule(moduleId);
+            }
+        }
+
+        @Test
+        @DisplayName("共享模块拒绝不同源码覆盖同一标识")
+        void testRejectConflictingSharedModuleRegistration() {
+            String moduleId = "test.shared.conflict";
+            try {
+                ModuleLoader.registerSharedModule(moduleId, "fun value(): Int { return 1 }");
+
+                assertThrows(IllegalStateException.class,
+                        () -> ModuleLoader.registerSharedModule(
+                                moduleId, "fun value(): Int { return 2 }"));
+            } finally {
+                ModuleLoader.unregisterSharedModule(moduleId);
+            }
+        }
+
+        @Test
+        @DisplayName("共享 Java 类型模块由 ModuleLoader 统一生成源码")
+        void testRegisterSharedJavaTypeModule() {
+            String moduleId = "test.shared.java-types";
+            try {
+                ModuleLoader.registerSharedModule(moduleId,
+                        java.util.Arrays.<Class<?>>asList(String.class, java.util.Map.Entry.class),
+                        "fun moduleValue(): Int { return 9 }\n");
+
+                assertEquals("import java java.lang.String\n"
+                                + "import java java.util.Map.Entry\n"
+                                + "fun moduleValue(): Int { return 9 }\n",
+                        ModuleLoader.sharedModuleSnapshot().get(moduleId));
+            } finally {
+                ModuleLoader.unregisterSharedModule(moduleId);
+            }
+        }
     }
 }

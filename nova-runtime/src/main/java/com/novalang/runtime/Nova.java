@@ -938,6 +938,22 @@ public final class Nova {
         return this;
     }
 
+    /** 将 Java 类型注册为当前 Nova 实例的字符串 import 模块。 */
+    public Nova registerModule(String moduleId, Collection<Class<?>> types) {
+        return registerModule(moduleId, types, "");
+    }
+
+    /** 将 Java 类型与自定义 Nova 源码注册为当前 Nova 实例的字符串 import 模块。 */
+    public Nova registerModule(String moduleId,
+                               Collection<Class<?>> types,
+                               String source) {
+        if (moduleId == null || moduleId.trim().isEmpty()) {
+            throw new IllegalArgumentException("moduleId must not be blank");
+        }
+        interpreter.registerVirtualModule(moduleId, types, source);
+        return this;
+    }
+
     public Nova clearPreloads() {
         preludeSources.clear();
         evaluatedPreludeCount = 0;

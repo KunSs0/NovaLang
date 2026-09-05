@@ -1,5 +1,7 @@
 package com.novalang.workspace;
 
+import com.novalang.runtime.interpreter.ModuleLoader;
+
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -88,6 +90,7 @@ public final class WorkspaceModuleResolver {
 
         private final WorkspaceConfig config;
         private final Map<String, SourceUnit> virtualSources = new LinkedHashMap<String, SourceUnit>();
+        private final Map<String, SourceUnit> sharedSources = new LinkedHashMap<String, SourceUnit>();
         private final Map<Path, SourceUnit> physicalSources = new HashMap<Path, SourceUnit>();
         private final Map<String, WorkspaceModule> modules = new LinkedHashMap<String, WorkspaceModule>();
         private final List<String> topologicalOrder = new ArrayList<String>();
@@ -104,7 +107,17 @@ public final class WorkspaceModuleResolver {
          */
         ResolutionContext(WorkspaceConfig config, Collection<SourceUnit> virtualSources) {
             this.config = config;
+            Map<String, String> sharedModules = ModuleLoader.sharedModuleSnapshot();
+            for (Map.Entry<String, String> entry : sharedModules.entrySet()) {
+                SourceUnit source = new SourceUnit(
+                        entry.getKey(), entry.getValue(), null, null, 1, 0, null);
+                sharedSources.put(entry.getKey(), source);
+            }
             for (SourceUnit source : virtualSources) {
+                if (sharedSources.containsKey(source.getModuleId())) {
+                    throw new WorkspaceException(
+                            "Shared and Workspace virtual module IDs conflict: " + source.getModuleId());
+                }
                 SourceUnit previous = this.virtualSources.put(source.getModuleId(), source);
                 if (previous != null) {
                     throw new WorkspaceException("Duplicate virtual module ID: " + source.getModuleId());
@@ -229,6 +242,10 @@ public final class WorkspaceModuleResolver {
             SourceUnit virtual = virtualSources.get(specifier);
             if (virtual != null) {
                 return virtual;
+            }
+            SourceUnit shared = sharedSources.get(specifier);
+            if (shared != null) {
+                return shared;
             }
 
             Path candidate;

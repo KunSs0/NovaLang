@@ -8,6 +8,7 @@ import com.novalang.runtime.host.JavaNamespaceDescriptor;
 import com.novalang.runtime.host.JavaParameterDescriptor;
 import com.novalang.runtime.host.JavaSymbolDescriptor;
 import com.novalang.runtime.host.JavaTypes;
+import com.novalang.runtime.interpreter.ModuleLoader;
 import org.bukkit.Color;
 import org.bukkit.CoalType;
 import org.bukkit.CropState;
@@ -125,6 +126,23 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @DisplayName("Nova Bukkit 类型资源")
 @SuppressWarnings("deprecation")
 class NovaBukkitTest {
+
+    @Test
+    @DisplayName("Bukkit 门面注册并注销共享逻辑模块")
+    void shouldManageSharedModuleThroughBukkitFacade() {
+        String moduleId = "test.bukkit.shared";
+        try {
+            NovaBukkit.registerModule(moduleId,
+                    java.util.Collections.<Class<?>>singletonList(String.class));
+
+            assertEquals("import java java.lang.String\n",
+                    ModuleLoader.sharedModuleSnapshot().get(moduleId));
+            assertTrue(NovaBukkit.unregisterModule(moduleId));
+            assertFalse(ModuleLoader.sharedModuleSnapshot().containsKey(moduleId));
+        } finally {
+            NovaBukkit.unregisterModule(moduleId);
+        }
+    }
 
     @Test
     @DisplayName("注册 Fluxon platform-bukkit 对应的核心全局入口")

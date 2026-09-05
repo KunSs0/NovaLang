@@ -1851,6 +1851,20 @@ class NovaTest {
         }
 
         @Test
+        void importCanResolveJavaTypesRegisteredAsModule() {
+            Nova nova = new Nova();
+            nova.registerModule("java.duration",
+                    Collections.<Class<?>>singletonList(java.time.Duration.class));
+
+            CompiledNova compiled = nova.compileToBytecode(
+                    "import \"java.duration\"\n"
+                            + "fun seconds(value: Duration): Long { return value.getSeconds() }",
+                    "user/java-type-module.nova");
+
+            assertEquals(3L, compiled.call("seconds", java.time.Duration.ofSeconds(3)));
+        }
+
+        @Test
         void getPreloadsReturnsRegisteredSources() {
             Nova nova = new Nova();
             nova.preload("val x = 1", "x.nova");

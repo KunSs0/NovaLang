@@ -2,6 +2,7 @@ package com.novalang.workspace;
 
 import com.novalang.runtime.SchedulerHolder;
 import com.novalang.runtime.interpreter.Interpreter;
+import com.novalang.runtime.interpreter.ModuleLoader;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -38,6 +39,7 @@ class WorkspaceSharedModuleCompilationTest {
 
     @AfterEach
     void clearScheduler() {
+        ModuleLoader.unregisterSharedModule("creator.core");
         Interpreter.resetGlobalSchedulerState();
     }
 
@@ -57,6 +59,28 @@ class WorkspaceSharedModuleCompilationTest {
             assertTrue(message.contains("未声明的全局函数: 'regex'"));
             assertTrue(message.contains("modules: ["));
             assertTrue(message.contains("entry.nova"));
+        } finally {
+            workspace.dispose();
+        }
+    }
+
+    @Test
+    @DisplayName("Workspace 应解析 ModuleLoader 注册的共享逻辑模块")
+    void shouldResolveSharedModuleRegisteredByModuleLoader() throws Exception {
+        WorkspaceTestSupport.write(tempDirectory, "entry.nova",
+                "import \"creator.core\"\n"
+                        + "fun execute(): Int { return creatorValue() }\n");
+        Path configFile = WorkspaceTestSupport.writeConfig(
+                tempDirectory, "caller", "  - \"entry.nova\"\n");
+        ModuleLoader.registerSharedModule("creator.core",
+                "fun creatorValue(): Int { return 42 }\n");
+        RuntimeWorkspace workspace = new RuntimeWorkspace(configFile, nova -> { });
+
+        try {
+            workspace.load();
+            assertEquals(42, ((Number) workspace.invoke(
+                    "entry.nova", "execute",
+                    Collections.<String, Object>emptyMap(), null)).intValue());
         } finally {
             workspace.dispose();
         }

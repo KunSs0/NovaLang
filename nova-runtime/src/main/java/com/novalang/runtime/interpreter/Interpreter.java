@@ -327,6 +327,19 @@ public class Interpreter implements ExecutionContext {
         moduleLoader.registerVirtualModule(moduleId, source);
     }
 
+    public void registerVirtualModule(String moduleId, Collection<Class<?>> types) {
+        registerVirtualModule(moduleId, types, "");
+    }
+
+    public void registerVirtualModule(String moduleId,
+                                      Collection<Class<?>> types,
+                                      String source) {
+        if (moduleLoader == null) {
+            moduleLoader = new ModuleLoader(java.nio.file.Paths.get("").toAbsolutePath());
+        }
+        moduleLoader.registerVirtualModule(moduleId, types, source);
+    }
+
     public String expandVirtualImports(String source, String fileName) {
         return moduleLoader != null ? moduleLoader.expandVirtualImports(source, fileName) : source;
     }
