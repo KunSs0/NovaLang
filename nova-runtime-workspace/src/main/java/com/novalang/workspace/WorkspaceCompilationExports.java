@@ -11,6 +11,11 @@ final class WorkspaceCompilationExports {
     private final Set<String> objectNames;
     private final Set<String> staticMemberNames;
     private final Set<String> javaImportDeclarations;
+    private final Set<String> extensionDeclarations = new LinkedHashSet<String>();
+
+    Set<String> getExtensionDeclarations() {
+        return extensionDeclarations;
+    }
 
     WorkspaceCompilationExports(Set<String> typeNames,
                                 Set<String> objectNames,

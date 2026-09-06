@@ -105,6 +105,74 @@ final class WorkspaceBundle {
         return source;
     }
 
+    /** 为跨编译组调用保留脚本扩展签名，并链接到已经编译的静态实现。 */
+    void exportExtensions(String packageName, WorkspaceCompilationExports exports, java.util.Map<String, Class<?>> classes) {
+        Program program = parse(packageName);
+        int index = 0;
+        for (com.novalang.compiler.ast.decl.Declaration declaration : program.getDeclarations()) {
+            if (declaration instanceof com.novalang.compiler.ast.decl.PropertyDecl) {
+                com.novalang.compiler.ast.decl.PropertyDecl property =
+                        (com.novalang.compiler.ast.decl.PropertyDecl) declaration;
+                if (!property.isExtensionProperty()
+                        || property.getModifiers().contains(com.novalang.compiler.ast.Modifier.PRIVATE)) {
+                    continue;
+                }
+                Class<?> module = classes.get(packageName + ".$Module");
+                if (module == null) {
+                    continue;
+                }
+                for (java.lang.reflect.Method method : module.getDeclaredMethods()) {
+                    if (!method.getName().startsWith("__extprop__")
+                            || !method.getName().endsWith("__" + property.getName())) {
+                        continue;
+                    }
+                    if (property.getReceiverType() instanceof com.novalang.compiler.ast.type.SimpleType) {
+                        String receiver = ((com.novalang.compiler.ast.type.SimpleType) property.getReceiverType()).getName().getSimpleName();
+                        if (!method.getParameterTypes()[0].getSimpleName().equals(receiver)) {
+                            continue;
+                        }
+                    }
+                    int signatureEnd = property.getGetter() != null
+                            ? property.getGetter().getLocation().getOffset()
+                            : property.getInitializer().getLocation().getOffset();
+                    String header = source.substring(property.getLocation().getOffset(), signatureEnd).trim();
+                    if (header.endsWith("=")) {
+                        header = header.substring(0, header.length() - 1).trim();
+                    }
+                    String alias = "__workspace_property_" + packageName.replace('.', '_') + "_" + index++;
+                    String link = "import static " + packageName + ".$Module." + method.getName() + " as " + alias
+                            + "\n" + header + " get() = " + alias + "(this)";
+                    exports.getExtensionDeclarations().add(link);
+                }
+                continue;
+            }
+            if (!(declaration instanceof com.novalang.compiler.ast.decl.FunDecl)) {
+                continue;
+            }
+            com.novalang.compiler.ast.decl.FunDecl function =
+                    (com.novalang.compiler.ast.decl.FunDecl) declaration;
+            if (!function.isExtensionFunction() || function.getBody() == null
+                    || function.getModifiers().contains(com.novalang.compiler.ast.Modifier.PRIVATE)) {
+                continue;
+            }
+            String header = source.substring(function.getLocation().getOffset(),
+                    function.getBody().getLocation().getOffset()).trim();
+            if (header.endsWith("=")) {
+                header = header.substring(0, header.length() - 1).trim();
+            }
+            String alias = "__workspace_extension_" + packageName.replace('.', '_') + "_" + index++;
+            StringBuilder link = new StringBuilder("import static ");
+            link.append(packageName).append(".$Module.").append(function.getName())
+                    .append(" as ").append(alias).append('\n');
+            link.append(header).append(" { return ").append(alias).append("(this");
+            for (com.novalang.compiler.ast.decl.Parameter parameter : function.getParams()) {
+                link.append(", ").append(parameter.getName());
+            }
+            link.append(") }");
+            exports.getExtensionDeclarations().add(link.toString());
+        }
+    }
+
     /** @return 逐行 Source Map */
     WorkspaceSourceMap getSourceMap() {
         return sourceMap;

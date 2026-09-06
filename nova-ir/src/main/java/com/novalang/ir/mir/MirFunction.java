@@ -119,6 +119,9 @@ public class MirFunction {
     public boolean isMemoized() { return memoized; }
     public void setMemoized(boolean memoized) { this.memoized = memoized; }
     public boolean isVararg() { return vararg; }
+    private boolean defaultArgumentBridge;
+    public boolean isDefaultArgumentBridge() { return defaultArgumentBridge; }
+    public void setDefaultArgumentBridge(boolean value) { defaultArgumentBridge = value; }
     public void setVararg(boolean vararg) { this.vararg = vararg; }
     /** @memoized 缓存上限 */
     private static final int MEMO_MAX_SIZE = 4096;

@@ -29,6 +29,133 @@ class WorkspaceSharedModuleCompilationTest {
 
     private static final int ACTION_COUNT = 20;
 
+    @Test
+    void shouldKeepSameNamedExtensionPropertiesOnDifferentReceiversSeparate() throws Exception {
+        WorkspaceTestSupport.write(tempDirectory, "labels.nova",
+                "import java java.io.File\nimport java java.lang.StringBuilder\n"
+                        + "val File.label: String get() = this.getPath()\n"
+                        + "val StringBuilder.label: String get() = this.toString()\n"
+                        + "fun source(file: Boolean): Any { if (file) { return File(\"file\") }; return StringBuilder(\"builder\") }\n");
+        for (String name : new String[] {"entry", "other"}) {
+            WorkspaceTestSupport.write(tempDirectory, name + ".nova",
+                    "import \"@/labels\"\nfun execute(): String { return source(true).label + source(false).label }\n");
+        }
+        Path configFile = WorkspaceTestSupport.writeConfig(tempDirectory, "caller",
+                "  - \"entry.nova\"\n  - \"other.nova\"\n");
+        RuntimeWorkspace workspace = new RuntimeWorkspace(configFile, nova -> { });
+        try {
+            workspace.load();
+            assertEquals("filebuilder", workspace.invoke("entry.nova", "execute", Collections.<String, Object>emptyMap(), null));
+            assertEquals("filebuilder", workspace.invoke("other.nova", "execute", Collections.<String, Object>emptyMap(), null));
+        } finally {
+            workspace.dispose();
+        }
+    }
+
+    @Test
+    void shouldRejectInvalidExtensionPropertyGetterType() throws Exception {
+        WorkspaceTestSupport.write(tempDirectory, "entry.nova",
+                "import java java.io.File\nval File.tools: Int get() = \"wrong\"\nfun execute() { }\n");
+        Path configFile = WorkspaceTestSupport.writeConfig(tempDirectory, "caller", "  - \"entry.nova\"\n");
+        RuntimeWorkspace workspace = new RuntimeWorkspace(configFile, nova -> { });
+        try {
+            assertThrows(WorkspaceException.class, workspace::load);
+        } finally {
+            workspace.dispose();
+        }
+    }
+
+    @Test
+    void shouldLinkChainedExtensionPropertiesAcrossCompilationGroups() throws Exception {
+        WorkspaceTestSupport.write(tempDirectory, "tools.nova",
+                "import java java.io.File\n"
+                        + "class Tools(val context: File) { }\n"
+                        + "val File.tools: Tools get() = Tools(this)\n"
+                        + "fun ctx(): File { return File(\"fixture\") }\n");
+        WorkspaceTestSupport.write(tempDirectory, "mob.nova",
+                "import \"@/tools\"\n"
+                        + "class Mobs(val tools: Tools) { fun spawn(level: Int = 1): String { return tools.context.getPath() + level } }\n"
+                        + "val Tools.mob: Mobs get() = Mobs(this)\n");
+        WorkspaceTestSupport.write(tempDirectory, "entry.nova",
+                "import \"@/mob\"\nfun execute(): String { return ctx().tools.mob.spawn() }\n");
+        WorkspaceTestSupport.write(tempDirectory, "other.nova",
+                "import \"@/mob\"\nfun execute(): String { return ctx().tools.mob.spawn() }\n");
+        Path configFile = WorkspaceTestSupport.writeConfig(tempDirectory, "caller",
+                "  - \"entry.nova\"\n  - \"other.nova\"\n");
+        RuntimeWorkspace workspace = new RuntimeWorkspace(configFile, nova -> { });
+        try {
+            workspace.load();
+            assertEquals("fixture1", workspace.invoke("entry.nova", "execute", Collections.<String, Object>emptyMap(), null));
+            assertEquals("fixture1", workspace.invoke("other.nova", "execute", Collections.<String, Object>emptyMap(), null));
+        } finally {
+            workspace.dispose();
+        }
+    }
+
+    @Test
+    void shouldCaptureLocalWithSameNameAsContextFunction() throws Exception {
+        WorkspaceTestSupport.write(tempDirectory, "entry.nova",
+                "fun ctx(): String { return \"global\" }\n"
+                        + "fun capture(ctx: String): String { val read = { ctx }; return read() }\n"
+                        + "fun execute(): String { return capture(\"local\") }\n");
+        Path configFile = WorkspaceTestSupport.writeConfig(tempDirectory, "caller", "  - \"entry.nova\"\n");
+        RuntimeWorkspace workspace = new RuntimeWorkspace(configFile, nova -> { });
+        try {
+            workspace.load();
+            assertEquals("local", workspace.invoke("entry.nova", "execute",
+                    Collections.<String, Object>emptyMap(), null));
+        } finally {
+            workspace.dispose();
+        }
+    }
+
+    @Test
+    void shouldCallScriptExtensionOnImportedJavaReceiverAcrossModules() throws Exception {
+        WorkspaceTestSupport.write(tempDirectory, "lib/context.nova",
+                "import java java.io.File\n"
+                        + "import java java.lang.StringBuilder\n"
+                        + "fun ctx(): File { return File(\"fixture\") }\n"
+                        + "fun File.getManager(): StringBuilder { return StringBuilder(this.getPath()) }\n");
+        WorkspaceTestSupport.write(tempDirectory, "entry.nova",
+                "import \"@/lib/context\"\n"
+                        + "fun execute(): String { return ctx().getManager().toString() }\n");
+        WorkspaceTestSupport.write(tempDirectory, "other.nova",
+                "import \"@/lib/context\"\nfun execute(): String { return ctx().getManager().toString() }\n");
+        Path configFile = WorkspaceTestSupport.writeConfig(tempDirectory, "caller", "  - \"entry.nova\"\n  - \"other.nova\"\n");
+        RuntimeWorkspace workspace = new RuntimeWorkspace(configFile, nova -> { });
+        try {
+            workspace.load();
+            assertEquals("fixture", workspace.invoke("entry.nova", "execute",
+                    Collections.<String, Object>emptyMap(), null));
+            assertEquals("fixture", workspace.invoke("other.nova", "execute",
+                    Collections.<String, Object>emptyMap(), null));
+        } finally {
+            workspace.dispose();
+        }
+    }
+
+    @Test
+    void shouldRejectInvalidJavaReceiverScriptExtensionCalls() throws Exception {
+        for (String expression : new String[] {
+                "File(\"fixture\").getManager(1)",
+                "StringBuilder().getManager()",
+                "File(\"fixture\").missingManager()"
+        }) {
+            WorkspaceTestSupport.write(tempDirectory, "entry.nova",
+                    "import java java.io.File\n"
+                            + "import java java.lang.StringBuilder\n"
+                            + "fun File.getManager(): String { return this.getPath() }\n"
+                            + "fun execute() { " + expression + " }\n");
+            Path configFile = WorkspaceTestSupport.writeConfig(tempDirectory, "caller", "  - \"entry.nova\"\n");
+            RuntimeWorkspace workspace = new RuntimeWorkspace(configFile, nova -> { });
+            try {
+                assertThrows(WorkspaceException.class, workspace::load, expression);
+            } finally {
+                workspace.dispose();
+            }
+        }
+    }
+
     @TempDir
     Path tempDirectory;
 

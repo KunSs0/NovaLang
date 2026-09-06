@@ -213,6 +213,9 @@ final class MirClassRegistrar {
         }
         for (MirFunction method : cls.getMethods()) {
             String methodName = method.getName();
+            if (method.isDefaultArgumentBridge()) {
+                continue;
+            }
             if (SPECIAL_INIT.equals(methodName)) {
                 // 已在上面处理
             } else if (!SPECIAL_CLINIT.equals(methodName)) {

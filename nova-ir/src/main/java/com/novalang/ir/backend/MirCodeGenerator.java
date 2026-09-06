@@ -282,6 +282,7 @@ public class MirCodeGenerator {
     private void generateMethod(ClassWriter cw, MirFunction func, String ownerClass,
                                 boolean isStatic, String superClass, ClassKind classKind) {
         int access = ACC_PUBLIC;
+        if (func.isDefaultArgumentBridge()) access |= ACC_SYNTHETIC;
         if (isStatic) access |= ACC_STATIC;
         if (func.getName().equals("<init>")) {
             access = ACC_PUBLIC; // 构造器不能是 static

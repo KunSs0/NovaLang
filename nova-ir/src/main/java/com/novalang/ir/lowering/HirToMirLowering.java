@@ -147,6 +147,7 @@ public class HirToMirLowering {
 
     // 扩展属性信息（由 MirInterpreter 注册到解释器）
     private final List<MirModule.ExtensionPropertyInfo> extensionPropertyInfos = new ArrayList<>();
+    private final Map<String, HirField> scriptExtensionProperties = new LinkedHashMap<>();
     private final List<MirModule.ExtensionFunctionInfo> extensionFunctionInfos = new ArrayList<>();
 
     // 内置模块函数：函数名 → "jvmOwner|jvmMethodName|jvmDescriptor"
@@ -583,6 +584,15 @@ public class HirToMirLowering {
         List<MirClass> classes = new ArrayList<>();
         List<MirFunction> topLevel = new ArrayList<>();
 
+        for (HirDecl declaration : hirModule.getDeclarations()) {
+            if (declaration instanceof HirField) {
+                HirField field = (HirField) declaration;
+                if (field.isExtensionProperty()) {
+                    scriptExtensionProperties.put(typeToInternalName(field.getReceiverType()) + ":" + field.getName(), field);
+                }
+            }
+        }
+
         for (HirDecl decl : hirModule.getDeclarations()) {
             if (decl instanceof HirClass) {
                 currentEnclosingClassName = localClassInternalName(decl.getName());
@@ -612,11 +622,11 @@ public class HirToMirLowering {
             } else if (decl instanceof HirField) {
                 currentEnclosingClassName = moduleClassName;
                 HirField hf = (HirField) decl;
-                if (hf.isExtensionProperty() && hf.getInitializer() != null) {
+                if (hf.isExtensionProperty() && (hf.getInitializer() != null || hf.hasCustomGetter())) {
                     // 扩展属性 → 生成 getter 函数并记录元数据
                     String receiverTypeName = typeToInternalName(hf.getReceiverType());
-                    String getterName = "$extProp$" + receiverTypeName.replace("/", "$")
-                            + "$" + hf.getName();
+                    String getterName = "__extprop__" + receiverTypeName.replace("/", "_").replace("$", "_")
+                            + "__" + hf.getName();
                     MirFunction getter = lowerExtensionPropertyGetter(hf, receiverTypeName, getterName);
                     topLevel.add(getter);
                     extensionPropertyInfos.add(new MirModule.ExtensionPropertyInfo(
@@ -781,6 +791,9 @@ public class HirToMirLowering {
                     }
                 }
                 methods.add(func);
+                if (!isStatic && !m.getName().startsWith("<") && m.getBody() != null) {
+                    addDefaultArgumentBridges(m, func, className, methods);
+                }
             }
         }
         // 两遍构造器处理：第一遍正常 lower，第二遍尝试内联次级构造器委托链
@@ -949,6 +962,52 @@ public class HirToMirLowering {
         return clinit;
     }
 
+    /** 为跨 Workspace 编译组调用导出省略尾部默认参数的方法入口。 */
+    private void addDefaultArgumentBridges(HirFunction source, MirFunction implementation, String owner, List<MirFunction> methods) {
+        List<HirParam> parameters = source.getParams();
+        String fullDescriptor = implementation.getOverrideDescriptor();
+        if (fullDescriptor == null) {
+            fullDescriptor = buildHirMethodDescriptor(source);
+        }
+        MirType resultType = descriptorToMirType(fullDescriptor.substring(fullDescriptor.indexOf(')') + 1));
+        for (int count = parameters.size() - 1; count >= 0; count--) {
+            if (!parameters.get(count).hasDefaultValue() || parameters.get(count).isVararg()) {
+                break;
+            }
+            List<MirParam> retained = new ArrayList<>();
+            List<MirType> parameterTypes = new ArrayList<>();
+            for (int i = 0; i < count; i++) {
+                MirType type = hirTypeToMir(parameters.get(i).getType());
+                retained.add(new MirParam(parameters.get(i).getName(), type));
+                parameterTypes.add(type);
+            }
+            MirFunction bridge = new MirFunction(source.getName(), resultType, retained, source.getModifiers());
+            bridge.setDefaultArgumentBridge(true);
+            bridge.setOverrideDescriptor(MethodDescriptor.of(parameterTypes, resultType).toJvmDescriptorIntOnly());
+            MirBuilder builder = new MirBuilder(bridge);
+            int receiver = builder.newLocal("this", MirType.ofObject(owner));
+            int[] arguments = new int[parameters.size()];
+            for (int i = 0; i < parameters.size(); i++) {
+                HirParam parameter = parameters.get(i);
+                if (i < count) {
+                    arguments[i] = builder.newLocal(parameter.getName(), hirTypeToMir(parameter.getType()));
+                } else {
+                    int value = lowerExpr(parameter.getDefaultValue(), builder);
+                    arguments[i] = builder.newLocal(parameter.getName(), hirTypeToMir(parameter.getType()));
+                    builder.emitMoveTo(value, arguments[i], source.getLocation());
+                }
+            }
+            int result = builder.emitInvokeVirtualDesc(receiver, source.getName(), arguments, owner,
+                    fullDescriptor, resultType, source.getLocation());
+            if (resultType.getKind() == MirType.Kind.VOID) {
+                builder.emitReturnVoid(source.getLocation());
+            } else {
+                builder.emitReturn(result, source.getLocation());
+            }
+            methods.add(bridge);
+        }
+    }
+
     /** 生成枚举 name() 方法：返回 this.$name */
     /**
      * 扩展属性 getter：静态函数，$this 为接收者，返回初始化表达式的值。
@@ -958,7 +1017,8 @@ public class HirToMirLowering {
         List<MirParam> params = Collections.singletonList(
                 new MirParam("$this", MirType.ofObject(receiverType)));
         MirFunction func = new MirFunction(funcName,
-                MirType.ofObject("java/lang/Object"), params, EnumSet.of(Modifier.STATIC));
+                hirTypeToMir(field.getType()), params, EnumSet.of(Modifier.PUBLIC, Modifier.STATIC));
+        func.setOverrideDescriptor("(L" + receiverType + ";)" + hirTypeToMir(field.getType()).getDescriptor());
         MirBuilder builder = new MirBuilder(func);
         // local 0 = $this (接收者)
         builder.newLocal("$this", MirType.ofObject(receiverType));
@@ -967,8 +1027,11 @@ public class HirToMirLowering {
         // 但标准的 lowerVarRef 查找 "this" 不会匹配 "$this"，所以需要额外添加 "this" 别名
         builder.newLocal("this", MirType.ofObject(receiverType));
         builder.emitMoveTo(0, 1, field.getLocation()); // this = $this
-        int result = lowerExpr(field.getInitializer(), builder);
-        builder.emitReturn(result, field.getLocation());
+        int result = field.hasCustomGetter()
+                ? lowerNode(field.getGetterBody(), builder) : lowerExpr(field.getInitializer(), builder);
+        if (!builder.getCurrentBlock().hasTerminator()) {
+            builder.emitReturn(result, field.getLocation());
+        }
         return func;
     }
 
@@ -2792,10 +2855,6 @@ public class HirToMirLowering {
         for (String name : refNames) {
             if (paramNames.contains(name)) continue;
             if ("this".equals(name)) continue;
-            if (topLevelFunctionNames.contains(name)) continue;
-            if (topLevelFieldNames.containsKey(name)) continue; // 顶层变量通过 GETSTATIC 访问，无需捕获
-            if (staticImports.containsKey(name)) continue; // 静态导入字段由导入 owner 读取，无需捕获
-            if (resolveKnownNovaClassInternalName(name) != null) continue;
             // 检查是否存在于外部作用域的局部变量
             boolean existsOuter = false;
             for (MirLocal local : builder.getFunction().getLocals()) {
@@ -2814,6 +2873,13 @@ public class HirToMirLowering {
                 if (enclosingFields != null && enclosingFields.contains(name)) {
                     existsOuter = true;
                 }
+            }
+            // 局部变量及外层捕获优先于同名的全局函数、字段或静态导入。
+            if (!existsOuter && (topLevelFunctionNames.contains(name)
+                    || topLevelFieldNames.containsKey(name)
+                    || staticImports.containsKey(name)
+                    || resolveKnownNovaClassInternalName(name) != null)) {
+                continue;
             }
             if (existsOuter) captures.add(name);
         }
@@ -3842,8 +3908,17 @@ public class HirToMirLowering {
 
         int[] args = lowerArgs(expr.getArgs(), builder);
         String extra = "$JavaStaticImport|" + classNamesValue + "|" + memberName;
-        return builder.emitInvokeStatic(extra, args,
-                MirType.ofObject("java/lang/Object"), expr.getLocation());
+        MirType resultType = MirType.ofObject("java/lang/Object");
+        if (qualifiedName != null) {
+            Class<?> owner = resolveJavaClass(classNamesValue);
+            if (owner != null) {
+                java.lang.reflect.Method method = findJavaStaticMethod(owner, memberName, inferJavaArgTypes(args, builder));
+                if (method != null && method.getReturnType() != void.class) {
+                    resultType = javaReturnTypeToMir(method.getReturnType());
+                }
+            }
+        }
+        return builder.emitInvokeStatic(extra, args, resultType, expr.getLocation());
     }
 
     private String joinStaticImportClasses() {
@@ -5238,6 +5313,29 @@ public class HirToMirLowering {
         MirType targetType = target >= 0 && target < builder.getFunction().getLocals().size()
                 ? builder.getFunction().getLocals().get(target).getType() : null;
 
+        if (targetType != null && targetType.getClassName() != null) {
+            String receiver = targetType.getClassName();
+            if (receiver.equals("java/lang/Object")) {
+                List<HirField> candidates = new ArrayList<>();
+                for (HirField property : scriptExtensionProperties.values()) {
+                    if (property.getName().equals(fieldName)) {
+                        candidates.add(property);
+                    }
+                }
+                if (!candidates.isEmpty()) {
+                    return lowerErasedExtensionProperty(target, fieldName, candidates, builder, expr.getLocation());
+                }
+            }
+            HirField extension = scriptExtensionProperties.get(receiver + ":" + fieldName);
+            if (extension != null) {
+                MirType resultType = hirTypeToMir(extension.getType());
+                String getter = "__extprop__" + receiver.replace("/", "_").replace("$", "_") + "__" + fieldName;
+                String descriptor = "(L" + receiver + ";)" + resultType.getDescriptor();
+                return builder.emitInvokeStatic(moduleClassName + "|" + getter + "|" + descriptor,
+                        new int[] {target}, resultType, expr.getLocation());
+            }
+        }
+
         // 数组类型 size/length → GET_FIELD（MirCodeGenerator 会编译为 ARRAYLENGTH）
         if (targetType != null && targetType.getKind() == MirType.Kind.OBJECT
                 && targetType.getClassName() != null && targetType.getClassName().startsWith("[")
@@ -5833,6 +5931,34 @@ public class HirToMirLowering {
         Class<?> lastArgumentType = argumentTypes[argumentTypes.length - 1];
         return lastArgumentType != null && lastArgumentType.isArray()
                 && parameterTypes[parameterTypes.length - 1].isAssignableFrom(lastArgumentType);
+    }
+
+    /** Workspace 的静态链接可能擦除返回类型，扩展属性按真实接收者类型分派。 */
+    private int lowerErasedExtensionProperty(int target, String name, List<HirField> candidates,
+                                             MirBuilder builder, SourceLocation location) {
+        MirType objectType = MirType.ofObject("java/lang/Object");
+        int result = builder.newLocal("$extensionProperty", objectType);
+        BasicBlock end = builder.newBlock();
+        for (HirField candidate : candidates) {
+            String receiver = typeToInternalName(candidate.getReceiverType());
+            int matches = builder.emitTypeCheck(target, receiver, location);
+            BasicBlock selected = builder.newBlock();
+            BasicBlock next = builder.newBlock();
+            builder.emitBranch(matches, selected.getId(), next.getId(), location);
+            builder.switchToBlock(selected);
+            MirType returnType = hirTypeToMir(candidate.getType());
+            String getter = "__extprop__" + receiver.replace("/", "_").replace("$", "_") + "__" + name;
+            int value = builder.emitInvokeStatic(moduleClassName + "|" + getter + "|(L" + receiver + ";)" + returnType.getDescriptor(),
+                    new int[] {target}, returnType, location);
+            builder.emitMoveTo(value, result, location);
+            builder.emitGoto(end.getId(), location);
+            builder.switchToBlock(next);
+        }
+        int member = builder.emitGetField(target, name, objectType, location);
+        builder.emitMoveTo(member, result, location);
+        builder.emitGoto(end.getId(), location);
+        builder.switchToBlock(end);
+        return result;
     }
 
     /**

@@ -55,6 +55,8 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
     private final Set<String> externalKnownTypeNames;
     private final Set<MemberExpr> callMemberExpressions;
     private final List<JavaExtensionDescriptor> javaExtensions;
+    private final Map<FunDecl, Symbol> scriptExtensions = new java.util.LinkedHashMap<FunDecl, Symbol>();
+    private final Map<PropertyDecl, NovaType> scriptExtensionProperties = new java.util.LinkedHashMap<PropertyDecl, NovaType>();
     private final List<JavaExtensionPropertyDescriptor> javaExtensionProperties;
 
     // 委托
@@ -283,6 +285,36 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
     private Symbol resolveJavaExtensionRoot(NovaType receiverType, String functionName) {
         if (!(receiverType instanceof JavaClassNovaType) || functionName == null) {
             return null;
+        }
+        Symbol scriptRoot = null;
+        NovaType bestReceiver = null;
+        for (Map.Entry<FunDecl, Symbol> entry : scriptExtensions.entrySet()) {
+            FunDecl function = entry.getKey();
+            if (!functionName.equals(function.getName())) {
+                continue;
+            }
+            NovaType target = typeResolver.resolve(function.getReceiverType());
+            if (target == null || !TypeCompatibility.isAssignable(target, receiverType, superTypeRegistry)) {
+                continue;
+            }
+            if (bestReceiver == null || !bestReceiver.equals(target)
+                    && TypeCompatibility.isAssignable(bestReceiver, target, superTypeRegistry)) {
+                bestReceiver = target;
+                scriptRoot = null;
+            }
+            if (!target.equals(bestReceiver)) {
+                continue;
+            }
+            Symbol candidate = createFunctionSymbol(function, entry.getValue().getTypeName(),
+                    entry.getValue().getResolvedNovaType());
+            if (scriptRoot == null) {
+                scriptRoot = candidate;
+            } else {
+                scriptRoot.addOverload(candidate);
+            }
+        }
+        if (scriptRoot != null) {
+            return scriptRoot;
         }
         Class<?> receiverClass = JavaTypeOracle.get().toJavaArgumentType(receiverType.withNullable(false));
         if (receiverClass == null || receiverClass == Object.class) {
@@ -2264,6 +2296,12 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
         for (ImportDecl imp : node.getImports()) {
             imp.accept(this, ctx);
         }
+        for (Declaration declaration : node.getDeclarations()) {
+            if (declaration instanceof PropertyDecl && ((PropertyDecl) declaration).isExtensionProperty()) {
+                PropertyDecl property = (PropertyDecl) declaration;
+                scriptExtensionProperties.put(property, typeResolver.resolve(property.getType()));
+            }
+        }
         predeclareFunctions(node.getDeclarations(), currentScope, null);
         for (Declaration decl : node.getDeclarations()) {
             decl.accept(this, ctx);
@@ -2370,9 +2408,24 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
 
         // 扩展属性不注册为当前作用域的符号
         if (node.isExtensionProperty()) {
-            if (node.getInitializer() != null) {
-                node.getInitializer().accept(this, ctx);
+            Scope scope = enterScope(Scope.ScopeType.FUNCTION, node);
+            NovaType receiverType = typeResolver.resolve(node.getReceiverType());
+            Symbol receiver = new Symbol("this", SymbolKind.VARIABLE, resolveTypeName(node.getReceiverType()),
+                    false, node.getLocation(), node, Modifier.PUBLIC);
+            receiver.setResolvedNovaType(receiverType);
+            scope.define(receiver);
+            AstNode body = node.getGetter() != null ? node.getGetter().getBody() : node.getInitializer();
+            if (body != null) {
+                body.accept(this, ctx);
+                NovaType actual = body instanceof Expression ? getNovaType((Expression) body)
+                        : body instanceof Block ? inferFunctionBlockReturnType((Block) body) : null;
+                NovaType expected = typeResolver.resolve(node.getType());
+                if (expected != null && actual != null) {
+                    checker.checkTypeCompatibility(expected, actual, node, "Extension property getter");
+                }
+                scriptExtensionProperties.put(node, expected != null ? expected : actual);
             }
+            exitScope(node);
             return null;
         }
 
@@ -2531,7 +2584,14 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
                 continue;
             }
             FunDecl function = (FunDecl) declaration;
-            if (function.isExtensionFunction() || declarationSymbols.containsKey(function)) {
+            if (declarationSymbols.containsKey(function)) {
+                continue;
+            }
+            if (function.isExtensionFunction()) {
+                Symbol symbol = createFunctionSymbol(function, resolveTypeName(function.getReturnType()),
+                        typeResolver.resolve(function.getReturnType()));
+                declarationSymbols.put(function, symbol);
+                scriptExtensions.put(function, symbol);
                 continue;
             }
 
@@ -3734,6 +3794,17 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
         node.getTarget().accept(this, ctx);
         NovaType receiverNovaType = requireNonNullableReceiver(getNovaType(node.getTarget()), node.getMember(), node);
         FunctionNovaType expectedFunctionType = expectedFunctionType(node);
+        if (receiverNovaType != null) {
+            for (Map.Entry<PropertyDecl, NovaType> entry : scriptExtensionProperties.entrySet()) {
+                PropertyDecl property = entry.getKey();
+                NovaType target = typeResolver.resolve(property.getReceiverType());
+                if (node.getMember().equals(property.getName()) && target != null
+                        && TypeCompatibility.isAssignable(target, receiverNovaType, superTypeRegistry)) {
+                    setNovaType(node, entry.getValue());
+                    return null;
+                }
+            }
+        }
         if (node.getTarget() instanceof Identifier) {
             Symbol targetSymbol = currentScope.resolve(((Identifier) node.getTarget()).getName());
             if (targetSymbol != null && targetSymbol.getMembers() != null) {

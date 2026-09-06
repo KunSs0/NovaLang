@@ -388,8 +388,9 @@ public final class RuntimeWorkspace implements AutoCloseable {
                 compiledGroups.put(group.getId(), compiledGroup);
                 Set<String> javaImportDeclarations =
                         bundleBuilder.collectJavaImportDeclarations(graph, group);
-                exportsByGroup.put(group.getId(), exportedSymbols(
-                        group, classes, javaImportDeclarations));
+                WorkspaceCompilationExports exports = exportedSymbols(group, classes, javaImportDeclarations);
+                bundle.exportExtensions(group.getPackageName(), exports, classes);
+                exportsByGroup.put(group.getId(), exports);
                 if (compiled != null && shouldInitialize(group)) {
                     String initializerModuleId = group.getModuleIds().get(
                             group.getModuleIds().size() - 1);

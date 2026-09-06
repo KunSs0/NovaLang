@@ -192,6 +192,7 @@ public final class NovaClassInfo extends AbstractNovaValue {
 
         List<NovaMethodInfo> methods = new ArrayList<NovaMethodInfo>();
         for (Method m : cls.getDeclaredMethods()) {
+            if (m.isSynthetic()) continue;
             if (java.lang.reflect.Modifier.isStatic(m.getModifiers())) continue;
             String vis = java.lang.reflect.Modifier.isPublic(m.getModifiers()) ? "public" :
                          java.lang.reflect.Modifier.isPrivate(m.getModifiers()) ? "private" :

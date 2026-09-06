@@ -31,6 +31,13 @@ final class WorkspaceCompilationGroupBuilder {
         Set<String> imports = new LinkedHashSet<String>();
         appendLinkImports(group, exportsByGroup, imports, source, mappings);
         appendJavaImports(graph, group, imports, source, mappings);
+        for (WorkspaceCompilationPlan.Group dependency : group.getDependencies()) {
+            for (String declaration : exportsByGroup.get(dependency.getId()).getExtensionDeclarations()) {
+                for (String line : declaration.split("\n")) {
+                    appendLine(source, mappings, line, null, 0);
+                }
+            }
+        }
 
         for (String moduleId : group.getModuleIds()) {
             WorkspaceModule module = graph.requireModule(moduleId);
