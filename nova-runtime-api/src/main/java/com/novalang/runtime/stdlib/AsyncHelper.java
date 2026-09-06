@@ -19,29 +19,14 @@ public final class AsyncHelper {
 
     @SuppressWarnings("unchecked")
     public static Object run(Object lambda) {
-        NovaScriptContext capturedContext = NovaScriptContext.current();
-        Supplier<Object> task;
-        if (lambda instanceof Function0) {
-            Function0<Object> fn = (Function0<Object>) lambda;
-            task = fn::invoke;
-        } else if (lambda instanceof Supplier) {
-            Supplier<Object> sup = (Supplier<Object>) lambda;
-            task = sup;
-        } else {
-            task = () -> LambdaUtils.invoke0(lambda);
-        }
+        return submit(lambda, java.util.concurrent.ForkJoinPool.commonPool());
+    }
 
-        CompletableFuture<Object> future = CompletableFuture.supplyAsync(() -> {
-            NovaScriptContext previousContext = NovaScriptContext.current();
-            NovaScriptContext.setCurrent(capturedContext);
-            try {
-                return task.get();
-            } finally {
-                NovaScriptContext.setCurrent(previousContext);
-            }
-        });
+    static CompletableFuture<Object> submit(Object lambda, java.util.concurrent.Executor executor) {
+        Supplier<Object> task = () -> LambdaUtils.invoke0(lambda);
+        CompletableFuture<Object> future = OwnedAsyncTask.submit(task, executor);
         future.whenComplete((value, error) -> {
-            if (error != null) {
+            if (error != null && !future.isCancelled()) {
                 LOGGER.log(Level.SEVERE, "async task failed", error);
             }
         });

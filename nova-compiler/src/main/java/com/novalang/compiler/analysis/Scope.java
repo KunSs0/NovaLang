@@ -51,7 +51,12 @@ public final class Scope {
     public void addChild(Scope child) { children.add(child); }
 
     public void define(Symbol symbol) {
-        symbols.put(symbol.getName(), symbol);
+        Symbol existing = symbols.get(symbol.getName());
+        if (existing != null && existing != symbol && existing.getKind() == SymbolKind.FUNCTION && symbol.getKind() == SymbolKind.FUNCTION) {
+            existing.addOverload(symbol);
+        } else {
+            symbols.put(symbol.getName(), symbol);
+        }
     }
 
     public void defineType(Symbol symbol) {

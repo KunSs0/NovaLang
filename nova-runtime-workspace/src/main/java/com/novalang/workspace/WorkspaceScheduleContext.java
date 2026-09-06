@@ -16,6 +16,21 @@ import java.util.Map;
  */
 final class WorkspaceScheduleContext implements NovaScheduleContext {
 
+    @Override
+    public AutoCloseable enter() {
+        if (!generation.isActive() || scope.getState() != ResourceScopeState.ACTIVE) {
+            throw new java.util.concurrent.CancellationException("Workspace task owner is no longer active");
+        }
+        return WorkspaceExecutionContext.install(generation, scope, capturedBindings);
+    }
+
+    @Override
+    public AutoCloseable registerTask(NovaScheduler.Cancellable task) {
+        WorkspaceResource resource = task::cancel;
+        scope.register(resource);
+        return () -> scope.unregister(resource);
+    }
+
     private final WorkspaceGeneration generation;
     private final ResourceScope scope;
     private final Map<String, Object> capturedBindings;

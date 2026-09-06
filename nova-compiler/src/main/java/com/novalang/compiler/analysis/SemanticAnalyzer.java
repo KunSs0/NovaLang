@@ -198,7 +198,7 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
                                                List<NovaType> argumentTypes,
                                                int actualCount,
                                                AstNode callNode) {
-        if (root == null || root.getKind() != SymbolKind.FUNCTION || root.getDeclaration() != null) {
+        if (root == null || root.getKind() != SymbolKind.FUNCTION) {
             return root;
         }
         List<Symbol> candidates = new ArrayList<Symbol>();
@@ -2606,7 +2606,12 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
                 Symbol existingLocal = scope.resolveLocal(function.getName());
                 boolean allowPropertyCollision = isPropertyFunctionCollision(scope, existingLocal)
                         || hasPropertyDeclaration(declarations, scope, function.getName());
-                if (!allowPropertyCollision) {
+                boolean methodScope = scope.getType() == Scope.ScopeType.CLASS
+                        || scope.getType() == Scope.ScopeType.ENUM;
+                boolean methodOverload = methodScope && existingLocal != null
+                        && existingLocal.getKind() == SymbolKind.FUNCTION
+                        && !hasSameParameterSignature(existingLocal, function);
+                if (!allowPropertyCollision && !methodOverload) {
                     checker.checkRedefinition(scope, function.getName(), function);
                 }
                 Symbol functionSymbol = createFunctionSymbol(function, returnType, returnNovaType);
@@ -2623,6 +2628,35 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
                 }
             }
         }
+    }
+
+    /** 参数名和返回类型不参与重载签名；重复签名仍是声明错误。 */
+    private boolean hasSameParameterSignature(Symbol root, FunDecl declaration) {
+        List<Symbol> candidates = new ArrayList<Symbol>();
+        candidates.add(root);
+        if (root.getOverloads() != null) {
+            candidates.addAll(root.getOverloads());
+        }
+        List<Symbol> parameters = buildParamSymbols(declaration.getParams());
+        for (Symbol candidate : candidates) {
+            List<Symbol> previous = candidate.getParameters();
+            if (previous == null || previous.size() != parameters.size()) {
+                continue;
+            }
+            boolean same = true;
+            for (int index = 0; index < parameters.size(); index++) {
+                String left = baseType(previous.get(index).getTypeName());
+                String right = baseType(parameters.get(index).getTypeName());
+                if (!java.util.Objects.equals(left, right)) {
+                    same = false;
+                    break;
+                }
+            }
+            if (same) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private boolean isPropertyFunctionCollision(Scope scope, Symbol existingLocal) {
@@ -3689,6 +3723,18 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
                                     + memberCallee.getMember() + "'",
                             node);
                     return null;
+                }
+                if (declaredReceiverType instanceof ClassNovaType && !(declaredReceiverType instanceof JavaClassNovaType)) {
+                    Symbol receiver = resolveTypeSymbol(declaredReceiverType.getTypeName());
+                    Symbol method = receiver == null || receiver.getMembers() == null ? null : receiver.getMembers().get(memberCallee.getMember());
+                    if (method != null && method.getKind() == SymbolKind.FUNCTION && method.getOverloads() != null) {
+                        Symbol selected = resolveJavaFunctionOverload(method, node);
+                        setNovaType(node, selected.getResolvedNovaType());
+                        if (selected.getDeclaration() instanceof FunDecl) {
+                            checker.checkCallArguments(node, selected.getName(), ((FunDecl) selected.getDeclaration()).getParams(), parameterTypesFromSymbols(selected.getParameters()));
+                        }
+                        return null;
+                    }
                 }
                 NovaType specialType = inferSpecialMemberCallType(memberCallee, node);
                 if (specialType != null) {

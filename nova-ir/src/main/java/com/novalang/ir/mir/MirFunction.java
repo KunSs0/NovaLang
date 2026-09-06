@@ -30,6 +30,10 @@ public class MirFunction {
     private String superClassName;
     /** 覆盖方法描述符（扩展函数等静态方法使用原始类型描述符） */
     private String overrideDescriptor;
+    /** 同名重载对外暴露的 JVM 描述符；方法体仍使用 Nova 的 Object 局部变量描述符。 */
+    private String overloadDescriptor;
+    /** 同名重载的方法体序号，用于生成不会冲突的私有桥接方法名。 */
+    private int overloadIndex = -1;
     /** body 起始块 ID（默认参数处理之后的块），构造器用于 SET_FIELD 插入位置 */
     private int bodyStartBlockId = 0;
     /** 类型参数名列表（reified 运行时解析用） */
@@ -99,6 +103,12 @@ public class MirFunction {
 
     public String getOverrideDescriptor() { return overrideDescriptor; }
     public void setOverrideDescriptor(String desc) { this.overrideDescriptor = desc; }
+
+    public String getOverloadDescriptor() { return overloadDescriptor; }
+    public void setOverloadDescriptor(String desc) { this.overloadDescriptor = desc; }
+
+    public int getOverloadIndex() { return overloadIndex; }
+    public void setOverloadIndex(int index) { this.overloadIndex = index; }
 
     public int getBodyStartBlockId() { return bodyStartBlockId; }
     public void setBodyStartBlockId(int id) { this.bodyStartBlockId = id; }

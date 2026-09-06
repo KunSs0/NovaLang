@@ -24,6 +24,7 @@ import com.novalang.runtime.host.JavaExtensionDescriptor;
 import com.novalang.runtime.host.JavaTypes;
 import com.novalang.runtime.stdlib.BuiltinModuleExports;
 import com.novalang.runtime.stdlib.StdlibRegistry;
+import org.objectweb.asm.Type;
 
 import java.util.*;
 
@@ -84,6 +85,8 @@ public class HirToMirLowering {
 
     // Nova 类/接口方法描述符: className → (methodName → typed JVM descriptor)
     private final Map<String, Map<String, String>> novaMethodDescs = new HashMap<>();
+    /** Nova 类/接口的同名方法候选描述符，供降级阶段按实参类型选择。 */
+    private final Map<String, Map<String, List<String>>> novaMethodOverloadDescs = new HashMap<>();
     // Nova 类/接口方法声明返回类型: className → (methodName → MIR type)
     // JVM 方法描述符会将引用类型统一擦除为 Object，此表保留脚本声明中的精确引用类型。
     private final Map<String, Map<String, MirType>> novaMethodReturnTypes = new HashMap<>();
@@ -281,10 +284,18 @@ public class HirToMirLowering {
                 interfaceNames.add(hc.getName());
             }
             Map<String, String> methodDescs = new HashMap<>();
+            Map<String, List<String>> overloadDescs = new HashMap<>();
             Map<String, MirType> methodReturnTypes = new HashMap<>();
             for (HirFunction m : hc.getMethods()) {
                 if (!m.isExtensionFunction() && !m.getName().startsWith("<")) {
-                    methodDescs.put(m.getName(), buildHirMethodDescriptor(m));
+                    String descriptor = buildHirMethodDescriptor(m);
+                    methodDescs.put(m.getName(), descriptor);
+                    List<String> overloads = overloadDescs.get(m.getName());
+                    if (overloads == null) {
+                        overloads = new ArrayList<>();
+                        overloadDescs.put(m.getName(), overloads);
+                    }
+                    overloads.add(buildHirOverloadDescriptor(m));
                     if (m.getReturnType() != null) {
                         methodReturnTypes.put(m.getName(), hirTypeToMir(m.getReturnType()));
                     }
@@ -292,6 +303,7 @@ public class HirToMirLowering {
             }
             if (!methodDescs.isEmpty()) {
                 novaMethodDescs.put(hc.getName(), methodDescs);
+                novaMethodOverloadDescs.put(hc.getName(), overloadDescs);
             }
             if (!methodReturnTypes.isEmpty()) {
                 novaMethodReturnTypes.put(hc.getName(), methodReturnTypes);
@@ -501,10 +513,18 @@ public class HirToMirLowering {
                 }
                 // 预收集方法描述符（调用端查找用）
                 Map<String, String> methodDescs = new HashMap<>();
+                Map<String, List<String>> overloadDescs = new HashMap<>();
                 Map<String, MirType> methodReturnTypes = new HashMap<>();
                 for (HirFunction m : hc.getMethods()) {
                     if (!m.isExtensionFunction() && !m.getName().startsWith("<")) {
-                        methodDescs.put(m.getName(), buildHirMethodDescriptor(m));
+                        String descriptor = buildHirMethodDescriptor(m);
+                        methodDescs.put(m.getName(), descriptor);
+                        List<String> overloads = overloadDescs.get(m.getName());
+                        if (overloads == null) {
+                            overloads = new ArrayList<>();
+                            overloadDescs.put(m.getName(), overloads);
+                        }
+                        overloads.add(buildHirOverloadDescriptor(m));
                         if (m.getReturnType() != null) {
                             methodReturnTypes.put(m.getName(), hirTypeToMir(m.getReturnType()));
                         }
@@ -516,6 +536,7 @@ public class HirToMirLowering {
                     methodDescs.put("ordinal", "()Ljava/lang/Object;");
                 }
                 novaMethodDescs.put(className, methodDescs);
+                novaMethodOverloadDescs.put(className, overloadDescs);
                 if (!methodReturnTypes.isEmpty()) {
                     novaMethodReturnTypes.put(className, methodReturnTypes);
                 }
@@ -5063,7 +5084,7 @@ public class HirToMirLowering {
                         MirType.ofObject("java/lang/Object"), loc);
             }
             // 尝试 Nova 类/接口方法描述符注册表（沿继承链查找）
-            desc = lookupNovaMethodDesc(owner, methodName, args.length);
+            desc = lookupNovaMethodDesc(owner, methodName, args, builder);
             returnType = inferNovaMethodReturnType(owner, methodName, desc);
             MirType compilerGeneratedReturnType = inferCompilerGeneratedMethodReturnType(
                     owner, methodName, args.length);
@@ -6356,9 +6377,104 @@ public class HirToMirLowering {
         return MethodDescriptor.of(paramTypes, ret).toJvmDescriptorIntOnly();
     }
 
+    /** 同名重载的公开入口使用精确参数描述符，返回值仍统一为 Object。 */
+    private String buildHirOverloadDescriptor(HirFunction func) {
+        StringBuilder descriptor = new StringBuilder("(");
+        for (HirParam parameter : func.getParams()) {
+            if (parameter.isVararg()) {
+                descriptor.append("Ljava/lang/Object;");
+            } else {
+                descriptor.append(hirTypeToMir(parameter.getType()).getFieldDescriptor());
+            }
+        }
+        descriptor.append(")Ljava/lang/Object;");
+        return descriptor.toString();
+    }
+
     /**
      * 查找 Nova 类方法的类型化描述符，未找到则回退到全 Object 描述符。
      */
+    private String lookupNovaMethodDesc(String owner, String methodName, int[] args, MirBuilder builder) {
+        List<String> candidates = lookupNovaMethodOverloadsInherited(owner, methodName);
+        if (candidates == null || new HashSet<String>(candidates).size() < 2) {
+            return lookupNovaMethodDesc(owner, methodName, args.length);
+        }
+        String selected = null;
+        int bestScore = Integer.MIN_VALUE;
+        for (String candidate : candidates) {
+            int score = scoreNovaMethodOverload(candidate, args, builder);
+            if (score > bestScore) {
+                selected = candidate;
+                bestScore = score;
+            }
+        }
+        if (selected == null || bestScore == Integer.MIN_VALUE) {
+            return lookupNovaMethodDesc(owner, methodName, args.length);
+        }
+        return selected;
+    }
+
+    private List<String> lookupNovaMethodOverloadsInherited(String owner, String methodName) {
+        String current = owner;
+        while (current != null) {
+            Map<String, List<String>> classOverloads = novaMethodOverloadDescs.get(current);
+            if (classOverloads != null) {
+                List<String> overloads = classOverloads.get(methodName);
+                if (overloads != null) {
+                    return overloads;
+                }
+            }
+            current = classSuperClass.get(current);
+        }
+        return null;
+    }
+
+    private int scoreNovaMethodOverload(String descriptor, int[] args, MirBuilder builder) {
+        Type[] expected = Type.getArgumentTypes(descriptor);
+        if (expected.length != args.length) {
+            return Integer.MIN_VALUE;
+        }
+        int score = 0;
+        for (int index = 0; index < args.length; index++) {
+            MirType actual = MirType.ofObject("java/lang/Object");
+            if (args[index] >= 0 && args[index] < builder.getFunction().getLocals().size()) {
+                actual = builder.getFunction().getLocals().get(args[index]).getType();
+            }
+            Type parameter = expected[index];
+            if (actual.getKind() == MirType.Kind.INT) {
+                if (parameter.getSort() == Type.INT || "java/lang/Integer".equals(parameter.getInternalName())) {
+                    score += 8;
+                    continue;
+                }
+                if (parameter.getSort() == Type.OBJECT && "java/lang/Object".equals(parameter.getInternalName())) {
+                    score += 1;
+                    continue;
+                }
+                return Integer.MIN_VALUE;
+            }
+            if (actual.getKind() == MirType.Kind.OBJECT) {
+                String actualName = actual.getClassName();
+                if (parameter.getSort() == Type.OBJECT) {
+                    String expectedName = parameter.getInternalName();
+                    if (actualName != null && actualName.equals(expectedName)) {
+                        score += 8;
+                        continue;
+                    }
+                    if ("java/lang/Object".equals(expectedName)) {
+                        score += 1;
+                        continue;
+                    }
+                }
+                if (actualName == null || "java/lang/Object".equals(actualName)) {
+                    score += 1;
+                    continue;
+                }
+            }
+            return Integer.MIN_VALUE;
+        }
+        return score;
+    }
+
     private String lookupNovaMethodDesc(String owner, String methodName, int argCount) {
         String desc = lookupNovaMethodDescInherited(owner, methodName);
         return desc != null ? desc : MethodDescriptor.allObjectDesc(argCount);

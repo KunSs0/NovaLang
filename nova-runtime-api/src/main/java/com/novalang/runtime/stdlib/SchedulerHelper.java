@@ -84,6 +84,7 @@ public final class SchedulerHelper {
             Thread.sleep(millis);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
+            throw new CancellationException("Delayed script task was interrupted");
         }
         return null;
     }
@@ -161,21 +162,7 @@ public final class SchedulerHelper {
         if (sched.isMainThread()) {
             return invokeAndReturn(block);
         }
-        // 捕获当前线程的 NovaScriptContext，传播到主线程回调
-        // （runBytecode 在 mainHandle.invoke() 返回后会 clear context，
-        //  但 launch 的异步任务还在运行，sync 回调需要恢复 context）
-        NovaScriptContext parentCtx = NovaScriptContext.current();
-        CompletableFuture<Object> future = new CompletableFuture<>();
-        sched.mainExecutor().execute(() -> {
-            NovaScriptContext.setCurrent(parentCtx);
-            try {
-                future.complete(invokeAndReturn(block));
-            } catch (Exception e) {
-                future.completeExceptionally(e);
-            } finally {
-                NovaScriptContext.clear();
-            }
-        });
+        CompletableFuture<Object> future = OwnedAsyncTask.submit(() -> invokeAndReturn(block), sched.mainExecutor(), false);
         try {
             return future.get();
         } catch (ExecutionException e) {

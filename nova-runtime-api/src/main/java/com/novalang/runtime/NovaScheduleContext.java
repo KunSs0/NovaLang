@@ -9,6 +9,12 @@ package com.novalang.runtime;
  */
 public interface NovaScheduleContext {
 
+    /** 在目标线程安装捕获的宿主绑定；关闭句柄时恢复目标线程原上下文。 */
+    AutoCloseable enter();
+
+    /** 将异步任务登记到捕获的所有者；关闭登记只解除归属，不取消任务。 */
+    AutoCloseable registerTask(NovaScheduler.Cancellable task);
+
     /**
      * 创建一次性任务。
      *

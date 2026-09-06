@@ -67,7 +67,9 @@ public final class Symbol {
         if (overloads == null) {
             overloads = new ArrayList<Symbol>();
         }
-        overloads.add(overload);
+        if (overload != this && !overloads.contains(overload)) {
+            overloads.add(overload);
+        }
     }
 
     public String getSuperClass() { return superClass; }
@@ -82,6 +84,11 @@ public final class Symbol {
         if (members == null) {
             members = new LinkedHashMap<String, Symbol>();
         }
-        members.put(member.getName(), member);
+        Symbol existing = members.get(member.getName());
+        if (existing != null && existing != member && existing.getKind() == SymbolKind.FUNCTION && member.getKind() == SymbolKind.FUNCTION) {
+            existing.addOverload(member);
+        } else {
+            members.put(member.getName(), member);
+        }
     }
 }

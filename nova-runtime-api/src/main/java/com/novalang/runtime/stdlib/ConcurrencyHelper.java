@@ -63,25 +63,7 @@ public final class ConcurrencyHelper {
         }
         Object block = args[0];
         Executor exec = getAsyncExecutor();
-        NovaScriptContext parentCtx = NovaScriptContext.current();
-        CompletableFuture<Object> future = CompletableFuture.supplyAsync(() -> {
-            NovaScriptContext.setCurrent(parentCtx);
-            try {
-                return invoke0(block);
-            } catch (RuntimeException e) {
-                throw e;
-            } catch (Exception e) {
-                throw NovaErrors.wrap(e);
-            } finally {
-                NovaScriptContext.clear();
-            }
-        }, exec);
-        // 未 await 的异常输出到日志，避免静默吞掉
-        future.exceptionally(ex -> {
-            java.util.logging.Logger.getLogger("Nova")
-                    .log(java.util.logging.Level.SEVERE, "launch task failed", ex);
-            return null;
-        });
+        CompletableFuture<Object> future = AsyncHelper.submit(block, exec);
         return new StructuredConcurrencyHelper.CompileJob(future);
     }
 
@@ -130,7 +112,14 @@ public final class ConcurrencyHelper {
     @SuppressWarnings("unchecked")
     public static Object awaitJoin(Object target) {
         if (target instanceof CompletableFuture) {
-            return ((CompletableFuture<Object>) target).join();
+            try {
+                return ((CompletableFuture<Object>) target).get();
+            } catch (InterruptedException exception) {
+                Thread.currentThread().interrupt();
+                throw new java.util.concurrent.CancellationException("Awaiting script task was interrupted");
+            } catch (java.util.concurrent.ExecutionException exception) {
+                throw NovaErrors.wrap("await task failed", exception.getCause());
+            }
         }
         if (target instanceof StructuredConcurrencyHelper.CompileJob) {
             ((StructuredConcurrencyHelper.CompileJob) target).join();

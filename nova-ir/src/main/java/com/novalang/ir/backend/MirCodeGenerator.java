@@ -156,6 +156,41 @@ public class MirCodeGenerator {
             fieldVisitor.visitEnd();
         }
 
+        // 同名 Nova 方法使用具体参数描述符对外暴露；MIR 方法体仍使用 Object 局部变量模型，
+        // 因此实际入口由桥接方法转发给私有的方法体。
+        Map<String, Set<String>> methodSignatures = new HashMap<>();
+        for (MirFunction method : cls.getMethods()) {
+            if (!method.getName().startsWith("<") && !method.isDefaultArgumentBridge()) {
+                StringBuilder signature = new StringBuilder("(");
+                for (MirParam parameter : method.getParams()) {
+                    signature.append(parameter.getType().getFieldDescriptor());
+                }
+                signature.append(")");
+                Set<String> signatures = methodSignatures.get(method.getName());
+                if (signatures == null) {
+                    signatures = new HashSet<>();
+                    methodSignatures.put(method.getName(), signatures);
+                }
+                signatures.add(signature.toString());
+            }
+        }
+        Map<String, Integer> overloadIndexes = new HashMap<>();
+        for (MirFunction method : cls.getMethods()) {
+            Set<String> signatures = methodSignatures.get(method.getName());
+            if (!method.isDefaultArgumentBridge() && signatures != null && signatures.size() > 1
+                    && !method.getModifiers().contains(Modifier.OVERRIDE)) {
+                StringBuilder descriptor = new StringBuilder("(");
+                for (MirParam parameter : method.getParams()) {
+                    descriptor.append(parameter.getType().getFieldDescriptor());
+                }
+                descriptor.append(")Ljava/lang/Object;");
+                method.setOverloadDescriptor(descriptor.toString());
+                int overloadIndex = overloadIndexes.getOrDefault(method.getName(), 0);
+                method.setOverloadIndex(overloadIndex);
+                overloadIndexes.put(method.getName(), overloadIndex + 1);
+            }
+        }
+
         // 默认构造器（如果类没有自己的构造器）
         boolean hasInit = false;
         for (MirFunction method : cls.getMethods()) {
@@ -327,6 +362,31 @@ public class MirCodeGenerator {
         mv.visitEnd();
     }
 
+    /** 将同名重载的具体引用参数转发给 Object 参数的 MIR 方法体。 */
+    private void generateReferenceOverloadBridge(ClassWriter cw, int access, String name, String descriptor,
+                                                  String bodyName, String bodyDescriptor, String owner, boolean isStatic) {
+        MethodVisitor mv = cw.visitMethod(access, name, descriptor, null, null);
+        mv.visitCode();
+        int slot = isStatic ? 0 : 1;
+        if (!isStatic) {
+            mv.visitVarInsn(ALOAD, 0);
+        }
+        for (Type parameter : Type.getArgumentTypes(descriptor)) {
+            if (parameter.getSort() == Type.BOOLEAN || parameter.getSort() == Type.BYTE
+                    || parameter.getSort() == Type.CHAR || parameter.getSort() == Type.SHORT
+                    || parameter.getSort() == Type.INT || parameter.getSort() == Type.LONG
+                    || parameter.getSort() == Type.FLOAT || parameter.getSort() == Type.DOUBLE) {
+                throw new IllegalStateException("Nova overload bridge requires boxed parameter types: " + descriptor);
+            }
+            mv.visitVarInsn(ALOAD, slot);
+            slot += parameter.getSize();
+        }
+        mv.visitMethodInsn(isStatic ? INVOKESTATIC : INVOKESPECIAL, owner, bodyName, bodyDescriptor, false);
+        mv.visitInsn(ARETURN);
+        mv.visitMaxs(0, 0);
+        mv.visitEnd();
+    }
+
     private void generateMethod(ClassWriter cw, MirFunction func, String ownerClass,
                                 boolean isStatic, String superClass, ClassKind classKind) {
         int access = ACC_PUBLIC;
@@ -342,7 +402,18 @@ public class MirCodeGenerator {
                 ? func.getOverrideDescriptor() : buildMethodDescriptor(func);
         String emittedName = func.getName();
         boolean boxedOverrideBody = false;
-        if (func.getOverrideDescriptor() != null && !emittedName.startsWith("<")
+        if (func.getOverloadDescriptor() != null && !emittedName.startsWith("<")
+                && classKind != ClassKind.INTERFACE) {
+            String bodyName = "$nova$overload$" + emittedName + "$" + func.getOverloadIndex();
+            String bodyDescriptor = buildMethodDescriptor(func);
+            generateReferenceOverloadBridge(cw, access, emittedName, func.getOverloadDescriptor(), bodyName,
+                    bodyDescriptor, ownerClass, isStatic);
+            emittedName = bodyName;
+            desc = bodyDescriptor;
+            access = (access & ~ACC_PUBLIC) | ACC_PRIVATE | ACC_SYNTHETIC;
+            // 若 HIR 同时记录了原生描述符，私有方法体仍是 Object 参数，必须拆箱 int 局部变量。
+            boxedOverrideBody = true;
+        } else if (func.getOverrideDescriptor() != null && !emittedName.startsWith("<")
                 && classKind != ClassKind.INTERFACE && needsBoxedOverrideBody(desc)) {
             // MIR 局部变量按单槽 Object 编号；J/D/F 原生入口先桥接，不能直接套用该局部变量表。
             String bodyName = "$nova$override$" + emittedName;
