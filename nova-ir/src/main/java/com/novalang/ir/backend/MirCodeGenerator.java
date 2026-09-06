@@ -279,6 +279,54 @@ public class MirCodeGenerator {
         mv.visitEnd();
     }
 
+    private boolean needsBoxedOverrideBody(String descriptor) {
+        for (Type type : Type.getArgumentTypes(descriptor)) {
+            if (type.getSort() == Type.LONG || type.getSort() == Type.DOUBLE || type.getSort() == Type.FLOAT) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** 将宿主原生参数装箱后交给 MIR 方法体，并按宿主描述符还原返回类型。 */
+    private void generateBoxedOverrideBridge(ClassWriter cw, int access, String name, String descriptor,
+                                              String bodyName, String bodyDescriptor, String owner, boolean isStatic) {
+        MethodVisitor mv = cw.visitMethod(access, name, descriptor, null, null);
+        mv.visitCode();
+        int slot = isStatic ? 0 : 1;
+        if (!isStatic) {
+            mv.visitVarInsn(ALOAD, 0);
+        }
+        for (Type parameter : Type.getArgumentTypes(descriptor)) {
+            mv.visitVarInsn(parameter.getOpcode(ILOAD), slot);
+            switch (parameter.getSort()) {
+                case Type.BYTE:
+                    mv.visitMethodInsn(INVOKESTATIC, "java/lang/Byte", "valueOf", "(B)Ljava/lang/Byte;", false);
+                    break;
+                case Type.SHORT:
+                    mv.visitMethodInsn(INVOKESTATIC, "java/lang/Short", "valueOf", "(S)Ljava/lang/Short;", false);
+                    break;
+                case Type.CHAR:
+                    mv.visitMethodInsn(INVOKESTATIC, "java/lang/Character", "valueOf", "(C)Ljava/lang/Character;", false);
+                    break;
+                default:
+                    boxPrimitiveDescriptor(mv, parameter.getDescriptor());
+                    break;
+            }
+            slot += parameter.getSize();
+        }
+        mv.visitMethodInsn(isStatic ? INVOKESTATIC : INVOKESPECIAL, owner, bodyName, bodyDescriptor, false);
+        Type result = Type.getReturnType(descriptor);
+        if (result.getSort() == Type.VOID) {
+            mv.visitInsn(RETURN);
+        } else {
+            unboxForType(mv, result);
+            mv.visitInsn(result.getOpcode(IRETURN));
+        }
+        mv.visitMaxs(0, 0);
+        mv.visitEnd();
+    }
+
     private void generateMethod(ClassWriter cw, MirFunction func, String ownerClass,
                                 boolean isStatic, String superClass, ClassKind classKind) {
         int access = ACC_PUBLIC;
@@ -292,6 +340,19 @@ public class MirCodeGenerator {
 
         String desc = func.getOverrideDescriptor() != null
                 ? func.getOverrideDescriptor() : buildMethodDescriptor(func);
+        String emittedName = func.getName();
+        boolean boxedOverrideBody = false;
+        if (func.getOverrideDescriptor() != null && !emittedName.startsWith("<")
+                && classKind != ClassKind.INTERFACE && needsBoxedOverrideBody(desc)) {
+            // MIR 局部变量按单槽 Object 编号；J/D/F 原生入口先桥接，不能直接套用该局部变量表。
+            String bodyName = "$nova$override$" + emittedName;
+            String bodyDescriptor = buildMethodDescriptor(func);
+            generateBoxedOverrideBridge(cw, access, emittedName, desc, bodyName, bodyDescriptor, ownerClass, isStatic);
+            emittedName = bodyName;
+            desc = bodyDescriptor;
+            access = (access & ~ACC_PUBLIC) | ACC_PRIVATE | ACC_SYNTHETIC;
+            boxedOverrideBody = true;
+        }
         this.currentMethodDesc = desc;
         this.currentSuperClass = superClass;
 
@@ -304,7 +365,7 @@ public class MirCodeGenerator {
             return;
         }
 
-        MethodVisitor mv = cw.visitMethod(access, func.getName(), desc, null, null);
+        MethodVisitor mv = cw.visitMethod(access, emittedName, desc, null, null);
 
         if (!"<init>".equals(func.getName()) && !"<clinit>".equals(func.getName())) {
             AnnotationVisitor signature = mv.visitAnnotation(
@@ -346,7 +407,7 @@ public class MirCodeGenerator {
         {
             int slotOffset = isStatic ? 0 : 1;
             if (canUnboxParams) {
-                boolean hasNativeDesc = func.getOverrideDescriptor() != null;
+                boolean hasNativeDesc = func.getOverrideDescriptor() != null && !boxedOverrideBody;
                 for (int i = 0; i < func.getParams().size(); i++) {
                     int slot = slotOffset + i;
                     if (intLocals.contains(slot)) {

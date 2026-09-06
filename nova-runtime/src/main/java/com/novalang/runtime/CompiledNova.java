@@ -79,6 +79,44 @@ public final class CompiledNova {
         buildFuncClassCache(classes);
     }
 
+    /** 使用字节码准备阶段的索引绑定当前隔离类，避免逐实例反射扫描。 */
+    CompiledNova(Map<String, Class<?>> classes, ExtensionRegistry extensionRegistry, CompiledProgramLayout layout) {
+        this.source = null;
+        this.fileName = null;
+        this.nova = null;
+        this.program = null;
+        this.compiledClasses = classes;
+        this.mainHandle = layout.bindMain(classes);
+        this.extensionRegistry = extensionRegistry != null ? extensionRegistry : new ExtensionRegistry();
+        this.funcClassCache.putAll(layout.bindFunctions(classes));
+    }
+
+    /** 绑定确定的无参入口，组件实例化不再走通用重载匹配。 */
+    public <T> CompiledComponentFactory<T> prepareComponentFactory(String name, Class<T> type) {
+        if (compiledClasses == null || type == null) {
+            throw new IllegalArgumentException("Component factory requires bytecode program and component type");
+        }
+        Class<?> owner = funcClassCache.get(name);
+        if (owner == null) {
+            throw new IllegalArgumentException("Component factory not found: " + name);
+        }
+        return new CompiledComponentFactory<>(this, owner, name, type);
+    }
+
+    Object invokeComponentFactory(MethodHandle entry, String name) {
+        try {
+            return withScriptExecutionContext(bindings, true, () -> {
+                Object value = entry.invokeExact();
+                bindings.putAll(NovaScriptContext.getAll());
+                return value;
+            });
+        } catch (NovaRuntimeException exception) {
+            throw attachCallLocation(exception);
+        } catch (Throwable exception) {
+            throw attachCallLocation(new NovaRuntimeException("Component factory failed: " + name, exception));
+        }
+    }
+
     /** 预扫描所有编译类的 public static 方法，构建函数名索引 */
     private void buildFuncClassCache(Map<String, Class<?>> classes) {
         if (classes == null) return;

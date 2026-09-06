@@ -14,6 +14,8 @@ import java.util.LinkedHashSet;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
+import com.novalang.runtime.CompiledProgramLayout;
+import com.novalang.runtime.Nova;
 
 /**
  * 可在多个 Workspace 间复用的 Nova 字节码产物缓存。
@@ -124,6 +126,8 @@ public final class WorkspaceBytecodeArtifactCache {
     public static final class BytecodeArtifact {
 
         private final Map<String, byte[]> bytecode;
+        private final URL classPath;
+        private CompiledProgramLayout layout;
 
         BytecodeArtifact(Map<String, byte[]> source) {
             if (source == null) {
@@ -139,6 +143,20 @@ public final class WorkspaceBytecodeArtifactCache {
                 copied.put(className, Arrays.copyOf(value, value.length));
             }
             bytecode = Collections.unmodifiableMap(copied);
+            Map<String, byte[]> resources = new LinkedHashMap<>();
+            for (Map.Entry<String, byte[]> entry : bytecode.entrySet()) {
+                resources.put(entry.getKey().replace('.', '/') + ".class", entry.getValue());
+            }
+            classPath = createClassPath(Collections.unmodifiableMap(resources));
+        }
+
+        /** 在准备阶段建立索引；索引只保存名称，不跨作用域共享脚本 Class。 */
+        public synchronized <T> IsolatedComponentFactory<T> prepareComponentFactory(
+                Nova nova, ClassLoader parent, String entry, Class<T> type) {
+            if (layout == null) {
+                layout = CompiledProgramLayout.fromBytecode(bytecode);
+            }
+            return new IsolatedComponentFactory<>(this, layout, nova, parent, entry, type);
         }
 
         /**
@@ -148,12 +166,6 @@ public final class WorkspaceBytecodeArtifactCache {
          * @return 本次独立加载的类
          */
         public Map<String, Class<?>> load(ClassLoader scriptClassLoader) {
-            Map<String, byte[]> resources = new LinkedHashMap<String, byte[]>();
-            for (Map.Entry<String, byte[]> entry : bytecode.entrySet()) {
-                String resourceName = entry.getKey().replace('.', '/') + ".class";
-                resources.put(resourceName, entry.getValue());
-            }
-            URL classPath = createClassPath(resources);
             ArtifactParentClassLoader parent = new ArtifactParentClassLoader(scriptClassLoader);
             ArtifactUrlClassLoader loader = new ArtifactUrlClassLoader(
                     new URL[]{classPath}, parent, bytecode.keySet());
@@ -219,7 +231,7 @@ public final class WorkspaceBytecodeArtifactCache {
 
         ArtifactUrlClassLoader(URL[] classPath, ClassLoader parent, Set<String> artifactClassNames) {
             super(classPath, parent);
-            this.artifactClassNames = new LinkedHashSet<String>(artifactClassNames);
+            this.artifactClassNames = artifactClassNames;
         }
 
         @Override

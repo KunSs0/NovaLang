@@ -1220,6 +1220,14 @@ public final class Nova {
         return buildCompiledNova(classes);
     }
 
+    /** 使用预先解析的字节码索引创建隔离程序，避免再次扫描全部模块方法。 */
+    public CompiledNova createCompiledNova(Map<String, Class<?>> classes, CompiledProgramLayout layout) {
+        if (classes == null || classes.isEmpty() || layout == null) {
+            throw new IllegalArgumentException("Compiled classes and layout are required");
+        }
+        return bindCompiledNova(new CompiledNova(classes, extensionRegistry, layout), null);
+    }
+
     private Map<String, Class<?>> compileAndLoadBytecode(String actualCode, String actualFileName) {
         NovaIrCompiler compiler = new NovaIrCompiler();
         compiler.setScriptMode(true);
@@ -1237,7 +1245,10 @@ public final class Nova {
     }
 
     private CompiledNova buildCompiledNova(Map<String, Class<?>> classes, Map<String, Object> bindingOverlay) {
-        CompiledNova compiled = new CompiledNova(classes, extensionRegistry);
+        return bindCompiledNova(new CompiledNova(classes, extensionRegistry), bindingOverlay);
+    }
+
+    private CompiledNova bindCompiledNova(CompiledNova compiled, Map<String, Object> bindingOverlay) {
         if (scriptClassLoader != null) {
             compiled.setScriptClassLoader(scriptClassLoader);
         }
