@@ -22,6 +22,7 @@ final class WorkspaceCompilationGroupBuilder {
     WorkspaceBundle build(WorkspaceModuleGraph graph,
                           WorkspaceCompilationPlan.Group group,
                           Map<String, WorkspaceCompilationExports> exportsByGroup) {
+        List<WorkspaceBundle.InlinePart> inlineParts = new ArrayList<WorkspaceBundle.InlinePart>();
         StringBuilder source = new StringBuilder();
         List<WorkspaceSourceMap.LineMapping> mappings =
                 new ArrayList<WorkspaceSourceMap.LineMapping>();
@@ -34,6 +35,11 @@ final class WorkspaceCompilationGroupBuilder {
         for (String moduleId : group.getModuleIds()) {
             WorkspaceModule module = graph.requireModule(moduleId);
             appendLine(source, mappings, "// module: " + moduleId, null, 0);
+            SourceUnit unit = module.getSourceUnit();
+            if (unit.isInline()) {
+                appendLine(source, mappings, "// inline: " + unit.getInlineEntryName(), unit, 1);
+            }
+            int startLine = mappings.size();
             String[] lines = module.getTransformedSource().split("\\r?\\n", -1);
             for (int index = 0; index < lines.length; index++) {
                 String line = lines[index];
@@ -44,12 +50,15 @@ final class WorkspaceCompilationGroupBuilder {
                 }
                 appendLine(source, mappings, line, module.getSourceUnit(), index + 1);
             }
+            if (unit.isInline()) {
+                inlineParts.add(new WorkspaceBundle.InlinePart(unit, startLine, mappings.size()));
+            }
         }
 
         if (source.length() > 0) {
             source.setLength(source.length() - 1);
         }
-        return new WorkspaceBundle(source.toString(), new WorkspaceSourceMap(mappings));
+        return new WorkspaceBundle(source.toString(), new WorkspaceSourceMap(mappings), inlineParts);
     }
 
     private void appendLinkImports(WorkspaceCompilationPlan.Group group,

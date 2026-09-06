@@ -342,6 +342,44 @@ public class Parser {
         }
     }
 
+    /** 解析行内动作；导入属于模块，所有声明与语句属于合成入口的局部作用域。 */
+    public Program parseInline(String entryName, String returnType) {
+        if (entryName == null || !entryName.matches("[A-Za-z_][A-Za-z0-9_]*")
+                || "main".equals(entryName)) {
+            throw new IllegalArgumentException("Inline entry must be an identifier other than main");
+        }
+        Parser nameParser = new Parser(new Lexer(entryName, fileName), fileName);
+        nameParser.expect(IDENTIFIER, "Expected inline entry identifier");
+        if (returnType == null || returnType.trim().isEmpty()) {
+            throw new IllegalArgumentException("Inline return type must not be blank");
+        }
+        Parser typeParser = new Parser(new Lexer(returnType, fileName), fileName);
+        TypeRef type = typeParser.parseType();
+        typeParser.expect(EOF, "Unexpected token after inline return type");
+        checkBracketBalance();
+        try {
+            skipSeparators();
+            SourceLocation loc = location();
+            List<ImportDecl> imports = new ArrayList<ImportDecl>();
+            List<Statement> statements = new ArrayList<Statement>();
+            while (!isAtEnd()) {
+                if (check(KW_IMPORT)) {
+                    imports.add(parseImportDecl());
+                } else {
+                    statements.add(parseStatement());
+                }
+                skipSeparators();
+            }
+            imports.addAll(hoistedImports);
+            FunDecl entry = new InlineEntryDecl(loc, entryName, type, new Block(loc, statements));
+            lexer.releaseSource();
+            return new Program(loc, null, imports,
+                    new ArrayList<Declaration>(Collections.<Declaration>singletonList(entry)));
+        } catch (ParseException exception) {
+            throw exception.withSource(lexer.getSource());
+        }
+    }
+
     /**
      * 预扫描源码中的括号配对。
      * 在递归下降解析前检测未闭合的 {}/[]/()，报告精确位置。
@@ -544,7 +582,9 @@ public class Parser {
             skipSeparators();
             if (isAtEnd()) break;
             try {
-                if (isDeclarationStart()) {
+                if (check(KW_IMPORT)) {
+                    imports.add(parseImportDecl());
+                } else if (isDeclarationStart()) {
                     declarations.add(parseDeclaration());
                 } else {
                     Statement stmt = parseStatement();
@@ -563,6 +603,7 @@ public class Parser {
             }
         }
 
+        imports.addAll(hoistedImports);
         Program program = new Program(loc, fileAnnotations, packageDecl, imports, declarations);
         lexer.releaseSource(); // 容错解析完成，释放源码字符串
         tolerantMode = previousTolerantMode;

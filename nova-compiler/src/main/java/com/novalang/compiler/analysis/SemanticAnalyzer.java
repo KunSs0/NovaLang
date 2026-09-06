@@ -2484,6 +2484,19 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
                 funScope.define(pSym);
             }
             node.getBody().accept(this, ctx);
+            if (node instanceof InlineEntryDecl && node.getBody() instanceof Block) {
+                Block body = (Block) node.getBody();
+                List<NovaType> actualReturns = new ArrayList<NovaType>();
+                collectFunctionReturnTypes(body, actualReturns);
+                for (NovaType actualReturn : actualReturns) {
+                    checker.checkTypeCompatibility(returnNovaType, actualReturn, node,
+                            "Inline entry return");
+                }
+                if (!NovaTypes.UNIT.equals(returnNovaType) && !statementAlwaysTransfersControl(body)) {
+                    checker.addDiagnostic(SemanticDiagnostic.Severity.ERROR,
+                            "Inline entry must explicitly return a value on every normal exit path", node);
+                }
+            }
             if (returnNovaType == null) {
                 if (node.getBody() instanceof Expression) {
                     returnNovaType = getNovaType((Expression) node.getBody());

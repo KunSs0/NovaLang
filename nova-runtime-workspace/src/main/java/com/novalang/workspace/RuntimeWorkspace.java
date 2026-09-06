@@ -136,6 +136,9 @@ public final class RuntimeWorkspace implements AutoCloseable {
         if (sourceUnit == null) {
             throw new IllegalArgumentException("sourceUnit must not be null");
         }
+        if (sourceUnit.isInline() && !entry) {
+            throw new IllegalArgumentException("Inline source must be registered as an entry");
+        }
         lifecycleLock.lock();
         try {
             requireState(WorkspaceState.NEW, "register virtual sources");
@@ -370,11 +373,11 @@ public final class RuntimeWorkspace implements AutoCloseable {
                                 scriptClassLoader,
                                 configFile.toString(),
                                 group.getId(),
-                                bundle.getSource());
+                                bundle.getCacheSource());
                 WorkspaceBytecodeArtifactCache.BytecodeArtifact artifact =
                         bytecodeArtifactCache.getOrCompile(cacheKey,
                                 () -> nova.compileToBytecodeArtifact(
-                                        bundle.getSource(), group.getId()));
+                                        bundle.parse(group.getId())));
                 Map<String, Class<?>> classes = artifact.loadInto(generationClassLoader);
                 CompiledNova compiled = null;
                 if (!classes.isEmpty()) {

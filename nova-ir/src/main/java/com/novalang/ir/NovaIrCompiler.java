@@ -125,6 +125,15 @@ public class NovaIrCompiler implements NovaCompilerApi {
         return classes;
     }
 
+    /** 编译已经完成模块组织的 AST，保留节点来源位置并应用重定位。 */
+    public Map<String, byte[]> compileArtifact(Program program) {
+        Map<String, byte[]> classes = pipeline.execute(program);
+        if (relocatePrefix != null) {
+            return remapBytecode(classes);
+        }
+        return classes;
+    }
+
     /**
      * 编译文件。
      */

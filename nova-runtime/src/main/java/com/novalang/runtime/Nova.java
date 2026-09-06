@@ -1,6 +1,9 @@
 package com.novalang.runtime;
 
 import com.novalang.ir.NovaIrCompiler;
+import com.novalang.compiler.ast.decl.Program;
+import com.novalang.compiler.parser.Parser;
+import com.novalang.compiler.lexer.Lexer;
 import com.novalang.runtime.host.JavaTypes;
 import com.novalang.runtime.host.JavaTypesInstaller;
 import com.novalang.runtime.interpreter.*;
@@ -1175,6 +1178,35 @@ public final class Nova {
         }
     }
 
+    /** 编译由宿主组织的 AST；模块导入必须由调用方完成解析与链接。 */
+    public Map<String, byte[]> compileToBytecodeArtifact(Program program) {
+        Builtins.ensureJavaClassRegistered();
+        NovaIrCompiler compiler = new NovaIrCompiler();
+        compiler.setScriptMode(true);
+        compiler.setEnableSemanticAnalysis(true);
+        compiler.setStrictSemanticMode(true);
+        compiler.setRejectUnknownGlobalCalls(rejectUnknownGlobalCalls);
+        configureJavaTypes(compiler, javaTypesNamespace);
+        configureRelocate(compiler);
+        ClassLoader previousContextLoader = Thread.currentThread().getContextClassLoader();
+        if (scriptClassLoader != null) {
+            Thread.currentThread().setContextClassLoader(scriptClassLoader);
+        }
+        try {
+            return compiler.compileArtifact(program);
+        } finally {
+            Thread.currentThread().setContextClassLoader(previousContextLoader);
+        }
+    }
+
+    /** 编译独立行内动作。字符串模块依赖通过 Workspace 接入。 */
+    public Map<String, byte[]> compileInlineToBytecodeArtifact(
+            String code, String fileName, String entryName, String returnType) {
+        Parser parser = new Parser(
+                new Lexer(code, fileName), fileName);
+        return compileToBytecodeArtifact(parser.parseInline(entryName, returnType));
+    }
+
     /**
      * 用已经独立加载的字节码类创建当前 Nova 实例的运行包装。
      *
@@ -1496,8 +1528,8 @@ public final class Nova {
      */
     public static List<FileAnnotation> extractFileAnnotations(String source) {
         com.novalang.compiler.lexer.Lexer lexer = new com.novalang.compiler.lexer.Lexer(source, "<extract>");
-        com.novalang.compiler.parser.Parser parser = new com.novalang.compiler.parser.Parser(lexer, "<extract>");
-        com.novalang.compiler.ast.decl.Program program = parser.parse();
+        Parser parser = new Parser(lexer, "<extract>");
+        Program program = parser.parse();
 
         List<FileAnnotation> result = new ArrayList<>();
         for (com.novalang.compiler.ast.decl.Annotation ann : program.getFileAnnotations()) {

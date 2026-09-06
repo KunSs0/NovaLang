@@ -10,6 +10,9 @@ import java.nio.file.Path;
  */
 public final class SourceUnit {
 
+    private final String inlineEntryName;
+    private final String inlineReturnType;
+
     private final String moduleId;
     private final String sourceText;
     private final Path originFile;
@@ -36,6 +39,15 @@ public final class SourceUnit {
                       int originLine,
                       int generatedLineOffset,
                       Path physicalFile) {
+        this(moduleId, sourceText, originFile, originPath, originLine,
+                generatedLineOffset, physicalFile, null, null);
+    }
+
+    private SourceUnit(String moduleId, String sourceText, Path originFile, String originPath,
+                       int originLine, int generatedLineOffset, Path physicalFile,
+                       String inlineEntryName, String inlineReturnType) {
+        this.inlineEntryName = inlineEntryName;
+        this.inlineReturnType = inlineReturnType;
         if (moduleId == null || moduleId.trim().isEmpty()) {
             throw new IllegalArgumentException("moduleId must not be blank");
         }
@@ -67,6 +79,40 @@ public final class SourceUnit {
      */
     public static SourceUnit physical(String moduleId, String sourceText, Path physicalFile) {
         return new SourceUnit(moduleId, sourceText, physicalFile, null, 1, 0, physicalFile);
+    }
+
+    /** 创建行内动作；局部变量不会提升成模块字段，业务入口不会参与加载初始化。 */
+    public static SourceUnit inline(String moduleId, String sourceText, Path originFile,
+                                    String originPath, int originLine,
+                                    String entryName, String returnType) {
+        return inline(moduleId, sourceText, originFile, originPath, originLine, 0, entryName, returnType);
+    }
+
+    /** 创建包含宿主导入前缀的行内动作，并保留原始业务行号映射。 */
+    public static SourceUnit inline(String moduleId, String sourceText, Path originFile,
+                                    String originPath, int originLine, int generatedLineOffset,
+                                    String entryName, String returnType) {
+        if (entryName == null || !entryName.matches("[A-Za-z_][A-Za-z0-9_]*")
+                || "main".equals(entryName)) {
+            throw new IllegalArgumentException("Inline entry must be an identifier other than main");
+        }
+        if (returnType == null || returnType.trim().isEmpty()) {
+            throw new IllegalArgumentException("Inline return type must not be blank");
+        }
+        return new SourceUnit(moduleId, sourceText, originFile, originPath,
+                originLine, generatedLineOffset, null, entryName, returnType);
+    }
+
+    public boolean isInline() {
+        return inlineEntryName != null;
+    }
+
+    public String getInlineEntryName() {
+        return inlineEntryName;
+    }
+
+    public String getInlineReturnType() {
+        return inlineReturnType;
     }
 
     /** @return Workspace 模块标识 */

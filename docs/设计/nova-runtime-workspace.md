@@ -133,6 +133,51 @@ SourceUnit
 
 普通 `.nova` 文件由默认文件加载器生成 SourceUnit；YAML、数据库或网络配置由业务适配器生成虚拟 SourceUnit。编译错误和运行异常必须通过来源信息定位到原文件及业务路径。
 
+### 5.1 行内动作源码
+
+宿主通过 `SourceUnit.inline` 明确登记行内动作，配置中直接编写导入、局部变量和业务语句，不需要声明入口函数：
+
+```nova
+import "creator.dungeon"
+
+val ctx = currentContext()
+val player = currentPlayer()
+if (player == null) {
+    return false
+}
+return CreatorDungeon.isPlayerInDungeon(ctx, player)
+```
+
+示例中的类型和函数必须由宿主登记的模块显式导出；Nova 不添加 Creator 专属导入。
+
+```java
+SourceUnit action = SourceUnit.inline(
+        "creator/action/longsword",
+        sourceText,
+        templatePath,
+        "stage.opening.npc.training-weapon-rack.conversation.actions.longsword",
+        firstSourceLine,
+        "execute",
+        "Boolean");
+workspace.registerVirtualSource(action, true);
+workspace.load();
+
+Object result = workspace.invoke(
+        action.getModuleId(), action.getInlineEntryName(), bindings, scope);
+```
+
+行内动作必须登记为独立入口。入口名称必须是标识符，不能使用初始化函数名 `main`。加载时完成编译和依赖初始化，业务入口只在宿主调用时执行。
+
+解析器 `Parser.parseInline(entryName, returnType)` 将导入保留在模块级，将业务声明和语句放入 `InlineEntryDecl` 的函数体。Workspace 先保留行内源码边界，再组合普通模块 AST 和行内入口 AST；不向业务文本添加函数包装。局部 `val/var` 不生成模块静态字段，每次调用重新创建。函数、闭包和异常处理沿用 Nova 的函数体语义。
+
+返回类型由宿主显式声明。非 `Unit` 行内入口必须显式返回结果，语义分析检查返回类型和正常结束路径；分支应使用完整 `if/else` 或带 `else` 的 `when`，也可以在末尾统一 `return`。目前不会通过常量条件推导循环必然返回。普通模块函数的返回规则保持其现有语义。
+
+编译产物沿用 Workspace 编译组的 `$Module` 静态方法。例如 `execute(): Boolean` 生成 JVM 描述符 `()Z`，Workspace 通用调用接口返回装箱后的 `Boolean`。依赖按现有编译分组复用，不为每次点击重新编译。缓存键包含行内边界、入口名、返回类型和源码；新 Generation 仍然使用独立 ClassLoader。
+
+AST 节点保留业务源码位置，编译错误和运行错误通过 Source Map 映射回 YAML 节点与行号。字符串 import 仍遵循 Workspace 的独占行要求。
+
+独立使用 Nova 时，可以调用 `Nova.compileInlineToBytecodeArtifact(code, fileName, entryName, returnType)` 获得字节码。需要字符串模块依赖解析、执行绑定与生命周期管理的宿主应使用 Workspace。`Nova.compileToBytecodeArtifact(Program)` 和 `NovaIrCompiler.compileArtifact(Program)` 接收已由调用方完成模块组织的 AST。
+
 ## 6. 作用域与资源归属
 
 ```text
