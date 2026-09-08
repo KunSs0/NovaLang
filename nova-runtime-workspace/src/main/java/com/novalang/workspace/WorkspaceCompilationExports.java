@@ -12,6 +12,15 @@ final class WorkspaceCompilationExports {
     private final Set<String> staticMemberNames;
     private final Set<String> javaImportDeclarations;
     private final Set<String> extensionDeclarations = new LinkedHashSet<String>();
+    private final Set<String> forwardedExtensionNames = new LinkedHashSet<String>();
+
+    /**
+     * 返回仅用于本组链接的扩展转发函数名，不能再次作为普通静态成员导出。
+     * @return 转发函数名称集合。
+     */
+    Set<String> getForwardedExtensionNames() {
+        return forwardedExtensionNames;
+    }
 
     Set<String> getExtensionDeclarations() {
         return extensionDeclarations;

@@ -5,6 +5,8 @@ import com.novalang.compiler.lexer.Lexer;
 import com.novalang.compiler.parser.Parser;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
+import java.util.LinkedHashSet;
 
 /**
  * 单个入口的依赖闭包合并源码及其 Source Map。
@@ -14,17 +16,22 @@ final class WorkspaceBundle {
     private final List<InlinePart> inlineParts;
     private final String source;
     private final WorkspaceSourceMap sourceMap;
+    private final Set<String> inheritedExtensions;
 
     /**
      * 创建入口编译包。
      *
      * @param source 已移除字符串 import 的完整源码
      * @param sourceMap 逐行来源映射
+     * @param inlineParts 行内入口的源码区间
+     * @param inheritedExtensions 依赖组已生成的原始扩展链接
      */
-    WorkspaceBundle(String source, WorkspaceSourceMap sourceMap, List<InlinePart> inlineParts) {
+    WorkspaceBundle(String source, WorkspaceSourceMap sourceMap, List<InlinePart> inlineParts,
+                    Set<String> inheritedExtensions) {
         this.inlineParts = new ArrayList<InlinePart>(inlineParts);
         this.source = source;
         this.sourceMap = sourceMap;
+        this.inheritedExtensions = new LinkedHashSet<String>(inheritedExtensions);
     }
 
     /** 保longsword: |-
@@ -105,8 +112,15 @@ final class WorkspaceBundle {
         return source;
     }
 
-    /** 为跨编译组调用保留脚本扩展签名，并链接到已经编译的静态实现。 */
+    /**
+     * 保留原始扩展链接，仅为本组真实源码中的公开扩展建立新链接。
+     * @param packageName 当前编译组包名。
+     * @param exports 当前组导出集合。
+     * @param classes 当前组已定义的 JVM 类型。
+     */
     void exportExtensions(String packageName, WorkspaceCompilationExports exports, java.util.Map<String, Class<?>> classes) {
+        // 转发依赖的原始链接，不为生成的转发声明创建新的模块身份。
+        exports.getExtensionDeclarations().addAll(inheritedExtensions);
         Program program = parse(packageName);
         int index = 0;
         for (com.novalang.compiler.ast.decl.Declaration declaration : program.getDeclarations()) {
@@ -115,6 +129,9 @@ final class WorkspaceBundle {
                         (com.novalang.compiler.ast.decl.PropertyDecl) declaration;
                 if (!property.isExtensionProperty()
                         || property.getModifiers().contains(com.novalang.compiler.ast.Modifier.PRIVATE)) {
+                    continue;
+                }
+                if (sourceMap.mapLine(property.getLocation().getLine()) == null) {
                     continue;
                 }
                 Class<?> module = classes.get(packageName + ".$Module");
@@ -153,6 +170,10 @@ final class WorkspaceBundle {
                     (com.novalang.compiler.ast.decl.FunDecl) declaration;
             if (!function.isExtensionFunction() || function.getBody() == null
                     || function.getModifiers().contains(com.novalang.compiler.ast.Modifier.PRIVATE)) {
+                continue;
+            }
+            if (sourceMap.mapLine(function.getLocation().getLine()) == null) {
+                exports.getForwardedExtensionNames().add(function.getName());
                 continue;
             }
             String header = source.substring(function.getLocation().getOffset(),

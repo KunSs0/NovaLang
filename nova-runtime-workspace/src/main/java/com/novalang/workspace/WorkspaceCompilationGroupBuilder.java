@@ -19,6 +19,13 @@ final class WorkspaceCompilationGroupBuilder {
     private static final Pattern PACKAGE_DECLARATION = Pattern.compile(
             "^\\s*package\\s+[A-Za-z_$][A-Za-z0-9_$.]*\\s*;?\\s*$");
 
+    /**
+     * 合并本组源码及依赖的原始扩展链接，并保留来源映射。
+     * @param graph 已解析模块图。
+     * @param group 当前编译组。
+     * @param exportsByGroup 已完成编译的依赖导出。
+     * @return 可独立编译的源码包。
+     */
     WorkspaceBundle build(WorkspaceModuleGraph graph,
                           WorkspaceCompilationPlan.Group group,
                           Map<String, WorkspaceCompilationExports> exportsByGroup) {
@@ -31,10 +38,14 @@ final class WorkspaceCompilationGroupBuilder {
         Set<String> imports = new LinkedHashSet<String>();
         appendLinkImports(group, exportsByGroup, imports, source, mappings);
         appendJavaImports(graph, group, imports, source, mappings);
+        // 同一个原始扩展可能经多个依赖到达本组，按原始链接身份只注入一次。
+        Set<String> inheritedExtensions = new LinkedHashSet<String>();
         for (WorkspaceCompilationPlan.Group dependency : group.getDependencies()) {
             for (String declaration : exportsByGroup.get(dependency.getId()).getExtensionDeclarations()) {
-                for (String line : declaration.split("\n")) {
-                    appendLine(source, mappings, line, null, 0);
+                if (inheritedExtensions.add(declaration)) {
+                    for (String line : declaration.split("\n")) {
+                        appendLine(source, mappings, line, null, 0);
+                    }
                 }
             }
         }
@@ -65,9 +76,17 @@ final class WorkspaceCompilationGroupBuilder {
         if (source.length() > 0) {
             source.setLength(source.length() - 1);
         }
-        return new WorkspaceBundle(source.toString(), new WorkspaceSourceMap(mappings), inlineParts);
+        return new WorkspaceBundle(source.toString(), new WorkspaceSourceMap(mappings), inlineParts, inheritedExtensions);
     }
 
+    /**
+     * 导入依赖的公开符号，排除仅用于链接的扩展转发函数。
+     * @param group 当前编译组。
+     * @param exportsByGroup 依赖导出。
+     * @param imports 已输出的导入集合。
+     * @param source 合并源码。
+     * @param mappings 来源映射。
+     */
     private void appendLinkImports(WorkspaceCompilationPlan.Group group,
                                    Map<String, WorkspaceCompilationExports> exportsByGroup,
                                    Set<String> imports,
@@ -83,6 +102,9 @@ final class WorkspaceCompilationGroupBuilder {
                 appendImport(importDeclaration, imports, source, mappings, null, 0);
             }
             for (String memberName : exports.getStaticMemberNames()) {
+                if (exports.getForwardedExtensionNames().contains(memberName)) {
+                    continue;
+                }
                 appendImport("import static " + dependency.getPackageName()
                                 + ".$Module." + memberName,
                         imports, source, mappings, null, 0);

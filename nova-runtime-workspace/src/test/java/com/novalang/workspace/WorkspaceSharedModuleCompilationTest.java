@@ -29,6 +29,43 @@ class WorkspaceSharedModuleCompilationTest {
 
     private static final int ACTION_COUNT = 20;
 
+    /**
+     * 菱形依赖只能转发原始扩展一次，不能为每一层链接重新生成导出身份。
+     * @throws Exception 测试源码写入、编译或执行失败。
+     */
+    @Test
+    void shouldDeduplicateOriginalExtensionsThroughDiamondDependencies() throws Exception {
+        WorkspaceTestSupport.write(tempDirectory, "base.nova",
+                "import java java.io.File\n"
+                        + "fun File.getEntityManager(): String { return this.getPath() }\n"
+                        + "val File.label: String get() = this.getPath()\n");
+        WorkspaceTestSupport.write(tempDirectory, "left.nova",
+                "import \"@/base\"\nfun left(): String { return File(\"left\").getEntityManager() }\n");
+        WorkspaceTestSupport.write(tempDirectory, "right.nova",
+                "import \"@/base\"\nfun right(): String { return File(\"right\").label }\n");
+        WorkspaceTestSupport.write(tempDirectory, "entry.nova",
+                "import \"@/base\"\nimport \"@/left\"\nimport \"@/right\"\n"
+                        + "fun execute(): String { return left() + right() + File(\"direct\").getEntityManager() + File(\"property\").label }\n");
+        WorkspaceTestSupport.write(tempDirectory, "left-entry.nova",
+                "import \"@/left\"\nfun execute(): String { return left() }\n");
+        WorkspaceTestSupport.write(tempDirectory, "right-entry.nova",
+                "import \"@/right\"\nfun execute(): String { return right() }\n");
+        Path configFile = WorkspaceTestSupport.writeConfig(tempDirectory, "caller",
+                "  - \"entry.nova\"\n  - \"left-entry.nova\"\n  - \"right-entry.nova\"\n");
+        RuntimeWorkspace workspace = new RuntimeWorkspace(configFile, nova -> { });
+        try {
+            workspace.load();
+            assertEquals("leftrightdirectproperty", workspace.invoke("entry.nova", "execute",
+                    Collections.<String, Object>emptyMap(), null));
+            assertEquals("left", workspace.invoke("left-entry.nova", "execute",
+                    Collections.<String, Object>emptyMap(), null));
+            assertEquals("right", workspace.invoke("right-entry.nova", "execute",
+                    Collections.<String, Object>emptyMap(), null));
+        } finally {
+            workspace.dispose();
+        }
+    }
+
     @Test
     void shouldKeepSameNamedExtensionPropertiesOnDifferentReceiversSeparate() throws Exception {
         WorkspaceTestSupport.write(tempDirectory, "labels.nova",
