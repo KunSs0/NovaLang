@@ -98,8 +98,12 @@ public final class NovaDynamic {
 
         // java.util.Map（编译模式 Map 字面量生成 HashMap）
         if (target instanceof java.util.Map && !(target instanceof NovaMap)) {
-            Object val = ((java.util.Map<?, ?>) target).get(memberName);
-            if (val != null) return val;
+            java.util.Map<?, ?> map = (java.util.Map<?, ?>) target;
+            Object val = map.get(memberName);
+            // 键存在但值为 null 仍是合法读取，不能继续解析 Java 属性。
+            if (val != null || map.containsKey(memberName)) {
+                return val;
+            }
         }
 
         // 统一成员分派：NovaMap 键查找、NovaResult 属性、NovaPair 别名等
@@ -1987,6 +1991,11 @@ public final class NovaDynamic {
      * 返回 getter MethodHandle，签名 (Object) → Object。
      */
     public static MethodHandle resolveGetterForCallSite(Class<?> clazz, String memberName) {
+        // Map 的键集合随实例和时间变化，不能按接收者类型缓存 Java 属性 getter。
+        // 保持 getMember 的键优先语义，尤其是与属性同名的 null 值键。
+        if (java.util.Map.class.isAssignableFrom(clazz)) {
+            return null;
+        }
         try {
             return resolveGetter(clazz, memberName);
         } catch (RuntimeException e) {
