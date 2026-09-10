@@ -3113,11 +3113,15 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
 
         NovaType iterableNovaType = getNovaType(node.getIterable());
         NovaType elemNovaType = inference.inferElementNovaType(iterableNovaType);
+        // 与循环执行和 MIR 绑定规则一致：单个位置变量接收整个元素，而非 component1。
+        boolean singleElementBinding = node.getEntries().size() == 1
+                && !node.getEntries().get(0).isNameBased();
         for (int i = 0; i < node.getEntries().size(); i++) {
             DestructuringEntry entry = node.getEntries().get(i);
             String varName = entry.getLocalName();
             if (varName != null && !"_".equals(varName)) {
-                NovaType entryNovaType = destructuringEntryType(elemNovaType, entry, i);
+                NovaType entryNovaType = singleElementBinding
+                        ? elemNovaType : destructuringEntryType(elemNovaType, entry, i);
                 String elemType = entryNovaType != null ? entryNovaType.toDisplayString() : null;
                 Symbol varSym = new Symbol(varName, SymbolKind.VARIABLE, elemType,
                         false, node.getLocation(), node, Modifier.PUBLIC);
