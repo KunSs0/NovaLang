@@ -200,6 +200,22 @@ class SemanticAnalyzerTypeInferenceTest {
         }
 
         @Test
+        @DisplayName("emptyMap<String, Int>() 应保留显式类型实参")
+        void explicitlyTypedEmptyMapFactory() {
+            AnalysisResult r = analyze("val m = emptyMap<String, Int>()");
+            assertNoDiagnostics(r);
+            assertSymbolType(r, "m", "Map<String, Int>");
+        }
+
+        @Test
+        @DisplayName("mutableMapOf<String, Int>() 空调用应保留显式类型实参")
+        void explicitlyTypedEmptyMutableMapFactory() {
+            AnalysisResult r = analyze("val m = mutableMapOf<String, Int>()");
+            assertNoDiagnostics(r);
+            assertSymbolType(r, "m", "Map<String, Int>");
+        }
+
+        @Test
         @DisplayName("mapOf 混合 value 类型 → Map<String, Any>")
         void mapOfMixedValues() {
             AnalysisResult r = analyze("val m = mapOf(\"a\" to 1, \"b\" to \"hello\")");

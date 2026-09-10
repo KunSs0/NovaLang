@@ -72,6 +72,17 @@ class JavaTypeResolutionSemanticsTest {
     }
 
     @Test
+    @DisplayName("qualified nested types should resolve from explicitly imported java outer classes")
+    void qualifiedNestedTypesShouldResolveFromImportedOuterClasses() {
+        AnalysisResult result = analyze(
+                "import java java.util.Map\n" +
+                "val entry: Map.Entry<String, String>? = null");
+
+        assertFalse(hasError(result),
+                "Map.Entry should resolve through the explicitly imported java.util.Map outer class");
+    }
+
+    @Test
     @DisplayName("java wildcard imports should support package segments that are lexer keywords")
     void javaWildcardImportsShouldSupportKeywordPackageSegments() {
         AnalysisResult result = analyze(

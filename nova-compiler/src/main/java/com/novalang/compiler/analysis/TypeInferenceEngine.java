@@ -141,9 +141,44 @@ public final class TypeInferenceEngine {
     }
 
     /**
-     * 集合工厂函数泛型推断：listOf(1,2,3) → List&lt;Int&gt;
+     * 集合工厂函数泛型推断：listOf(1,2,3) → List&lt;Int&gt;。
+     * 空集合调用优先使用显式类型实参，非空调用继续按值实参推断。
      */
-    public NovaType inferCollectionFactoryType(String funcName, List<CallExpr.Argument> args) {
+    public NovaType inferCollectionFactoryType(String funcName, List<CallExpr.Argument> args,
+                                               List<NovaType> explicitTypeArgs) {
+        if (args.isEmpty() && explicitTypeArgs != null && !explicitTypeArgs.isEmpty()) {
+            switch (funcName) {
+                case "listOf":
+                case "mutableListOf":
+                case "emptyList":
+                    if (explicitTypeArgs.size() == 1) {
+                        return NovaTypes.listOf(explicitTypeArgs.get(0));
+                    }
+                    break;
+                case "arrayOf":
+                    if (explicitTypeArgs.size() == 1) {
+                        return new ClassNovaType("Array",
+                                Collections.singletonList(NovaTypeArgument.invariant(explicitTypeArgs.get(0))), false);
+                    }
+                    break;
+                case "setOf":
+                case "mutableSetOf":
+                case "emptySet":
+                    if (explicitTypeArgs.size() == 1) {
+                        return NovaTypes.setOf(explicitTypeArgs.get(0));
+                    }
+                    break;
+                case "mapOf":
+                case "mutableMapOf":
+                case "emptyMap":
+                    if (explicitTypeArgs.size() == 2) {
+                        return NovaTypes.mapOf(explicitTypeArgs.get(0), explicitTypeArgs.get(1));
+                    }
+                    break;
+                default:
+                    break;
+            }
+        }
         switch (funcName) {
             case "listOf":
             case "mutableListOf": {

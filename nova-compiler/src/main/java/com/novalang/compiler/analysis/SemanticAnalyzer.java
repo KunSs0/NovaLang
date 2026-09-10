@@ -3612,7 +3612,13 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
             if (NovaTypes.isDynamicType(calleeType)) {
                 setNovaType(node, NovaTypes.DYNAMIC.withNullable(calleeType.isNullable()));
             }
-            NovaType collType = inference.inferCollectionFactoryType(funcName, node.getArgs());
+            List<NovaType> explicitCollectionTypeArgs = new ArrayList<NovaType>();
+            for (TypeRef typeArg : node.getTypeArgs()) {
+                validateTypeRef(typeArg, node);
+                explicitCollectionTypeArgs.add(typeResolver.resolve(typeArg));
+            }
+            NovaType collType = inference.inferCollectionFactoryType(
+                    funcName, node.getArgs(), explicitCollectionTypeArgs);
             if (collType != null) {
                 setNovaType(node, collType);
             }

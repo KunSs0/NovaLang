@@ -371,6 +371,15 @@ public final class TypeResolver implements TypeRefVisitor<NovaType> {
         if (qualifiedName != null) {
             return javaTypeOracle.resolve(qualifiedName);
         }
+        int memberSeparator = name != null ? name.indexOf('.') : -1;
+        if (memberSeparator > 0) {
+            String importedOuterName = name.substring(0, memberSeparator);
+            String qualifiedOuterName = javaImportedTypes.get(importedOuterName);
+            if (qualifiedOuterName != null) {
+                String qualifiedNestedName = qualifiedOuterName + name.substring(memberSeparator);
+                return javaTypeOracle.resolve(qualifiedNestedName);
+            }
+        }
         if (name != null && name.indexOf('.') < 0) {
             for (String pkg : javaWildcardImports) {
                 JavaTypeDescriptor descriptor = javaTypeOracle.resolve(pkg + "." + name);
