@@ -293,4 +293,3 @@ RuntimeWorkspace workspace = new RuntimeWorkspace(
 3. Workspace 外部注册器绑定 `RuntimeWorkspace`、`WorkspaceGeneration` 还是具体 `ResourceScope`。
 4. standalone Nova 回调是否允许异步执行，以及异步执行器由谁提供。
 5. 事件类字符串是否继续保留，还是另行增加编译期 `EventType` 描述。
-
