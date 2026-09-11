@@ -177,11 +177,82 @@ public final class JavaTypeDescriptor {
                 candidates.add(method);
             }
         }
+        if (containsFunctionType(argTypes)) {
+            List<Method> functionCompatible = new ArrayList<Method>();
+            for (Method method : candidates) {
+                if (Modifier.isStatic(method.getModifiers()) != staticOnly) {
+                    continue;
+                }
+                if (isNovaMethodCompatible(method, argTypes, superTypeRegistry)) {
+                    functionCompatible.add(method);
+                }
+            }
+            if (functionCompatible.size() == 1) {
+                return toExecutableDescriptor(functionCompatible.get(0), receiverTypeArguments);
+            }
+            if (functionCompatible.isEmpty()) {
+                return null;
+            }
+            candidates = functionCompatible;
+        }
         Method bestMethod = JavaOverloadResolver.selectBestMethod(
                 candidates, staticOnly, JavaTypeOracle.get().toJavaArgumentTypes(argTypes));
         return bestMethod != null
                 ? toExecutableDescriptor(bestMethod, receiverTypeArguments)
                 : null;
+    }
+
+    /**
+     * 判断参数列表中是否包含 Nova 函数类型，函数类型不能降级为 Object 参与 Java 重载解析。
+     */
+    private boolean containsFunctionType(List<NovaType> argumentTypes) {
+        if (argumentTypes == null) {
+            return false;
+        }
+        for (NovaType argumentType : argumentTypes) {
+            if (argumentType instanceof FunctionNovaType) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 使用 Nova 类型系统检查 Java 方法是否接受给定参数，包括 SAM 函数参数。
+     */
+    private boolean isNovaMethodCompatible(Method method,
+                                            List<NovaType> argumentTypes,
+                                            SuperTypeRegistry superTypeRegistry) {
+        if (method == null || argumentTypes == null) {
+            return false;
+        }
+        Class<?>[] parameterClasses = method.getParameterTypes();
+        boolean varArgs = method.isVarArgs();
+        if (!varArgs && parameterClasses.length != argumentTypes.size()) {
+            return false;
+        }
+        int fixedCount = varArgs ? Math.max(parameterClasses.length - 1, 0) : parameterClasses.length;
+        if (argumentTypes.size() < fixedCount) {
+            return false;
+        }
+        for (int index = 0; index < argumentTypes.size(); index++) {
+            int parameterIndex = index;
+            if (varArgs && parameterIndex >= parameterClasses.length) {
+                parameterIndex = parameterClasses.length - 1;
+            }
+            if (parameterIndex < 0 || parameterIndex >= parameterClasses.length) {
+                return false;
+            }
+            Class<?> parameterClass = parameterClasses[parameterIndex];
+            if (varArgs && parameterIndex == parameterClasses.length - 1) {
+                parameterClass = parameterClass.getComponentType();
+            }
+            NovaType parameterType = JavaTypeOracle.get().toNovaType(parameterClass, false);
+            if (!TypeCompatibility.isAssignable(parameterType, argumentTypes.get(index), superTypeRegistry)) {
+                return false;
+            }
+        }
+        return true;
     }
 
     public JavaExecutableDescriptor resolveConstructor(List<NovaType> argTypes) {

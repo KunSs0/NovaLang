@@ -4541,7 +4541,15 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
         FunctionNovaType expectedType = expectedFunctionType(node);
         if (!node.hasTarget()) {
             Symbol callable = currentScope.resolve(node.getMethodName());
-            methodRefType = functionTypeFromCallableSymbol(callable, null);
+            if (callable == null
+                    || (callable.getKind() != SymbolKind.FUNCTION
+                    && callable.getKind() != SymbolKind.BUILTIN_FUNCTION)) {
+                checker.addDiagnostic(SemanticDiagnostic.Severity.ERROR,
+                        "Unresolved function reference '::" + node.getMethodName() + "'",
+                        node);
+            } else {
+                methodRefType = functionTypeFromCallableSymbol(callable, null);
+            }
         } else {
             NovaType typeTarget = resolveMethodReferenceTypeTarget(node);
             if (typeTarget != null) {
@@ -4578,6 +4586,15 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
                             : inferMemberReferenceType(boundTargetType, node.getMethodName(), true);
                 }
             }
+        }
+        NovaType boundTargetType = node.hasTarget() && node.getTypeTarget() == null
+                ? getNovaType(node.getTarget())
+                : null;
+        boolean dynamicTarget = boundTargetType != null && NovaTypes.isDynamicType(boundTargetType);
+        if (methodRefType == null && node.hasTarget() && !dynamicTarget) {
+            checker.addDiagnostic(SemanticDiagnostic.Severity.ERROR,
+                    "Unresolved method reference '::" + node.getMethodName() + "'",
+                    node);
         }
         setNovaType(node, methodRefType);
         return null;

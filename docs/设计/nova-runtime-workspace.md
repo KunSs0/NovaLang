@@ -200,7 +200,9 @@ Workspace
 
 ## 7. 回调与并发
 
-宿主不得长期保存解释器内部函数对象，只能保存稳定的 `NovaCallback`：
+宿主不得长期保存解释器内部函数对象。Bukkit 事件必须接收编译期已解析的
+`BukkitEventListener`，由 Workspace 包装为稳定的直接回调；其他需要宿主按入口主动
+调用的场景仍可使用稳定的 `NovaCallback`：
 
 ```text
 NovaCallback = Program + Generation + ResourceScope + CapturedBindings
@@ -253,7 +255,7 @@ WorkspaceConfigFiles
 └─ read*(document, path, defaultValue?)
 
 BukkitWorkspaceEvents
-└─ listen(eventType, priority, ignoreCancelled, entry, function, policy?)
+└─ listen(eventType, priority, ignoreCancelled, BukkitEventListener)
 
 WorkspaceGeneration
 ├─ moduleGraph

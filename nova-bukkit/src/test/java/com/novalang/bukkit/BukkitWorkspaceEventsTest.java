@@ -113,6 +113,81 @@ class BukkitWorkspaceEventsTest {
     }
 
     @Test
+    void compilesMethodReferenceAsBukkitListenerSam() {
+        Nova nova = new Nova();
+        nova.setScriptClassLoader(BukkitWorkspaceEventsTest.class.getClassLoader());
+        nova.compileToBytecode(
+                "import java com.novalang.bukkit.BukkitWorkspaceEvents\n"
+                        + "import java org.bukkit.event.Event\n"
+                        + "import java org.bukkit.event.EventPriority\n"
+                        + "fun handle(event: Event) { }\n"
+                        + "BukkitWorkspaceEvents.listen(\""
+                        + TestEvent.class.getName()
+                        + "\", EventPriority.NORMAL, false, ::handle)",
+                "bukkit-method-reference.nova"
+        );
+    }
+
+    @Test
+    void rejectsUnknownMethodReferenceBeforeBukkitRegistration() {
+        Nova nova = new Nova();
+        nova.setScriptClassLoader(BukkitWorkspaceEventsTest.class.getClassLoader());
+
+        assertThrows(
+                RuntimeException.class,
+                () -> nova.compileToBytecode(
+                        "import java com.novalang.bukkit.BukkitWorkspaceEvents\n"
+                                + "import java org.bukkit.event.Event\n"
+                                + "import java org.bukkit.event.EventPriority\n"
+                                + "BukkitWorkspaceEvents.listen(\""
+                                + TestEvent.class.getName()
+                                + "\", EventPriority.NORMAL, false, ::missing)",
+                        "bukkit-unknown-method-reference.nova"
+                )
+        );
+    }
+
+    @Test
+    void rejectsIncompatibleMethodReferenceParameterBeforeBukkitRegistration() {
+        Nova nova = new Nova();
+        nova.setScriptClassLoader(BukkitWorkspaceEventsTest.class.getClassLoader());
+
+        assertThrows(
+                RuntimeException.class,
+                () -> nova.compileToBytecode(
+                        "import java com.novalang.bukkit.BukkitWorkspaceEvents\n"
+                                + "import java org.bukkit.event.Event\n"
+                                + "import java org.bukkit.event.EventPriority\n"
+                                + "fun handle(value: String) { }\n"
+                                + "BukkitWorkspaceEvents.listen(\""
+                                + TestEvent.class.getName()
+                                + "\", EventPriority.NORMAL, false, ::handle)",
+                        "bukkit-incompatible-method-reference.nova"
+                )
+        );
+    }
+
+    @Test
+    void rejectsIncompatibleMethodReferenceReturnTypeBeforeBukkitRegistration() {
+        Nova nova = new Nova();
+        nova.setScriptClassLoader(BukkitWorkspaceEventsTest.class.getClassLoader());
+
+        assertThrows(
+                RuntimeException.class,
+                () -> nova.compileToBytecode(
+                        "import java com.novalang.bukkit.BukkitWorkspaceEvents\n"
+                                + "import java org.bukkit.event.Event\n"
+                                + "import java org.bukkit.event.EventPriority\n"
+                                + "fun handle(event: Event): String = \"handled\"\n"
+                                + "BukkitWorkspaceEvents.listen(\""
+                                + TestEvent.class.getName()
+                                + "\", EventPriority.NORMAL, false, ::handle)",
+                        "bukkit-incompatible-method-reference-return.nova"
+                )
+        );
+    }
+
+    @Test
     void compilesWorkspaceCallWithListenerDefinedInAnotherCompilationGroup() throws Exception {
         final Thread owner = Thread.currentThread();
         SchedulerHolder.set(new NovaScheduler() {

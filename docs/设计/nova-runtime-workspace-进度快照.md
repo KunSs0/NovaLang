@@ -37,7 +37,8 @@
 - `WorkspaceGeneration`、`GenerationState`：表示一次完整加载代际，负责程序和根资源的生命周期。
 - `ResourceScope`、`ResourceScopeState`、`ScopeType`：表示 Generation、业务实例、阶段和单次调用等嵌套作用域。
 - `WorkspaceExecutionContext`、`WorkspaceExecutionDispatcher`、`ExecutionPolicy`：传播执行上下文，支持主线程、调用线程、并行安全和作用域串行策略。
-- `NovaCallback`、`WorkspaceCallbacks`：保存稳定的入口/函数引用，在 Generation 或 Scope 销毁后自动失效。
+- `NovaCallback`、`WorkspaceCallbacks`：保存宿主主动调用所需的稳定入口引用，在 Generation 或 Scope 销毁后自动失效。
+- `BukkitWorkspaceEvents`：仅接收编译期已解析的 `BukkitEventListener`，不再通过字符串函数名注册事件回调。
 - 原生 `schedule/scheduleRepeat`：在 Workspace 中创建归属于当前作用域的延迟任务和循环任务，并在作用域销毁时清理。
 - `WorkspaceHost`、`WorkspaceProgram`、`WorkspaceBundle`、`WorkspaceBundleBuilder`：抽象宿主绑定、模块程序和加载产物。
 

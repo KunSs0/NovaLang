@@ -1,8 +1,6 @@
 package com.novalang.bukkit;
 
 import com.novalang.runtime.interpreter.JavaInterop;
-import com.novalang.workspace.ExecutionPolicy;
-import com.novalang.workspace.NovaCallback;
 import com.novalang.workspace.ResourceScope;
 import com.novalang.workspace.WorkspaceDirectCallback;
 import com.novalang.workspace.WorkspaceEventCallback;
@@ -25,51 +23,6 @@ public final class BukkitWorkspaceEvents {
      * 工具类不允许实例化。
      */
     private BukkitWorkspaceEvents() {
-    }
-
-    /**
-     * 使用 Workspace 默认执行策略订阅 Bukkit 事件。
-     *
-     * @param eventClassName Bukkit 事件类的全限定名
-     * @param priority 监听优先级
-     * @param ignoreCancelled 是否忽略已经取消的事件
-     * @param entryName Nova 回调所属入口名称
-     * @param functionName Nova 回调函数名称
-     * @return 已登记到当前作用域的监听资源
-     */
-    public static WorkspaceResource listen(String eventClassName,
-                                           EventPriority priority,
-                                           boolean ignoreCancelled,
-                                           String entryName,
-                                           String functionName) {
-        return listen(eventClassName, priority, ignoreCancelled, entryName, functionName, null);
-    }
-
-    /**
-     * 使用指定执行策略订阅 Bukkit 事件。
-     *
-     * @param eventClassName Bukkit 事件类的全限定名
-     * @param priority 监听优先级
-     * @param ignoreCancelled 是否忽略已经取消的事件
-     * @param entryName Nova 回调所属入口名称
-     * @param functionName Nova 回调函数名称
-     * @param policy 固定执行策略；传 {@code null} 时使用 Workspace 默认策略
-     * @return 已登记到当前作用域的监听资源
-     */
-    public static WorkspaceResource listen(String eventClassName,
-                                           EventPriority priority,
-                                           boolean ignoreCancelled,
-                                           String entryName,
-                                           String functionName,
-                                           ExecutionPolicy policy) {
-        Class<? extends Event> eventType = resolveEventType(eventClassName);
-        if (priority == null) {
-            throw new IllegalArgumentException("priority must not be null");
-        }
-        ResourceScope scope = WorkspaceExecutionContext.requireScope();
-        NovaCallback callback = WorkspaceCallbacks.create(entryName, functionName, policy);
-        return register(eventType, priority, ignoreCancelled, scope,
-                new NovaCallbackInvocation(callback));
     }
 
     /**
@@ -222,34 +175,13 @@ public final class BukkitWorkspaceEvents {
     }
 
     /**
-     * 统一 Nova 稳定回调与编译监听器实例的生命周期判断和调用。
+     * 统一编译监听器实例的生命周期判断和调用。
      */
     private interface EventInvocation {
 
         boolean isValid();
 
         void invoke(Event event);
-    }
-
-    /**
-     * 具名 Workspace 函数回调入口；显式监听器实例不使用该路径。
-     */
-    private static final class NovaCallbackInvocation implements EventInvocation {
-        private final NovaCallback callback;
-
-        NovaCallbackInvocation(NovaCallback callback) {
-            this.callback = callback;
-        }
-
-        @Override
-        public boolean isValid() {
-            return callback.isValid();
-        }
-
-        @Override
-        public void invoke(Event event) {
-            callback.invoke(event);
-        }
     }
 
     /**
