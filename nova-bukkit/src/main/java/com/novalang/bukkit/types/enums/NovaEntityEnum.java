@@ -1,5 +1,6 @@
 package com.novalang.bukkit.types.enums;
 
+import com.novalang.bukkit.Requires;
 import com.novalang.runtime.host.JavaTypes;
 import org.bukkit.entity.Arrow;
 import org.bukkit.entity.Horse;
@@ -12,6 +13,7 @@ import org.bukkit.entity.Villager;
 
 /** 实体子类型的 Spigot 1.12.2 Fluxon 枚举入口。 */
 @SuppressWarnings("deprecation")
+@Requires(classes = {"org.bukkit.entity.Arrow$PickupStatus", "org.bukkit.entity.Villager$Career"})
 final class NovaEntityEnum {
 
     private NovaEntityEnum() {

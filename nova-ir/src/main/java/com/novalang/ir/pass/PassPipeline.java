@@ -42,6 +42,8 @@ public class PassPipeline {
     private List<HirClass> externalClasses = new ArrayList<>();
     private Collection<String> externalClassNames = Collections.emptyList();
     private Collection<String> externalInterfaceNames = Collections.emptyList();
+    private Collection<String> externalValueNames = Collections.emptyList();
+    private Map<String, Integer> externalCallableArities = Collections.emptyMap();
     private boolean scriptMode = false;
     private boolean interpreterMode = false;
     /** 持久化匿名类计数器（跨 evalRepl 调用递增，避免 Lambda 类名冲突） */
@@ -129,6 +131,16 @@ public class PassPipeline {
         this.externalInterfaceNames = names;
     }
 
+    public void setExternalValueNames(Collection<String> names) {
+        this.externalValueNames = names == null ? Collections.<String>emptyList() : names;
+    }
+
+    public void setExternalCallableArities(Map<String, Integer> arities) {
+        this.externalCallableArities = arities == null
+                ? Collections.<String, Integer>emptyMap()
+                : arities;
+    }
+
     /**
      * 执行完整管线：AST → HIR → HIR优化 → MIR → MIR优化 → 字节码。
      *
@@ -207,6 +219,16 @@ public class PassPipeline {
             if (externalInterfaceNames != null) {
                 for (String interfaceName : externalInterfaceNames) {
                     analyzer.registerKnownType(interfaceName);
+                }
+            }
+            if (externalCallableArities != null) {
+                for (Map.Entry<String, Integer> entry : externalCallableArities.entrySet()) {
+                    analyzer.registerExternalCallable(entry.getKey(), entry.getValue().intValue());
+                }
+            }
+            if (externalValueNames != null) {
+                for (String valueName : externalValueNames) {
+                    analyzer.registerExternalValue(valueName);
                 }
             }
             // 编译管线只需诊断输出，跳过 exprNovaTypeMap / 位置索引记录以节省内存

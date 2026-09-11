@@ -7,7 +7,10 @@ import org.bukkit.TravelAgent;
 import org.bukkit.event.entity.EntityPortalEvent;
 
 /** 实体传送门事件的可选编译期别名。 */
-@Requires(classes = {"org.bukkit.event.entity.EntityPortalEvent"})
+@Requires(classes = {"org.bukkit.event.entity.EntityPortalEvent", "org.bukkit.TravelAgent"}, methods = {
+        "org.bukkit.event.entity.EntityPortalEvent#getPortalTravelAgent()",
+        "org.bukkit.event.entity.EntityPortalEvent#setPortalTravelAgent(org.bukkit.TravelAgent)"
+})
 public final class NovaEntityPortalEvent {
 
     private NovaEntityPortalEvent() {

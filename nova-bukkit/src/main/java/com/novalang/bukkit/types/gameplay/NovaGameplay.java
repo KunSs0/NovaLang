@@ -18,7 +18,7 @@ public final class NovaGameplay {
         NovaPotion.register(builder);
         NovaBukkitRegistrar.register(builder, NovaPotionEffectTypeWrapper.class, NovaPotionEffectTypeWrapper::register);
         NovaProjectileSource.register(builder);
-        NovaEntityCombat.register(builder);
+        NovaBukkitRegistrar.register(builder, NovaEntityCombat.class, NovaEntityCombat::register);
         NovaEntityObjects.register(builder);
     }
 }

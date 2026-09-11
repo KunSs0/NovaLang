@@ -100,6 +100,28 @@ public final class WorkspaceGeneration implements AutoCloseable {
     }
 
     /**
+     * 返回当前代际用于解析脚本和宿主事件类型的 ClassLoader。
+     *
+     * @return 当前代际 ClassLoader
+     * @throws WorkspaceException Generation 已销毁或尚未安装 ClassLoader 时抛出
+     */
+    public ClassLoader getScriptClassLoader() {
+        lifecycleLock.readLock().lock();
+        try {
+            if (nova == null) {
+                throw new WorkspaceException("The Workspace Generation has been disposed");
+            }
+            ClassLoader classLoader = nova.getScriptClassLoader();
+            if (classLoader == null) {
+                throw new WorkspaceException("The Workspace Generation has no script ClassLoader");
+            }
+            return classLoader;
+        } finally {
+            lifecycleLock.readLock().unlock();
+        }
+    }
+
+    /**
      * 获取当前模块图。
      *
      * @return 不可变模块图
@@ -300,6 +322,18 @@ public final class WorkspaceGeneration implements AutoCloseable {
         } finally {
             lifecycleLock.readLock().unlock();
         }
+    }
+
+    /**
+     * 为宿主侧显式注册器创建不带脚本绑定的稳定回调。
+     *
+     * @param scope 回调所属资源作用域
+     * @param callback 回调实现
+     * @return 绑定当前 Generation 和指定 Scope 的稳定回调
+     */
+    public WorkspaceDirectCallback createDirectCallback(ResourceScope scope,
+                                                        WorkspaceEventCallback callback) {
+        return createDirectCallback(Collections.<String, Object>emptyMap(), scope, callback);
     }
 
     /**

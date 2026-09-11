@@ -473,6 +473,20 @@ public final class NovaTypeRegistry {
         registerFunction("error", "error(message)", 1, "抛出异常", "Nothing");
         // Java 互操作
         registerFunction("javaClass", "javaClass(className)", 1, "获取 Java 类引用", "Any");
+        registerFunction("javaFields", "javaFields(value)", 1, "获取 Java 对象或类的公开字段名", "List");
+        registerFunction("javaMethods", "javaMethods(value)", 1, "获取 Java 对象或类的公开方法名", "List");
+        registerFunction("javaSuperclass", "javaSuperclass(value)", 1, "获取 Java 对象或类的父类名称", "String?");
+        registerFunction("javaInterfaces", "javaInterfaces(value)", 1, "获取 Java 对象或类实现的接口名称", "List");
+        registerFunction("javaInstanceOf", "javaInstanceOf(value, className)", 2, "判断 Java 对象是否为指定类型", "Boolean");
+        registerFunction("javaTypeName", "javaTypeName(value)", 1, "获取 Java 对象的类型名称", "String");
+        registerFunction("toJavaList", "toJavaList(value)", 1, "将集合转换为 Java ArrayList", "Any");
+        registerFunction("toJavaMap", "toJavaMap(value)", 1, "将 Map 转换为 Java HashMap", "Any");
+        registerFunction("toJavaSet", "toJavaSet(value)", 1, "将集合转换为 Java HashSet", "Any");
+        registerFunction("toJavaArray", "toJavaArray(value)", 1, "将集合转换为 Java 数组", "Any");
+        registerFunction("economyBalance", "economyBalance(player, currencyId)", 2, "读取经济账户余额", "Double");
+        registerFunction("economyWithdraw", "economyWithdraw(player, amount, currencyId)", 3, "从经济账户扣除余额", "Boolean");
+        registerFunction("economyDeposit", "economyDeposit(player, amount, currencyId)", 3, "向经济账户存入余额", "Boolean");
+        registerFunction("economySetBalance", "economySetBalance(player, amount, currencyId)", 3, "设置经济账户余额", "Boolean");
         // 注解
         registerFunction("registerAnnotationProcessor", "registerAnnotationProcessor(name, handler)", 2, "注册自定义注解处理器", "Unit");
         // Result

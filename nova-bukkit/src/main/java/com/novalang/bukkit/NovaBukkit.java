@@ -31,6 +31,7 @@ import com.novalang.bukkit.types.world.NovaBlockStateMoreTypes;
 import com.novalang.bukkit.types.world.NovaWorldToolMoreTypes;
 
 import java.util.Collection;
+import org.bukkit.plugin.Plugin;
 
 /**
  * Bukkit 运行时函数及其编译期 Java 类型定义入口。
@@ -55,8 +56,30 @@ public final class NovaBukkit {
         if (nova == null) {
             throw new IllegalArgumentException("nova must not be null");
         }
-        nova.install(create());
+        nova.install(create(NovaBukkitPlugin.requireInstance()));
         return nova;
+    }
+
+    /** 将 Bukkit API 与实际业务插件所有者一起安装到 Nova。 */
+    public static Nova install(Nova nova, Plugin plugin) {
+        if (nova == null) {
+            throw new IllegalArgumentException("nova must not be null");
+        }
+        if (plugin == null) {
+            throw new IllegalArgumentException("plugin must not be null");
+        }
+        nova.install(create(plugin));
+        return nova;
+    }
+
+    /** 创建绑定实际业务插件所有者的 Bukkit API 描述。 */
+    public static JavaTypes create(Plugin plugin) {
+        if (plugin == null) {
+            throw new IllegalArgumentException("plugin must not be null");
+        }
+        JavaTypes.Builder builder = builder();
+        NoBukkit.register(builder, plugin);
+        return builder.build();
     }
 
     /** 注册由 Bukkit 插件提供、供全部 Nova Workspace 使用的共享逻辑模块。 */

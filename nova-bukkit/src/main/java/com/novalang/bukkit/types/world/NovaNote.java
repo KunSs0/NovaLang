@@ -1,10 +1,13 @@
 package com.novalang.bukkit.types.world;
 
+import com.novalang.bukkit.NovaBukkitRegistrar;
+import com.novalang.bukkit.Requires;
 import com.novalang.bukkit.types.value.NovaTypeSupport;
 import com.novalang.runtime.host.JavaTypes;
 import org.bukkit.Note;
 
 /** Spigot 1.12.2 音符值对象的 Fluxon 函数别名。 */
+@Requires(classes = {"org.bukkit.Note"})
 public final class NovaNote {
 
     private NovaNote() {

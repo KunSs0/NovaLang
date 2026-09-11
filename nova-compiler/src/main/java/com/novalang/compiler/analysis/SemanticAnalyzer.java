@@ -53,6 +53,8 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
     private final Map<ObjectLiteralExpr, Symbol> anonymousObjectSymbols;
     private final Map<Declaration, Symbol> declarationSymbols;
     private final Set<String> externalKnownTypeNames;
+    private final Set<String> externalValueNames;
+    private final Set<String> externalCallableNames;
     private final Set<MemberExpr> callMemberExpressions;
     private final List<JavaExtensionDescriptor> javaExtensions;
     private final Map<FunDecl, Symbol> scriptExtensions = new java.util.LinkedHashMap<FunDecl, Symbol>();
@@ -81,6 +83,8 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
         this.anonymousObjectSymbols = new java.util.IdentityHashMap<ObjectLiteralExpr, Symbol>();
         this.declarationSymbols = new java.util.IdentityHashMap<Declaration, Symbol>();
         this.externalKnownTypeNames = new java.util.LinkedHashSet<String>();
+        this.externalValueNames = new java.util.LinkedHashSet<String>();
+        this.externalCallableNames = new java.util.LinkedHashSet<String>();
         this.callMemberExpressions = java.util.Collections.newSetFromMap(
                 new java.util.IdentityHashMap<MemberExpr, Boolean>());
         this.javaExtensions = new ArrayList<JavaExtensionDescriptor>();
@@ -113,6 +117,22 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
         if (typeName == null || typeName.isEmpty()) return;
         externalKnownTypeNames.add(typeName);
         typeResolver.registerKnownType(typeName);
+    }
+
+    /** 注册前一段 REPL 或宿主环境中已经存在的动态值。 */
+    public void registerExternalValue(String name) {
+        if (name == null || name.isEmpty()) {
+            return;
+        }
+        externalValueNames.add(name);
+    }
+
+    /** 注册前一段 REPL 或宿主环境中已经存在的可调用值。 */
+    public void registerExternalCallable(String name, int arity) {
+        if (name == null || name.isEmpty()) {
+            return;
+        }
+        externalCallableNames.add(name);
     }
 
     public void registerJavaTypes(JavaTypes javaTypes, String namespace) {
@@ -1693,15 +1713,29 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
     }
 
     private Symbol resolveRegisteredObjectMember(MemberExpr memberExpr) {
-        if (memberExpr == null || !(memberExpr.getTarget() instanceof Identifier)) {
+        if (memberExpr == null) {
             return null;
         }
-        String targetName = ((Identifier) memberExpr.getTarget()).getName();
-        Symbol target = currentScope.resolve(targetName);
+        Symbol target = resolveRegisteredObjectTarget(memberExpr.getTarget());
         if (target == null || target.getMembers() == null) {
             return null;
         }
         return target.getMembers().get(memberExpr.getMember());
+    }
+
+    private Symbol resolveRegisteredObjectTarget(Expression targetExpression) {
+        if (targetExpression instanceof Identifier) {
+            return currentScope.resolve(((Identifier) targetExpression).getName());
+        }
+        if (targetExpression instanceof MemberExpr) {
+            MemberExpr parent = (MemberExpr) targetExpression;
+            Symbol parentSymbol = resolveRegisteredObjectTarget(parent.getTarget());
+            if (parentSymbol == null || parentSymbol.getMembers() == null) {
+                return null;
+            }
+            return parentSymbol.getMembers().get(parent.getMember());
+        }
+        return null;
     }
 
     private boolean isRegisteredObject(MemberExpr memberExpr) {
@@ -2185,6 +2219,7 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
                 String qualifiedName = qualifyTopLevelTypeName(packageName, declaration.getName());
                 typeResolver.registerKnownType(declaration.getName());
                 typeResolver.registerKnownType(qualifiedName);
+                predeclareTopLevelObjectSymbol((ObjectDecl) declaration);
             } else if (declaration instanceof EnumDecl) {
                 String qualifiedName = qualifyTopLevelTypeName(packageName, declaration.getName());
                 typeResolver.registerKnownType(declaration.getName());
@@ -2239,6 +2274,33 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
             }
         }
         superTypeRegistry.registerClass(classDecl.getName(), superClass, interfaceNames);
+    }
+
+    /**
+     * 预声明顶层 object 及其成员，使源码合并后位于 object 声明之前的模块也能解析成员。
+     */
+    private void predeclareTopLevelObjectSymbol(ObjectDecl objectDecl) {
+        Symbol existing = currentScope.resolveLocal(objectDecl.getName());
+        if (existing != null) {
+            if (existing.getKind() == SymbolKind.OBJECT
+                    && existing.getDeclaration() == objectDecl) {
+                return;
+            }
+            if (existing.getKind() != SymbolKind.FUNCTION
+                    || existing.getDeclaration() != null) {
+                return;
+            }
+        }
+        Symbol objectSymbol = new Symbol(objectDecl.getName(), SymbolKind.OBJECT,
+                objectDecl.getName(), false, objectDecl.getLocation(), objectDecl,
+                extractVisibility(objectDecl.getModifiers()));
+        objectSymbol.setResolvedNovaType(new ClassNovaType(objectDecl.getName(), false));
+        currentScope.getSymbols().put(objectDecl.getName(), objectSymbol);
+        currentScope.defineType(objectSymbol);
+
+        Scope memberScope = new Scope(Scope.ScopeType.CLASS, currentScope, objectDecl);
+        memberScope.setOwnerTypeName(objectDecl.getName());
+        predeclareFunctions(objectDecl.getMembers(), memberScope, objectSymbol);
     }
 
     private void validateTypeRef(TypeRef ref, AstNode node) {
@@ -2584,7 +2646,14 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
                 continue;
             }
             FunDecl function = (FunDecl) declaration;
-            if (declarationSymbols.containsKey(function)) {
+            Symbol alreadyDeclared = declarationSymbols.get(function);
+            if (alreadyDeclared != null) {
+                if (scope.resolveLocal(function.getName()) == null) {
+                    scope.define(alreadyDeclared);
+                }
+                if (ownerSymbol != null) {
+                    ownerSymbol.addMember(alreadyDeclared);
+                }
                 continue;
             }
             if (function.isExtensionFunction()) {
@@ -2847,13 +2916,17 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
 
     @Override
     public Void visitObjectDecl(ObjectDecl node, Void ctx) {
-        checker.checkRedefinition(currentScope, node.getName(), node);
-        checker.checkTypeRedefinition(currentScope, node.getName(), node);
-        Symbol objSym = new Symbol(node.getName(), SymbolKind.OBJECT,
-                node.getName(), false, node.getLocation(), node, extractVisibility(node.getModifiers()));
-        objSym.setResolvedNovaType(new ClassNovaType(node.getName(), false));
-        currentScope.define(objSym);
-        currentScope.defineType(objSym);
+        Symbol objSym = currentScope.resolveLocal(node.getName());
+        if (objSym == null || objSym.getDeclaration() != node
+                || objSym.getKind() != SymbolKind.OBJECT) {
+            checker.checkRedefinition(currentScope, node.getName(), node);
+            checker.checkTypeRedefinition(currentScope, node.getName(), node);
+            objSym = new Symbol(node.getName(), SymbolKind.OBJECT,
+                    node.getName(), false, node.getLocation(), node, extractVisibility(node.getModifiers()));
+            objSym.setResolvedNovaType(new ClassNovaType(node.getName(), false));
+            currentScope.define(objSym);
+            currentScope.defineType(objSym);
+        }
 
         Scope objScope = enterScope(Scope.ScopeType.CLASS, node);
         objScope.setOwnerTypeName(node.getName());
@@ -3437,6 +3510,8 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
                 nt = inference.resolveNovaTypeFromName(sym.getTypeName());
             }
             setNovaType(node, nt);
+        } else if (externalValueNames.contains(node.getName())) {
+            setNovaType(node, NovaTypes.ANY);
         }
         return null;
     }
@@ -4537,6 +4612,11 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
             validateTypeRef(node.getTypeTarget(), node);
         }
 
+        if (node.hasTarget() && "class".equals(node.getMethodName())) {
+            setNovaType(node, NovaTypes.STRING);
+            return null;
+        }
+
         FunctionNovaType methodRefType = null;
         FunctionNovaType expectedType = expectedFunctionType(node);
         if (!node.hasTarget()) {
@@ -4544,9 +4624,11 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
             if (callable == null
                     || (callable.getKind() != SymbolKind.FUNCTION
                     && callable.getKind() != SymbolKind.BUILTIN_FUNCTION)) {
-                checker.addDiagnostic(SemanticDiagnostic.Severity.ERROR,
-                        "Unresolved function reference '::" + node.getMethodName() + "'",
-                        node);
+                if (!externalCallableNames.contains(node.getMethodName())) {
+                    checker.addDiagnostic(SemanticDiagnostic.Severity.ERROR,
+                            "Unresolved function reference '::" + node.getMethodName() + "'",
+                            node);
+                }
             } else {
                 methodRefType = functionTypeFromCallableSymbol(callable, null);
             }
@@ -4591,7 +4673,19 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
                 ? getNovaType(node.getTarget())
                 : null;
         boolean dynamicTarget = boundTargetType != null && NovaTypes.isDynamicType(boundTargetType);
-        if (methodRefType == null && node.hasTarget() && !dynamicTarget) {
+        NovaType resolvedTypeTarget = resolveMethodReferenceTypeTarget(node);
+        String resolvedTypeName = resolvedTypeTarget != null ? resolvedTypeTarget.getTypeName() : null;
+        String syntaxTypeName = node.getTypeTarget() != null
+                ? resolveTypeName(node.getTypeTarget())
+                : null;
+        boolean externalTypeTarget = (resolvedTypeName != null
+                && externalKnownTypeNames.contains(baseType(resolvedTypeName)))
+                || (syntaxTypeName != null
+                && externalKnownTypeNames.contains(baseType(syntaxTypeName)));
+        boolean externalValueTarget = node.getTarget() instanceof Identifier
+                && externalValueNames.contains(((Identifier) node.getTarget()).getName());
+        if (methodRefType == null && node.hasTarget()
+                && !dynamicTarget && !externalTypeTarget && !externalValueTarget) {
             checker.addDiagnostic(SemanticDiagnostic.Severity.ERROR,
                     "Unresolved method reference '::" + node.getMethodName() + "'",
                     node);

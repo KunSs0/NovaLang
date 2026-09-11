@@ -196,7 +196,7 @@ Workspace
 
 资源 API 必须读取当前执行上下文中的 `ResourceScope` 并自动登记，不能依赖业务脚本逐个实现 reload 清理。宿主持久状态不属于 Workspace 资源表。
 
-原生 `schedule/scheduleRepeat` 在 Workspace 调用中会自动登记到当前 Scope；一次性任务完成后解除登记，循环任务在 Scope dispose 时取消。`BukkitWorkspaceEvents.listen` 创建的监听器同样自动登记，并在 dispose 时注销。
+原生 `schedule/scheduleRepeat` 在 Workspace 调用中会自动登记到当前 Scope；一次性任务完成后解除登记，循环任务在 Scope dispose 时取消。`NoBukkit.event.listen` 创建的监听器同样自动登记，并在 dispose 时注销。
 
 ## 7. 回调与并发
 
@@ -254,7 +254,7 @@ WorkspaceConfigFiles
 ├─ loadYaml(relativePath)
 └─ read*(document, path, defaultValue?)
 
-BukkitWorkspaceEvents
+NoBukkit.event
 └─ listen(eventType, priority, ignoreCancelled, BukkitEventListener)
 
 WorkspaceGeneration

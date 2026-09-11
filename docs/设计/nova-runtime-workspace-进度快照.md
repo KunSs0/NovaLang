@@ -38,7 +38,7 @@
 - `ResourceScope`、`ResourceScopeState`、`ScopeType`：表示 Generation、业务实例、阶段和单次调用等嵌套作用域。
 - `WorkspaceExecutionContext`、`WorkspaceExecutionDispatcher`、`ExecutionPolicy`：传播执行上下文，支持主线程、调用线程、并行安全和作用域串行策略。
 - `NovaCallback`、`WorkspaceCallbacks`：保存宿主主动调用所需的稳定入口引用，在 Generation 或 Scope 销毁后自动失效。
-- `BukkitWorkspaceEvents`：仅接收编译期已解析的 `BukkitEventListener`，不再通过字符串函数名注册事件回调。
+- `NoBukkit.event`：仅接收编译期已解析的 `BukkitEventListener`，不再通过字符串函数名注册事件回调。
 - 原生 `schedule/scheduleRepeat`：在 Workspace 中创建归属于当前作用域的延迟任务和循环任务，并在作用域销毁时清理。
 - `WorkspaceHost`、`WorkspaceProgram`、`WorkspaceBundle`、`WorkspaceBundleBuilder`：抽象宿主绑定、模块程序和加载产物。
 
@@ -58,7 +58,7 @@
 `nova-bukkit` 现在构建为可独立部署的 `NovaLang` 插件：
 
 - `NovaBukkitPlugin` 在 `STARTUP` 阶段注册唯一 Bukkit 调度器，在停服阶段注销。
-- `BukkitWorkspaceEvents` 提供将 Bukkit Listener 绑定到当前 Workspace ResourceScope 的适配入口。
+- `NoBukkit.event` 提供将 Bukkit Listener 绑定到当前 Workspace ResourceScope 的适配入口。
 - `plugin.yml` 声明平台插件元数据和 `${version}` 展开。
 - Shadow JAR 携带 Workspace、编译器和运行时，重定位可能冲突的第三方依赖。
 - `verifyPluginJar` 检查插件元数据、主类、Workspace 核心类、任务支持、配置支持和 Bukkit 事件支持是否进入可部署 JAR。
@@ -156,7 +156,7 @@ settings.gradle
 ```text
 docs/设计/nova-runtime-workspace.md
 docs/设计/nova-runtime-workspace-进度快照.md
-nova-bukkit/src/main/java/com/novalang/bukkit/BukkitWorkspaceEvents.java
+nova-bukkit/src/main/java/com/novalang/bukkit/NoBukkit.java
 nova-bukkit/src/main/java/com/novalang/bukkit/NovaBukkitPlugin.java
 nova-bukkit/src/main/resources/plugin.yml
 nova-runtime-api/src/test/java/com/novalang/runtime/SchedulerHolderTest.java

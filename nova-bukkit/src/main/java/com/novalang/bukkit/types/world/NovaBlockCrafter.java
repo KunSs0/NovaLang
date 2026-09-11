@@ -4,7 +4,7 @@ import com.novalang.runtime.host.JavaTypeRef;
 import com.novalang.runtime.host.JavaTypes;
 import java.lang.reflect.Method;
 /** 1.21+ Crafter BlockData 的 Fluxon 函数契约。 */
-@Requires(classes={"org.bukkit.block.data.type.Crafter","org.bukkit.block.data.type.Crafter$Orientation"},methods={"org.bukkit.block.data.type.Crafter#isCrafting","org.bukkit.block.data.type.Crafter#setCrafting","org.bukkit.block.data.type.Crafter#isTriggered","org.bukkit.block.data.type.Crafter#setTriggered","org.bukkit.block.data.type.Crafter#getOrientation","org.bukkit.block.data.type.Crafter#setOrientation"})
+@Requires(classes={"org.bukkit.block.data.type.Crafter","org.bukkit.block.data.type.Crafter$Orientation"},methods={"org.bukkit.block.data.type.Crafter#isCrafting","org.bukkit.block.data.type.Crafter#setCrafting","org.bukkit.block.data.type.Crafter#isTriggered","org.bukkit.block.data.type.Crafter#setTriggered","org.bukkit.block.data.type.Crafter#getOrientation()","org.bukkit.block.data.type.Crafter#setOrientation(org.bukkit.block.data.type.Crafter$Orientation)"})
 public final class NovaBlockCrafter {
     private NovaBlockCrafter() { }
     public static void register(JavaTypes.Builder b) {

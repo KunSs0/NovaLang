@@ -1,11 +1,14 @@
 package com.novalang.bukkit.types.world;
 
+import com.novalang.bukkit.NovaBukkitRegistrar;
+import com.novalang.bukkit.Requires;
 import com.novalang.bukkit.types.value.NovaTypeSupport;
 import com.novalang.runtime.host.JavaTypes;
 import org.bukkit.Note;
 import org.bukkit.block.NoteBlock;
 
 /** Spigot 1.12.2 音符盒方块状态的 Fluxon 函数别名。 */
+@Requires(classes = {"org.bukkit.block.NoteBlock"})
 public final class NovaNoteBlock {
 
     private NovaNoteBlock() {

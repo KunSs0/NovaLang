@@ -762,6 +762,16 @@ public class Interpreter implements ExecutionContext {
         mirPipeline.setScriptMode(true);
         mirPipeline.setExternalClassNames(mirInterpreter.getKnownClassNames());
         mirPipeline.setExternalInterfaceNames(mirInterpreter.getKnownInterfaceNames());
+        Set<String> externalValueNames = environment.getLocalNames();
+        Map<String, Integer> externalCallableArities = new LinkedHashMap<String, Integer>();
+        for (String name : externalValueNames) {
+            NovaValue value = environment.tryGet(name);
+            if (value instanceof NovaCallable) {
+                externalCallableArities.put(name, Integer.valueOf(((NovaCallable) value).getArity()));
+            }
+        }
+        mirPipeline.setExternalValueNames(externalValueNames);
+        mirPipeline.setExternalCallableArities(externalCallableArities);
         MirModule mir = mirPipeline.executeToMir(program);
 
         // 处理文件注解（在执行前）

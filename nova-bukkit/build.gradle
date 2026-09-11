@@ -80,8 +80,14 @@ tasks.register('verifyPluginJar') {
         if (!zipTree(pluginJar).matching { include 'com/novalang/workspace/WorkspaceConfigFiles.class' }.files) {
             throw new GradleException('The NovaLang Bukkit JAR does not contain Workspace config support.')
         }
-        if (!zipTree(pluginJar).matching { include 'com/novalang/bukkit/BukkitWorkspaceEvents.class' }.files) {
-            throw new GradleException('The NovaLang Bukkit JAR does not contain Bukkit Workspace event support.')
+        if (!zipTree(pluginJar).matching { include 'com/novalang/bukkit/BukkitEventRegistrar.class' }.files) {
+            throw new GradleException('The NovaLang Bukkit JAR does not contain Bukkit event registrar support.')
+        }
+        if (!zipTree(pluginJar).matching { include 'com/novalang/bukkit/NoBukkit.class' }.files) {
+            throw new GradleException('The NovaLang Bukkit JAR does not contain the NoBukkit facade.')
+        }
+        if (!zipTree(pluginJar).matching { include 'com/novalang/bukkit/EventRegistration.class' }.files) {
+            throw new GradleException('The NovaLang Bukkit JAR does not contain event registration handles.')
         }
     }
 }

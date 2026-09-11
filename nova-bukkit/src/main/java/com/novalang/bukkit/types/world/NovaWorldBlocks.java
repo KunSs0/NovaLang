@@ -171,8 +171,8 @@ public final class NovaWorldBlocks {
         NovaLegacyDiode.register(builder);
         NovaLegacyPressurePlate.register(builder);
         NovaLegacyDirectional.register(builder);
-        NovaNote.register(builder);
-        NovaNoteBlock.register(builder);
+        NovaBukkitRegistrar.register(builder, NovaNote.class, NovaNote::register);
+        NovaBukkitRegistrar.register(builder, NovaNoteBlock.class, NovaNoteBlock::register);
         NovaMap.register(builder);
         NovaBukkitRegistrar.register(builder, NovaMapCanvas.class, NovaMapCanvas::register);
         NovaBukkitRegistrar.register(builder, NovaMapCursor.class, NovaMapCursor::register);

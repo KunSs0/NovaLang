@@ -197,6 +197,7 @@ public final class RuntimeWorkspace implements AutoCloseable {
                 nova.setScheduler(scheduler);
                 nova.enableCompilationCache();
                 host.install(nova);
+                WorkspaceHostExtensions.install(nova, scriptClassLoader);
 
                 // 注册规范模块标识，保证其他 Nova 编译入口也能复用同一解析结果。
                 for (WorkspaceModule module : graph.getModules().values()) {

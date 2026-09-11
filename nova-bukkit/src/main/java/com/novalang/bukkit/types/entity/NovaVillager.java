@@ -7,7 +7,7 @@ import com.novalang.runtime.host.JavaTypes;
 import org.bukkit.entity.Villager;
 
 /** 1.12 村民职业、职业分支与绿宝石财富的可选编译期别名。 */
-@Requires(classes = {"org.bukkit.entity.Villager"})
+@Requires(classes = {"org.bukkit.entity.Villager$Career"})
 public final class NovaVillager {
 
     private NovaVillager() {

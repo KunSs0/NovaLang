@@ -8,7 +8,10 @@ import org.bukkit.TravelAgent;
 import org.bukkit.event.player.PlayerPortalEvent;
 
 /** 玩家传送门事件在 Spigot 1.12.2 中可用的别名。 */
-@Requires(classes = {"org.bukkit.event.player.PlayerPortalEvent"})
+@Requires(classes = {"org.bukkit.event.player.PlayerPortalEvent", "org.bukkit.TravelAgent"}, methods = {
+        "org.bukkit.event.player.PlayerPortalEvent#getPortalTravelAgent()",
+        "org.bukkit.event.player.PlayerPortalEvent#setPortalTravelAgent(org.bukkit.TravelAgent)"
+})
 public final class NovaPlayerPortalEvent {
 
     private NovaPlayerPortalEvent() {

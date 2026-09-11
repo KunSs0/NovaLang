@@ -1,5 +1,6 @@
 package com.novalang.bukkit.types.entity;
 
+import com.novalang.bukkit.Requires;
 import com.novalang.bukkit.types.value.NovaTypeSupport;
 
 import com.novalang.runtime.host.JavaTypeRef;
@@ -13,6 +14,7 @@ import org.bukkit.util.EulerAngle;
 import org.bukkit.util.Vector;
 
 /** Spigot 1.12.2 中 ArmorStand、Arrow、Fireball 的常用别名。 */
+@Requires(classes = {"org.bukkit.entity.Arrow$PickupStatus"})
 public final class NovaEntityCombat {
     private NovaEntityCombat() { }
 

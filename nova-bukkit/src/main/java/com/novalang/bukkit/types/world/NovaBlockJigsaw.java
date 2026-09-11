@@ -4,7 +4,7 @@ import com.novalang.runtime.host.JavaTypeRef;
 import com.novalang.runtime.host.JavaTypes;
 import java.lang.reflect.Method;
 /** 1.16+ Jigsaw BlockData 的 Fluxon 函数契约。 */
-@Requires(classes={"org.bukkit.block.data.type.Jigsaw","org.bukkit.block.data.type.Jigsaw$Orientation"},methods={"org.bukkit.block.data.type.Jigsaw#getOrientation","org.bukkit.block.data.type.Jigsaw#setOrientation"})
+@Requires(classes={"org.bukkit.block.data.type.Jigsaw","org.bukkit.block.data.type.Jigsaw$Orientation"},methods={"org.bukkit.block.data.type.Jigsaw#getOrientation()","org.bukkit.block.data.type.Jigsaw#setOrientation(org.bukkit.block.data.type.Jigsaw$Orientation)"})
 public final class NovaBlockJigsaw {
     private NovaBlockJigsaw() { }
     public static void register(JavaTypes.Builder b) {

@@ -118,7 +118,7 @@ public final class NovaEnum {
         registerEnum(builder, "worldEnvironment", World.Environment.class);
         registerEnum(builder, "worldType", WorldType.class);
         NovaGameplayEnum.register(builder);
-        NovaEntityEnum.register(builder);
+        NovaBukkitRegistrar.register(builder, NovaEntityEnum.class, NovaEntityEnum::register);
         NovaEventEnum.register(builder);
         NovaEventExtraEnum.register(builder);
         NovaPlatformEnum.register(builder);

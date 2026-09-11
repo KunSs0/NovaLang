@@ -1,6 +1,7 @@
 package com.novalang.bukkit;
 
 import org.bukkit.plugin.java.JavaPlugin;
+import com.novalang.workspace.WorkspaceHostExtensions;
 
 import java.io.File;
 
@@ -16,6 +17,7 @@ public final class NovaBukkitPlugin extends JavaPlugin {
     private static volatile NovaBukkitPlugin instance;
 
     private com.novalang.runtime.NovaScheduler scheduler;
+    private WorkspaceHostExtensions.Registration workspaceHostExtension;
 
     /**
      * 在业务插件加载前注册全局 Bukkit 调度器。
@@ -34,8 +36,14 @@ public final class NovaBukkitPlugin extends JavaPlugin {
                         + librariesDirectory.getAbsolutePath());
             }
             scheduler = BukkitSchedulers.register(this);
+            workspaceHostExtension = WorkspaceHostExtensions.register(
+                    new BukkitWorkspaceHostExtension());
             getLogger().info("NovaLang runtime " + getDescription().getVersion() + " loaded.");
         } catch (RuntimeException exception) {
+            if (workspaceHostExtension != null) {
+                workspaceHostExtension.close();
+                workspaceHostExtension = null;
+            }
             instance = null;
             throw exception;
         }
@@ -53,6 +61,10 @@ public final class NovaBukkitPlugin extends JavaPlugin {
      */
     @Override
     public void onDisable() {
+        if (workspaceHostExtension != null) {
+            workspaceHostExtension.close();
+            workspaceHostExtension = null;
+        }
         if (scheduler != null) {
             // 服务端关闭时先撤销全局入口，业务 Workspace 应已由各自插件完成销毁。
             BukkitSchedulers.unregister(scheduler);

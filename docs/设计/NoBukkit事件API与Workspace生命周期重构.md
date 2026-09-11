@@ -2,20 +2,18 @@
 
 ## 1. 文档状态
 
-本文档是设计提案，仅用于确认 API 边界和生命周期模型。本阶段不修改 Java、Nova、构建脚本或服务端脚本。
-
-当前实现继续使用 `BukkitWorkspaceEvents`，待本文档中的边界确认后再实施重构。重构实施时不保留旧的字符串函数名回调或隐式兼容入口。
+本文档原为设计提案，现已按确定的 API 边界和生命周期模型完成首轮实施。实现已同步修改 Java、Nova、构建脚本和服务端脚本，不保留旧的字符串函数名回调或隐式兼容入口。
 
 ## 2. 背景
 
-当前 Bukkit 事件入口位于 `nova-bukkit` 模块的 `BukkitWorkspaceEvents`：
+当前 Bukkit 事件入口位于 `nova-bukkit` 模块的 `NoBukkit.event`，由 `BukkitEventRegistrar` 实际执行注册：
 
 ```text
-BukkitWorkspaceEvents.listen(...)
-    -> WorkspaceExecutionContext.requireScope()
-    -> WorkspaceCallbacks.createDirect(...)
+NoBukkit.event.listen(...)
+    -> WorkspaceExecutionContext.currentScope()
+    -> WorkspaceCallbacks.createDirect(...)（Workspace 模式）
     -> PluginManager.registerEvent(...)
-    -> ResourceScope.register(...)
+    -> ResourceScope.register(...)（Workspace 模式）
 ```
 
 该实现解决了 Workspace 场景的几个问题：
@@ -24,12 +22,7 @@ BukkitWorkspaceEvents.listen(...)
 - 回调执行时恢复 Generation、ResourceScope、绑定和执行策略。
 - Workspace 或 Scope 销毁时自动注销 Bukkit 监听器。
 
-但当前入口有两个边界问题：
-
-1. `listen()` 强制要求当前线程存在 Workspace，普通 `Nova` 场景无法使用。
-2. Bukkit 注册所有者固定为 `NovaBukkitPlugin`，没有使用实际业务插件的 `JavaPlugin`，业务插件禁用时无法依赖 Bukkit 的插件所有者清理语义。
-
-因此需要将“Bukkit 注册所有权”和“Workspace 资源所有权”拆开，并通过 `NoBukkit.event` 提供统一的脚本门面。
+实现已将“Bukkit 注册所有权”和“Workspace 资源所有权”拆开：standalone 调用直接绑定宿主 Plugin，Workspace 调用额外捕获当前 Generation 和 ResourceScope，并通过同一个 `NoBukkit.event` 脚本门面访问。
 
 ## 3. 设计目标
 
@@ -72,7 +65,7 @@ Workspace 模式下，一个事件注册同时绑定二者。任一方先销毁�
 
 ### 6.1 脚本门面
 
-脚本侧只看到 NoBukkit，不直接导入 `BukkitWorkspaceEvents` 或 `RuntimeWorkspace`：
+脚本侧只看到 NoBukkit，不直接导入 `BukkitEventRegistrar` 或 `RuntimeWorkspace`：
 
 ```nova
 NoBukkit.event.listen(
@@ -182,11 +175,11 @@ NoBukkit.event.handle(workspace, eventType, priority, false, ::onEvent)
 如果宿主必须在 Workspace 执行上下文之外注册，可以创建绑定注册器：
 
 ```text
-registrar = BukkitEventRegistrar.forWorkspace(plugin, workspace)
+registrar = BukkitEventRegistrar.forWorkspace(plugin, generation, scope)
 registrar.listen(eventType, priority, ignoreCancelled, listener)
 ```
 
-注册器内部保存 Generation 或指定 ResourceScope，但不应把 `RuntimeWorkspace` 暴露到 Nova 脚本值域。优先绑定具体 `ResourceScope`，以便事件资源归属于业务实例或阶段，而不是无条件挂到 Generation 根。
+注册器内部保存 Generation 和指定 ResourceScope，但不应把 `RuntimeWorkspace` 暴露到 Nova 脚本值域。优先绑定具体 `ResourceScope`，以便事件资源归属于业务实例或阶段，而不是无条件挂到 Generation 根。
 
 ## 9. Dispose 和竞态语义
 
@@ -266,14 +259,13 @@ RuntimeWorkspace workspace = new RuntimeWorkspace(
 
 ## 13. 实施顺序
 
-1. 增加 `BukkitEventRegistrar` 和 `EventRegistration`，复用现有事件解析、SAM 回调和注销逻辑。
-2. 将 Bukkit Plugin 所有者从固定的 `NovaBukkitPlugin` 改为宿主绑定的实际业务 `Plugin`。
-3. 增加 NoBukkit 的显式宿主绑定和编译期 API 描述。
-4. 实现 standalone 注册路径，不读取 Workspace 上下文。
-5. 实现 Workspace 注册路径，继续自动登记 ResourceScope。
-6. 将服务端脚本从 `BukkitWorkspaceEvents` 迁移到 `NoBukkit.event.listen`。
-7. 增加普通 Nova、Workspace、Plugin disable、Workspace dispose、重复 dispose 和多 Workspace 并存测试。
-8. 删除 `BukkitWorkspaceEvents` 公开入口及所有旧文档，执行全仓静态扫描。
+1. 已增加 `BukkitEventRegistrar` 和 `EventRegistration`，复用事件解析、SAM 回调和注销逻辑。
+2. 已将 Bukkit Plugin 所有者改为宿主绑定的实际业务 `Plugin`。
+3. 已增加 NoBukkit 的显式宿主绑定和编译期 API 描述。
+4. 已实现 standalone 注册路径和 Workspace 注册路径，并由 Scope 自动登记资源。
+5. 已将服务端脚本迁移到 `NoBukkit.event.listen` 与 `::函数名`。
+6. 已删除旧的 Bukkit Workspace 公开入口，补充注册句柄、Plugin 所有者和编译期引用测试。
+7. 已完成代码和服务端脚本静态扫描；完整服务端启动验收仍需使用重新构建并安装宿主业务插件后的产物执行。
 
 ## 14. 验收标准
 
@@ -288,8 +280,8 @@ RuntimeWorkspace workspace = new RuntimeWorkspace(
 
 ## 15. 待确认决策
 
-1. 公开注册动作最终命名使用 `listen`、`register`，还是保留用户提出的 `handle`。
-2. 脚本侧的 Plugin 是否由 NoBukkit 宿主绑定，还是作为显式脚本对象传递。
-3. Workspace 外部注册器绑定 `RuntimeWorkspace`、`WorkspaceGeneration` 还是具体 `ResourceScope`。
-4. standalone Nova 回调是否允许异步执行，以及异步执行器由谁提供。
-5. 事件类字符串是否继续保留，还是另行增加编译期 `EventType` 描述。
+1. 公开注册动作确定为 `listen`。
+2. 脚本侧 Plugin 由 NoBukkit 宿主绑定，不作为脚本参数传递。
+3. Workspace 脚本注册使用当前具体 `ResourceScope`；宿主侧显式注册器使用 `forWorkspace(plugin, generation, scope)`。
+4. standalone 回调按 Bukkit 调用线程直接执行，异步调度由宿主自行负责。
+5. 事件类继续使用全限定名字符串，由当前脚本 ClassLoader 解析；回调函数引用和参数签名由编译期检查。
