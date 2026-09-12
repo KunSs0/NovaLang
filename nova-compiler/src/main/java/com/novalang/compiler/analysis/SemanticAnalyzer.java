@@ -1146,6 +1146,13 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
 
     private NovaType analyzedCallArgumentType(Expression expression) {
         NovaType type = getNovaType(expression);
+        if (expression instanceof MemberExpr && type instanceof JavaClassNovaType
+                && isJavaTypeExpression(expression)) {
+            JavaTypeDescriptor descriptor = ((JavaClassNovaType) type).getDescriptor();
+            if (descriptor != null) {
+                return new JavaClassLiteralNovaType(descriptor, false);
+            }
+        }
         if (!(expression instanceof Identifier)) {
             return type;
         }
@@ -1197,6 +1204,10 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
         }
         JavaTypeDescriptor descriptor = ((JavaClassNovaType) receiverType).getDescriptor();
         if (descriptor == null) {
+            return null;
+        }
+        if (descriptor.resolveStaticField(memberExpr.getMember(),
+                ((JavaClassNovaType) receiverType).getTypeArgs()) != null) {
             return null;
         }
         JavaTypeDescriptor nestedDescriptor = descriptor.resolveNestedType(memberExpr.getMember());
@@ -4186,7 +4197,8 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
         }
         if (node.getTarget() instanceof Identifier) {
             Symbol targetSymbol = currentScope.resolve(((Identifier) node.getTarget()).getName());
-            if (targetSymbol != null && targetSymbol.getMembers() != null) {
+            if (targetSymbol != null && targetSymbol.getMembers() != null
+                    && !(receiverNovaType instanceof JavaClassNovaType)) {
                 Symbol member = targetSymbol.getMembers().get(node.getMember());
                 if (member != null) {
                     if (member.getKind() == SymbolKind.FUNCTION) {
@@ -4205,6 +4217,18 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
             if (NovaTypes.isDynamicType(receiverNovaType)) {
                 setNovaType(node, NovaTypes.DYNAMIC);
                 return null;
+            }
+            if (receiverNovaType instanceof JavaClassNovaType) {
+                JavaClassNovaType javaReceiverType = (JavaClassNovaType) receiverNovaType;
+                JavaTypeDescriptor descriptor = javaReceiverType.getDescriptor();
+                if (descriptor != null) {
+                    NovaType staticFieldType = descriptor.resolveStaticField(
+                            node.getMember(), javaReceiverType.getTypeArgs());
+                    if (staticFieldType != null) {
+                        setNovaType(node, staticFieldType);
+                        return null;
+                    }
+                }
             }
             NovaType nestedJavaType = resolveNestedJavaType(node);
             if (nestedJavaType != null) {

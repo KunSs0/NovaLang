@@ -15,7 +15,7 @@ No matching Java method overload found for 'get'
 错误发生在 FightCorePlugin、Creator 以及 Planners 动态生成脚本中。服务端日志：
 
 ```text
-E:\temp\server-main\logs\latest.log
+F:\minecraft\haider\server\server-main\logs\latest.log
 ```
 
 前一批嵌套 Java 类型错误（例如 `Post`、`Source`、`Grant`、`CloseableType`）已经消失，说明嵌套类解析修复本身已生效。本次是新的 Kotlin/Java 互操作问题。
@@ -116,5 +116,13 @@ StaticFixture.Companion.getINSTANCE()
 
 - NovaLang 嵌套类型修复已推送：`c24a6e6`。
 - 服务端脚本迁移及远端锤盾音效提交已合并并推送：`e703b745`。
-- 本次 `Companion` 复现单测和本文档尚未修复实现；本文档提交后会一并推送。
-- 本次没有完成 NovaLang 全量测试；目标单测在修复前应当失败。
+- `Companion` 静态字段与同名嵌套类现在按字段优先解析；字段值上的实例方法调用会继续走普通实例分派。
+- 编译路径和解释器路径均已覆盖 `getMapping`、`getINSTANCE` 复现用例，`CompiledStaticImportTest` 全部通过。
+- 普通嵌套类构造器、静态字段和静态方法回归用例保持通过。
+
+## 修复实现
+
+1. `JavaTypeDescriptor` 增加仅检查公开静态字段的解析入口，避免把 getter 或嵌套类混入判定。
+2. `SemanticAnalyzer` 在嵌套类解析前优先解析静态字段；`Outer.Companion` 因此得到 `Companion` 实例类型，后续方法按实例方法解析。
+3. `HirToMirLowering` 遇到与嵌套类同名的静态字段时停止嵌套类路径展开，使 `Outer.Companion` 生成静态字段读取，而不是对 `Companion` 类执行静态方法调用。
+4. 嵌套 Java 类作为 `Class` 参数时转换为 Java class literal，事件监听注册中的 `Outer.Event` 参数不再被当作事件实例。

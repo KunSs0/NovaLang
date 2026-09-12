@@ -5480,6 +5480,14 @@ public class HirToMirLowering {
         }
         int nestedPartCount = 1;
         for (int index = 1; index < parts.size(); index++) {
+            try {
+                java.lang.reflect.Field staticField = owner.getField(parts.get(index));
+                if (java.lang.reflect.Modifier.isStatic(staticField.getModifiers())) {
+                    break;
+                }
+            } catch (NoSuchFieldException ignored) {
+                // 没有同名静态字段时继续尝试解析嵌套类型。
+            }
             Class<?> nestedClass = resolveJavaClass(owner.getName() + "." + parts.get(index));
             if (nestedClass == null) {
                 break;
