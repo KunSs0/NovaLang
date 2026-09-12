@@ -137,6 +137,34 @@ class CompiledStaticImportTest {
     }
 
     @Test
+    @DisplayName("compiled Kotlin companion field resolves instance methods")
+    void compiledKotlinCompanionFieldShouldResolveInstanceMethods() throws Exception {
+        try (URLClassLoader loader = compileFixture()) {
+            Nova nova = new Nova().setScriptClassLoader(loader);
+            assertEquals("mapping:x", nova.compileToBytecode(
+                    "import java dynamic.StaticFixture\n" +
+                            "StaticFixture.Companion.getMapping(\"x\")",
+                    "java-kotlin-companion-method.nova").run());
+            assertEquals("instance", nova.compileToBytecode(
+                    "import java dynamic.StaticFixture\n" +
+                            "StaticFixture.Companion.getINSTANCE()",
+                    "java-kotlin-companion-getter.nova").run());
+        }
+    }
+
+    @Test
+    @DisplayName("interpreter Kotlin companion field resolves instance methods")
+    void interpreterKotlinCompanionFieldShouldResolveInstanceMethods() throws Exception {
+        try (URLClassLoader loader = compileFixture()) {
+            Nova nova = new Nova().setScriptClassLoader(loader);
+            assertEquals("mapping:x", nova.eval(
+                    "import java dynamic.StaticFixture\n" +
+                            "StaticFixture.Companion.getMapping(\"x\")",
+                    "java-kotlin-companion-interpreter.nova"));
+        }
+    }
+
+    @Test
     @DisplayName("compiled Java overload prefers String over Supplier for string literals")
     void compiledJavaOverloadShouldPreferExactStringType() {
         Nova nova = new Nova();
@@ -342,6 +370,11 @@ class CompiledStaticImportTest {
                         "public final class StaticFixture {\n" +
                         "    public static final int VALUE = 99;\n" +
                         "    public static final StaticFixture INSTANCE = new StaticFixture();\n" +
+                        "    public static final Companion Companion = new Companion();\n" +
+                        "    public static final class Companion {\n" +
+                        "        public String getMapping(String id) { return \"mapping:\" + id; }\n" +
+                        "        public String getINSTANCE() { return \"instance\"; }\n" +
+                        "    }\n" +
                         "    public enum Kind { FLOW, WAIT; public static String label() { return \"kind\"; } }\n" +
                         "    public static final class Nested {\n" +
                         "        private final String value;\n" +
