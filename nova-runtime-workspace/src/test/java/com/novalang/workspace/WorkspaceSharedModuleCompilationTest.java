@@ -171,6 +171,34 @@ class WorkspaceSharedModuleCompilationTest {
         }
     }
 
+    /**
+     * 验证跨模块导出的 Java Vector 参数与调用方同名导入类型保持兼容。
+     *
+     * @throws Exception 工作区源码写入、编译或执行失败。
+     */
+    @Test
+    void shouldKeepJavaVectorParameterCompatibleAcrossModules() throws Exception {
+        WorkspaceTestSupport.write(tempDirectory, "vector-api.nova",
+                "import java java.util.Vector\n"
+                        + "object VectorApi {\n"
+                        + "    fun acceptVector(direction: Vector): Int { return direction.size() }\n"
+                        + "}\n");
+        WorkspaceTestSupport.write(tempDirectory, "entry.nova",
+                "import java java.util.Vector\n"
+                        + "import \"@/vector-api\"\n"
+                        + "fun execute(): Int { return VectorApi.acceptVector(Vector()) }\n");
+        Path configFile = WorkspaceTestSupport.writeConfig(tempDirectory, "caller",
+                "  - \"entry.nova\"\n");
+        RuntimeWorkspace workspace = new RuntimeWorkspace(configFile, nova -> { });
+        try {
+            workspace.load();
+            assertEquals(0, workspace.invoke("entry.nova", "execute",
+                    Collections.<String, Object>emptyMap(), null));
+        } finally {
+            workspace.dispose();
+        }
+    }
+
     @Test
     void shouldRejectInvalidJavaReceiverScriptExtensionCalls() throws Exception {
         for (String expression : new String[] {

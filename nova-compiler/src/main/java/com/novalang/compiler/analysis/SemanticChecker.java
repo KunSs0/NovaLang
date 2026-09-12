@@ -77,9 +77,26 @@ public final class SemanticChecker {
         if (target == null || source == null) return;
         if (!TypeCompatibility.isAssignable(target, source, superTypeRegistry)) {
             addDiagnostic(SemanticDiagnostic.Severity.ERROR,
-                    context + ": 类型不匹配，期望 '" + target.toDisplayString() +
-                            "' 但得到 '" + source.toDisplayString() + "'", node);
+                    context + ": 类型不匹配，期望 '" + diagnosticTypeName(target) +
+                            "' 但得到 '" + diagnosticTypeName(source) + "'", node);
         }
+    }
+
+    /**
+     * 构造包含 Java 全限定名的诊断类型名，避免不同 Java 类的简单名相同而无法定位冲突。
+     *
+     * @param type 待显示的 Nova 类型
+     * @return 面向诊断的类型名称
+     */
+    private String diagnosticTypeName(NovaType type) {
+        if (type instanceof JavaClassNovaType) {
+            JavaClassNovaType javaType = (JavaClassNovaType) type;
+            String qualifiedName = javaType.getQualifiedName();
+            if (qualifiedName != null && !qualifiedName.isEmpty()) {
+                return qualifiedName + (type.isNullable() ? "?" : "");
+            }
+        }
+        return type.toDisplayString();
     }
 
     /** 参数数量检查 */

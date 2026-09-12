@@ -105,6 +105,79 @@ class BukkitEventRegistrarTest {
                 "nobukkit-listener.nova");
     }
 
+    /**
+     * 验证跨 Workspace 编译组导出的 Bukkit Vector 参数不会因 Java 类型解析丢失限定名。
+     *
+     * @throws Exception 工作区源码写入、编译或执行失败。
+     */
+    @Test
+    void compilesBukkitVectorParameterAcrossWorkspaceGroups() throws Exception {
+        final Thread ownerThread = Thread.currentThread();
+        SchedulerHolder.set(new NovaScheduler() {
+            @Override
+            public java.util.concurrent.Executor mainExecutor() {
+                return Runnable::run;
+            }
+
+            @Override
+            public java.util.concurrent.Executor asyncExecutor() {
+                return Runnable::run;
+            }
+
+            @Override
+            public boolean isMainThread() {
+                return Thread.currentThread() == ownerThread;
+            }
+
+            @Override
+            public Cancellable scheduleLater(long delayMs, Runnable task) {
+                throw new UnsupportedOperationException("vector type test does not schedule tasks");
+            }
+
+            @Override
+            public Cancellable scheduleRepeat(long delayMs, long periodMs, Runnable task) {
+                throw new UnsupportedOperationException("vector type test does not schedule tasks");
+            }
+        });
+        Files.write(tempDirectory.resolve("vector-api.nova"), (
+                "import java org.bukkit.util.Vector\n"
+                        + "object VectorApi {\n"
+                        + "    fun acceptVector(direction: Vector): Int { return direction.getBlockX() }\n"
+                        + "}\n").getBytes(StandardCharsets.UTF_8));
+        Files.write(tempDirectory.resolve("entry.nova"), (
+                "import java org.bukkit.util.Vector\n"
+                        + "import \"@/vector-api\"\n"
+                        + "fun execute(): Int { return VectorApi.acceptVector(Vector(4.0f, 2.0f, 1.0f)) }\n"
+        ).getBytes(StandardCharsets.UTF_8));
+        Files.write(tempDirectory.resolve("nova.config.yml"), (
+                "version: 1\n"
+                        + "name: bukkit-vector-workspace\n"
+                        + "aliases:\n"
+                        + "  \"@\": \".\"\n"
+                        + "sources:\n"
+                        + "  - .\n"
+                        + "entries:\n"
+                        + "  - entry.nova\n"
+                        + "runtime:\n"
+                        + "  security: trusted-server\n"
+                        + "  thread: main\n"
+        ).getBytes(StandardCharsets.UTF_8));
+        RuntimeWorkspace workspace = new RuntimeWorkspace(
+                tempDirectory.resolve("nova.config.yml"),
+                nova -> {
+                    NovaBukkit.install(nova, pluginProxy());
+                    nova.setScriptClassLoader(BukkitEventRegistrarTest.class.getClassLoader());
+                });
+        try {
+            workspace.load();
+            assertEquals(4, workspace.invoke("entry.nova", "execute",
+                    java.util.Collections.emptyMap(), null));
+        } finally {
+            workspace.dispose();
+            SchedulerHolder.clear();
+        }
+    }
+
     @Test
     void acceptsAnyParameterForListenerMethodReference() {
         Nova nova = new Nova();

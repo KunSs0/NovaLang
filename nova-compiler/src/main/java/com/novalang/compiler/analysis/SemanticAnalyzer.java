@@ -441,6 +441,7 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
 
     /** 分析入口 */
     public AnalysisResult analyze(Program program) {
+        predeclareImportTypes(program);
         predeclareTopLevelTypes(program);
         program.accept(this, null);
         return new AnalysisResult(symbolTable, diagnostics, exprNovaTypeMap);
@@ -450,6 +451,7 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
      * 分析 Program 及顶层语句（容错解析时，非声明语句存在于 ParseResult.topLevelStatements）
      */
     public AnalysisResult analyze(Program program, List<Statement> topLevelStatements) {
+        predeclareImportTypes(program);
         predeclareTopLevelTypes(program);
         program.accept(this, null);
         if (topLevelStatements != null) {
@@ -458,6 +460,45 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
             }
         }
         return new AnalysisResult(symbolTable, diagnostics, exprNovaTypeMap);
+    }
+
+    /**
+     * 在预声明顶层类型和成员前登记所有源码导入的类型映射。
+     *
+     * <p>顶层 {@code object} 的成员签名需要提前构建；若导入尚未登记，未限定的 Java
+     * 类型名会被错误地按默认包解析，导致后续导入生效后产生同名类型冲突。</p>
+     *
+     * @param program 当前待分析程序
+     */
+    private void predeclareImportTypes(Program program) {
+        if (program == null || program.getImports() == null) {
+            return;
+        }
+        for (ImportDecl node : program.getImports()) {
+            if (node == null || node.isStringModule() || node.isStatic()
+                    || node.getName() == null) {
+                continue;
+            }
+            String qualifiedName = node.getName().getFullName();
+            String name = node.hasAlias() ? node.getAlias() : node.getName().getSimpleName();
+            if (node.isWildcard()) {
+                if (node.isJava()) {
+                    typeResolver.registerJavaWildcardImport(qualifiedName);
+                } else {
+                    typeResolver.registerNovaWildcardImport(qualifiedName);
+                }
+                continue;
+            }
+            String importedSimpleName = node.getName().getSimpleName();
+            if (!looksLikeTypeName(name) && !looksLikeTypeName(importedSimpleName)) {
+                continue;
+            }
+            if (node.isJava()) {
+                typeResolver.registerJavaImport(name, qualifiedName);
+            } else {
+                typeResolver.registerNovaImport(name, qualifiedName);
+            }
+        }
     }
 
     /** 获取 TypeResolver（供外部如 VarianceChecker 使用）*/
