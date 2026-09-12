@@ -9,6 +9,5 @@ public final class NovaPlayerMissingEvents {
     }
 
     public static void register(JavaTypes.Builder builder) {
-        NovaBukkitRegistrar.register(builder, NovaPlayerChatEvent.class, NovaPlayerChatEvent::register);
     }
 }

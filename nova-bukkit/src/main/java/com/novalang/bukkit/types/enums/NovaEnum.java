@@ -5,7 +5,6 @@ import com.novalang.bukkit.types.value.NovaTypeSupport;
 
 import com.novalang.runtime.host.JavaTypeRef;
 import com.novalang.runtime.host.JavaTypes;
-import org.bukkit.Art;
 import org.bukkit.ChatColor;
 import org.bukkit.CoalType;
 import org.bukkit.CropState;
@@ -29,7 +28,6 @@ import org.bukkit.TreeType;
 import org.bukkit.WeatherType;
 import org.bukkit.World;
 import org.bukkit.WorldType;
-import org.bukkit.block.Biome;
 import org.bukkit.block.BlockFace;
 import org.bukkit.block.PistonMoveReaction;
 import org.bukkit.entity.EntityType;
@@ -65,8 +63,6 @@ public final class NovaEnum {
 
     public static void register(JavaTypes.Builder builder) {
         registerEnum(builder, "action", Action.class);
-        registerEnum(builder, "art", Art.class);
-        registerEnum(builder, "biome", Biome.class);
         registerEnum(builder, "blockFace", BlockFace.class);
         registerEnum(builder, "chatColor", ChatColor.class);
         registerEnum(builder, "clickType", ClickType.class);
@@ -117,8 +113,6 @@ public final class NovaEnum {
         registerEnum(builder, "weatherType", WeatherType.class);
         registerEnum(builder, "worldEnvironment", World.Environment.class);
         registerEnum(builder, "worldType", WorldType.class);
-        NovaGameplayEnum.register(builder);
-        NovaBukkitRegistrar.register(builder, NovaEntityEnum.class, NovaEntityEnum::register);
         NovaEventEnum.register(builder);
         NovaEventExtraEnum.register(builder);
         NovaPlatformEnum.register(builder);
@@ -137,8 +131,6 @@ public final class NovaEnum {
         NovaWorldType.register(builder);
         NovaBukkitRegistrar.register(builder, NovaSpellcasterSpell.class, NovaSpellcasterSpell::register);
         NovaBukkitRegistrar.register(builder, NovaNoteTone.class, NovaNoteTone::register);
-        NovaBukkitRegistrar.register(builder, NovaWorldInventoryEnum.class, NovaWorldInventoryEnum::register);
-        NovaBukkitRegistrar.register(builder, NovaCreativeCategory.class, NovaCreativeCategory::register);
         NovaBukkitRegistrar.register(builder, NovaEnumMoreTypes.class, NovaEnumMoreTypes::register);
         NovaBukkitRegistrar.register(builder, NovaLegacyEnumMoreTypes.class, NovaLegacyEnumMoreTypes::register);
     }

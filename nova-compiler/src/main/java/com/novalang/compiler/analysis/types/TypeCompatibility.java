@@ -111,7 +111,11 @@ public final class TypeCompatibility {
     }
 
     private static boolean isJavaClassAssignable(ClassNovaType target, ClassNovaType source,
-                                                 SuperTypeRegistry registry) {
+                                                  SuperTypeRegistry registry) {
+        if (target instanceof JavaClassNovaType && source instanceof JavaClassLiteralNovaType) {
+            return isJavaClassLiteralAssignable((JavaClassNovaType) target,
+                    (JavaClassLiteralNovaType) source);
+        }
         if (target instanceof JavaClassNovaType && source instanceof JavaClassNovaType) {
             JavaTypeDescriptor targetDescriptor = ((JavaClassNovaType) target).getDescriptor();
             JavaTypeDescriptor sourceDescriptor = ((JavaClassNovaType) source).getDescriptor();
@@ -136,6 +140,34 @@ public final class TypeCompatibility {
                     || (registry != null && registry.isSubtype(source.getName(), target.getName()));
         }
         return false;
+    }
+
+    /**
+     * 检查 Java 类字面量是否满足带上界的 {@code Class<T>} 参数。
+     *
+     * @param target 目标 Java Class 类型及其类型参数
+     * @param source 包含实际 Java 类描述的类字面量类型
+     * @return 实际类是否满足目标类型上界
+     */
+    private static boolean isJavaClassLiteralAssignable(JavaClassNovaType target,
+                                                         JavaClassLiteralNovaType source) {
+        if (!"Class".equals(target.getName())) {
+            return false;
+        }
+        if (!target.hasTypeArgs()) {
+            return true;
+        }
+        if (target.getTypeArgs().size() != 1) {
+            return false;
+        }
+        NovaTypeArgument argument = target.getTypeArgs().get(0);
+        NovaType bound = argument.getType();
+        JavaTypeDescriptor representedType = source.getRepresentedType();
+        if (!(bound instanceof JavaClassNovaType) || representedType == null) {
+            return false;
+        }
+        JavaTypeDescriptor boundDescriptor = ((JavaClassNovaType) bound).getDescriptor();
+        return boundDescriptor != null && boundDescriptor.isAssignableFrom(representedType);
     }
 
     private static boolean areTypeArgsCompatible(String typeName,

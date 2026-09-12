@@ -10,12 +10,5 @@ public final class NovaPlayerFinalEvents {
     }
 
     public static void register(JavaTypes.Builder builder) {
-        NovaBukkitRegistrar.register(builder, NovaPlayerAnimationEvent.class, NovaPlayerAnimationEvent::register);
-        NovaBukkitRegistrar.register(builder, NovaPlayerChatTabCompleteEvent.class, NovaPlayerChatTabCompleteEvent::register);
-        NovaBukkitRegistrar.register(builder, NovaPlayerAdvancementDoneEvent.class, NovaPlayerAdvancementDoneEvent::register);
-        NovaBukkitRegistrar.register(builder, NovaPlayerChangedMainHandEvent.class, NovaPlayerChangedMainHandEvent::register);
-        NovaBukkitRegistrar.register(builder, NovaPlayerResourcePackStatusEvent.class, NovaPlayerResourcePackStatusEvent::register);
-        NovaBukkitRegistrar.register(builder, NovaPlayerUnleashEntityEvent.class, NovaPlayerUnleashEntityEvent::register);
-        NovaBukkitRegistrar.register(builder, NovaPlayerPickupArrowEvent.class, NovaPlayerPickupArrowEvent::register);
     }
 }

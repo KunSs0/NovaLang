@@ -40,6 +40,16 @@ import java.util.Set;
  */
 public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
 
+    /**
+     * Nova Bukkit 事件监听器的宿主接口名称。
+     *
+     * <p>监听器的 Java SAM 参数声明为 {@code Event}，但 {@code listen} 的第一个
+     * 参数携带了实际事件类字面量。语义分析阶段必须使用这个字面量将 SAM 参数
+     * 收窄到具体事件类型，避免脚本回调退化为 {@code Any}。</p>
+     */
+    private static final String BUKKIT_EVENT_LISTENER_TYPE =
+            "com.novalang.bukkit.BukkitEventListener";
+
     private final SymbolTable symbolTable;
     private Scope currentScope;
     private final List<SemanticDiagnostic> diagnostics = new ArrayList<SemanticDiagnostic>();
@@ -913,6 +923,134 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
         if (callableSymbol == null || callableSymbol.getParameters() == null) return null;
         if (argumentIndex < 0 || argumentIndex >= callableSymbol.getParameters().size()) return null;
         return callableSymbol.getParameters().get(argumentIndex).getResolvedNovaType();
+    }
+
+    /**
+     * 根据事件类字面量推导 Bukkit 监听器回调的精确函数类型。
+     *
+     * <p>Java 层的 {@code BukkitEventListener} 为了覆盖所有 Bukkit 版本只能以
+     * {@code Event} 作为擦除后的 SAM 参数。Nova 调用表达式仍保留了
+     * {@code PlayerJoinEvent} 等类字面量，因此这里把该信息传给回调函数引用或
+     * Lambda 的上下文类型，保证回调体内的 {@code event.getPlayer()} 保持
+     * {@code Player} 返回类型。</p>
+     *
+     * @param callableSymbol 当前调用的函数符号
+     * @param call 当前调用表达式
+     * @param argumentIndex 当前参数位置
+     * @return 精确监听器函数类型；当前参数不是监听器时返回 {@code null}
+     */
+    private NovaType contextualEventListenerType(Symbol callableSymbol,
+                                                  CallExpr call,
+                                                  int argumentIndex) {
+        if (callableSymbol == null || callableSymbol.getParameters() == null
+                || argumentIndex < 0 || argumentIndex >= callableSymbol.getParameters().size()) {
+            return null;
+        }
+        NovaType listenerParameter = callableSymbol.getParameters()
+                .get(argumentIndex).getResolvedNovaType();
+        if (!isBukkitEventListenerType(listenerParameter)) {
+            return null;
+        }
+        NovaType eventType = eventTypeFromClassLiteral(call, argumentIndex);
+        if (eventType == null) {
+            return null;
+        }
+        List<NovaType> parameterTypes = new ArrayList<NovaType>();
+        parameterTypes.add(eventType);
+        return new FunctionNovaType(null, parameterTypes, NovaTypes.UNIT, false);
+    }
+
+    /**
+     * 判断调用中是否存在可用于监听器回调收窄的事件类字面量。
+     */
+    private boolean hasContextualEventListenerType(Symbol callableSymbol, CallExpr call) {
+        if (callableSymbol == null || callableSymbol.getParameters() == null) {
+            return false;
+        }
+        for (int i = 0; i < callableSymbol.getParameters().size(); i++) {
+            if (contextualEventListenerType(callableSymbol, call, i) != null) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 使用事件类字面量替换监听器参数的默认 {@code Event} SAM 类型进行检查。
+     */
+    private void checkCallArgTypesWithContextualEventListener(CallExpr call,
+                                                               Symbol callableSymbol) {
+        if (call == null || callableSymbol == null || callableSymbol.getParameters() == null) {
+            return;
+        }
+        List<Symbol> parameters = callableSymbol.getParameters();
+        List<CallExpr.Argument> arguments = call.getArgs();
+        for (int i = 0; i < arguments.size(); i++) {
+            CallExpr.Argument argument = arguments.get(i);
+            if (argument.isSpread()) {
+                return;
+            }
+            int parameterIndex = i;
+            if (parameterIndex >= parameters.size()) {
+                if (!callableSymbol.isVararg() || parameters.isEmpty()) {
+                    break;
+                }
+                parameterIndex = parameters.size() - 1;
+            }
+            Symbol parameter = parameters.get(parameterIndex);
+            NovaType parameterType = contextualEventListenerType(
+                    callableSymbol, call, parameterIndex);
+            NovaType argumentType = getNovaType(argument.getValue());
+            if (parameterType == null || !(argumentType instanceof FunctionNovaType)) {
+                parameterType = parameter.getResolvedNovaType();
+            }
+            if (parameterType != null && argumentType != null) {
+                checker.checkTypeCompatibility(parameterType, argumentType,
+                        argument.getValue(), "参数 '" + parameter.getName() + "'");
+            }
+        }
+    }
+
+    /**
+     * 判断一个参数是否为 Bukkit 事件监听器接口。
+     */
+    private boolean isBukkitEventListenerType(NovaType type) {
+        if (!(type instanceof JavaClassNovaType)) {
+            return false;
+        }
+        JavaClassNovaType javaType = (JavaClassNovaType) type;
+        return BUKKIT_EVENT_LISTENER_TYPE.equals(javaType.getQualifiedName());
+    }
+
+    /**
+     * 从当前调用的类字面量参数解析 Bukkit 事件类型。
+     */
+    private NovaType eventTypeFromClassLiteral(CallExpr call, int listenerArgumentIndex) {
+        if (call == null || call.getArgs() == null) {
+            return null;
+        }
+        int limit = Math.min(listenerArgumentIndex, call.getArgs().size());
+        JavaTypeDescriptor eventBase = JavaTypeOracle.get().resolve("org.bukkit.event.Event");
+        for (int i = 0; i < limit; i++) {
+            Expression expression = call.getArgs().get(i).getValue();
+            NovaType argumentType = getNovaType(expression);
+            if (!(argumentType instanceof JavaClassLiteralNovaType)) {
+                argumentType = analyzedCallArgumentType(expression);
+            }
+            if (!(argumentType instanceof JavaClassLiteralNovaType)) {
+                continue;
+            }
+            JavaTypeDescriptor representedType =
+                    ((JavaClassLiteralNovaType) argumentType).getRepresentedType();
+            if (representedType == null) {
+                continue;
+            }
+            if (eventBase != null && !eventBase.isAssignableFrom(representedType)) {
+                continue;
+            }
+            return new JavaClassNovaType(representedType, false);
+        }
+        return null;
     }
 
     private Parameter expectedCallParameter(Symbol callableSymbol, CallExpr call, int argumentIndex) {
@@ -3609,9 +3747,16 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
         }
         java.util.List<NovaType> analyzedValueArgTypes = new java.util.ArrayList<NovaType>();
         int lambdaOrdinal = 0;
+        Symbol memberCallable = memberCallee != null
+                ? resolveRegisteredObjectMember(memberCallee) : null;
+        Symbol expectedCallable = callableSymbol != null ? callableSymbol : memberCallable;
         for (int i = 0; i < node.getArgs().size(); i++) {
             CallExpr.Argument arg = node.getArgs().get(i);
-            NovaType expectedType = expectedCallArgType(callableSymbol, node, i);
+            NovaType expectedType = expectedCallArgType(expectedCallable, node, i);
+            NovaType eventListenerType = contextualEventListenerType(expectedCallable, node, i);
+            if (eventListenerType != null) {
+                expectedType = eventListenerType;
+            }
             if (expectedType == null && memberCallee != null && arg.getValue() instanceof LambdaExpr) {
                 expectedType = expectedMemberLambdaType(memberCallee, analyzedValueArgTypes, lambdaOrdinal, (LambdaExpr) arg.getValue());
             }
@@ -3622,11 +3767,18 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
             if (arg.getValue() instanceof LambdaExpr) {
                 lambdaOrdinal++;
             } else {
-                analyzedValueArgTypes.add(getNovaType(arg.getValue()));
+                NovaType analyzedArgumentType = analyzedCallArgumentType(arg.getValue());
+                setNovaType(arg.getValue(), analyzedArgumentType);
+                analyzedValueArgTypes.add(analyzedArgumentType);
             }
         }
         if (node.getTrailingLambda() != null) {
-            NovaType expectedType = expectedCallArgType(callableSymbol, node, node.getArgs().size());
+            NovaType expectedType = expectedCallArgType(expectedCallable, node, node.getArgs().size());
+            NovaType eventListenerType = contextualEventListenerType(
+                    expectedCallable, node, node.getArgs().size());
+            if (eventListenerType != null) {
+                expectedType = eventListenerType;
+            }
             if (expectedType == null && memberCallee != null) {
                 expectedType = expectedMemberLambdaType(memberCallee, analyzedValueArgTypes, lambdaOrdinal, node.getTrailingLambda());
             }
@@ -3831,7 +3983,11 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
                             node);
                 } else {
                     checker.checkCallArgCount(node, registeredMember);
-                    checker.checkCallArgTypes(node, registeredMember);
+                    if (hasContextualEventListenerType(registeredMember, node)) {
+                        checkCallArgTypesWithContextualEventListener(node, registeredMember);
+                    } else {
+                        checker.checkCallArgTypes(node, registeredMember);
+                    }
                     setNovaType(node, registeredMember.getResolvedNovaType());
                 }
             } else if (strictJavaTypes && isRegisteredObject(memberCallee)) {

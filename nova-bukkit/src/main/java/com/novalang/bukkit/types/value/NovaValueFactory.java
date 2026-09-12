@@ -5,7 +5,6 @@ import com.novalang.runtime.host.JavaTypeRef;
 import com.novalang.runtime.host.JavaTypes;
 import org.bukkit.Color;
 import org.bukkit.DyeColor;
-import org.bukkit.Sound;
 import org.bukkit.util.Vector;
 
 /** Bukkit 常用值对象构造和转换入口。 */
@@ -49,14 +48,6 @@ public final class NovaValueFactory {
                 .param("color", Color.class)
                 .returns(JavaTypeRef.javaType(DyeColor.class).nullable())
                 .invoke1(Color.class, DyeColor::getByColor));
-        builder.globalFunction("sound", function -> function
-                .param("name", String.class)
-                .returns(Sound.class)
-                .invoke1(String.class, NovaValueFactory::requireSound));
-        builder.globalFunction("soundOrNull", function -> function
-                .param("name", String.class)
-                .returns(JavaTypeRef.javaType(Sound.class).nullable())
-                .invoke1(String.class, NovaValueFactory::findSound));
     }
 
     private static Color parseColor(String value) {
@@ -64,15 +55,4 @@ public final class NovaValueFactory {
         return Color.fromRGB(Integer.parseInt(normalized, 16));
     }
 
-    private static Sound requireSound(String value) {
-        Sound sound = findSound(value);
-        if (sound == null) {
-            throw new IllegalArgumentException("音效不存在: " + value);
-        }
-        return sound;
-    }
-
-    private static Sound findSound(String value) {
-        return NovaTypeSupport.findEnum(Sound.class, value);
-    }
 }

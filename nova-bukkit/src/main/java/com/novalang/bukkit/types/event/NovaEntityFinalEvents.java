@@ -7,8 +7,5 @@ import com.novalang.runtime.host.JavaTypes;
 public final class NovaEntityFinalEvents {
     private NovaEntityFinalEvents() { }
     public static void register(JavaTypes.Builder builder) {
-        NovaBukkitRegistrar.register(builder, NovaEntityInteractEvent.class, NovaEntityInteractEvent::register);
-        NovaBukkitRegistrar.register(builder, NovaEntityPortalExitEvent.class, NovaEntityPortalExitEvent::register);
-        NovaBukkitRegistrar.register(builder, NovaEntitySpawnEvent.class, NovaEntitySpawnEvent::register);
     }
 }

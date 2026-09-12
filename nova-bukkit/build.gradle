@@ -8,20 +8,84 @@ description = 'NovaLang Bukkit runtime plugin and scheduler integration'
 repositories {
     maven { url 'https://hub.spigotmc.org/nexus/content/repositories/snapshots/' }
     maven { url 'https://oss.sonatype.org/content/repositories/snapshots/' }
+    maven { url 'https://repo.papermc.io/repository/maven-public/' }
+}
+
+def bukkitApiGroup = findProperty('bukkitApiGroup') ?: 'io.papermc.paper'
+def bukkitApiArtifact = findProperty('bukkitApiArtifact') ?: 'paper-api'
+def bukkitApiVersion = findProperty('bukkitApiVersion') ?: '1.21.8-R0.1-SNAPSHOT'
+def mockBukkitCoordinate = findProperty('mockBukkitCoordinate') ?: 'com.github.seeseemelk:MockBukkit-v1.21:3.133.2'
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_21
+    targetCompatibility = JavaVersion.VERSION_21
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+}
+
+
+sourceSets {
+    mockBukkitTest {
+        java.srcDir('src/mockBukkitTest/java')
+        resources.srcDir('src/mockBukkitTest/resources')
+        compileClasspath = sourceSets.main.output + configurations.testRuntimeClasspath
+        runtimeClasspath = output + compileClasspath
+    }
 }
 
 dependencies {
+    api project(':nova-bukkit:core')
+    api project(':nova-bukkit:paper-1_21')
+    api project(':nova-bukkit:bukkit-1_12')
     api project(':nova-runtime-workspace')
     api project(':nova-mock')
-    compileOnly('org.spigotmc:spigot-api:1.12.2-R0.1-SNAPSHOT') {
-        exclude group: 'net.md-5', module: 'bungeecord-chat'
-    }
-    testImplementation('org.spigotmc:spigot-api:1.12.2-R0.1-SNAPSHOT') {
-        exclude group: 'net.md-5', module: 'bungeecord-chat'
+    compileOnly("${bukkitApiGroup}:${bukkitApiArtifact}:${bukkitApiVersion}")
+    testImplementation("${bukkitApiGroup}:${bukkitApiArtifact}:${bukkitApiVersion}")
+    if (mockBukkitCoordinate != null && !mockBukkitCoordinate.trim().isEmpty()) {
+        add('mockBukkitTestImplementation', mockBukkitCoordinate) {
+            transitive = true
+        }
     }
 }
 
+tasks.register('mockBukkitTest', Test) {
+    description = 'Runs the real Bukkit event registration test for the selected Bukkit/MockBukkit profile.'
+    group = 'verification'
+    testClassesDirs = sourceSets.mockBukkitTest.output.classesDirs
+    classpath = sourceSets.mockBukkitTest.runtimeClasspath
+    useJUnitPlatform()
+    javaLauncher = javaToolchains.launcherFor {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+    onlyIf {
+        mockBukkitCoordinate != null && !mockBukkitCoordinate.trim().isEmpty()
+    }
+}
+
+tasks.register('assembleVersionedModules', Copy) {
+    group = 'distribution'
+    description = 'Assembles the cross-version core and selected Bukkit platform modules.'
+    dependsOn(':nova-bukkit:core:jar', ':nova-bukkit:paper-1_21:jar')
+    dependsOn(':nova-bukkit:bukkit-1_12:jar')
+    from(project(':nova-bukkit:core').tasks.named('jar'))
+    from(project(':nova-bukkit:paper-1_21').tasks.named('jar'))
+    from(project(':nova-bukkit:bukkit-1_12').tasks.named('jar'))
+    into(layout.buildDirectory.dir('versioned-modules'))
+}
+
+tasks.assemble.dependsOn(tasks.named('assembleVersionedModules'))
+
+tasks.register('assembleSingleJar') {
+    group = 'distribution'
+    description = 'Builds the single deployable NovaLang Bukkit runtime JAR.'
+    dependsOn(shadowJar)
+}
+
+tasks.assemble.dependsOn(tasks.named('assembleSingleJar'))
+
 processResources {
+    filteringCharset = 'UTF-8'
     filesMatching('plugin.yml') {
         expand(version: project.version)
     }

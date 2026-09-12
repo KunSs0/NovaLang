@@ -28,9 +28,10 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
-class BukkitEventRegistrarTest {
+public class BukkitEventRegistrarTest {
 
     @TempDir
     Path tempDirectory;
@@ -46,26 +47,26 @@ class BukkitEventRegistrarTest {
     }
 
     @Test
-    void resolvesEventFromFullyQualifiedClassName() {
-        assertSame(TestEvent.class,
-                BukkitEventRegistrar.resolveEventType(TestEvent.class.getName()));
+    void acceptsEventClassDirectly() throws Exception {
+        EventRegistration registration = BukkitEventRegistrar.forPlugin(pluginProxy()).listen(
+                TestEvent.class, EventPriority.NORMAL, false, event -> {
+                });
+
+        assertNotNull(registration);
+        registration.dispose();
     }
 
     @Test
-    void rejectsInvalidEventClassName() {
+    @SuppressWarnings("unchecked")
+    void rejectsInvalidEventClassAtRuntimeBoundary() {
         assertThrows(IllegalArgumentException.class,
-                () -> BukkitEventRegistrar.resolveEventType(" "));
+                () -> BukkitEventRegistrar.forPlugin(pluginProxy()).listen(
+                        null, EventPriority.NORMAL, false, event -> {
+                        }));
         assertThrows(IllegalArgumentException.class,
-                () -> BukkitEventRegistrar.resolveEventType(String.class.getName()));
-        assertThrows(IllegalArgumentException.class,
-                () -> BukkitEventRegistrar.resolveEventType("example.missing.UnknownEvent"));
-    }
-
-    @Test
-    void rejectsResolutionWithoutScriptClassLoader() {
-        JavaInterop.setScriptClassLoader(null);
-        assertThrows(IllegalStateException.class,
-                () -> BukkitEventRegistrar.resolveEventType(TestEvent.class.getName()));
+                () -> BukkitEventRegistrar.forPlugin(pluginProxy()).listen(
+                        (Class) String.class, EventPriority.NORMAL, false, event -> {
+                        }));
     }
 
     @Test
@@ -77,7 +78,7 @@ class BukkitEventRegistrarTest {
         AtomicInteger invocations = new AtomicInteger();
 
         EventRegistration registration = BukkitEventRegistrar.forPlugin(plugin).listen(
-                TestEvent.class.getName(), EventPriority.NORMAL, false,
+                TestEvent.class, EventPriority.NORMAL, false,
                 event -> invocations.incrementAndGet());
 
         assertSame(plugin, owner.get());
@@ -98,11 +99,91 @@ class BukkitEventRegistrarTest {
                 "import java com.novalang.bukkit.BukkitEventListener\n"
                         + "import java org.bukkit.event.Event\n"
                         + "import java org.bukkit.event.EventPriority\n"
+                        + "import java org.bukkit.event.player.PlayerJoinEvent\n"
                         + "fun onEvent(event: Event) { }\n"
-                        + "NoBukkit.event.listen(\"" + TestEvent.class.getName()
-                        + "\", EventPriority.NORMAL, false, ::onEvent)\n"
+                        + "NoBukkit.event.listen(PlayerJoinEvent, EventPriority.NORMAL, false, ::onEvent)\n"
                         + "true",
                 "nobukkit-listener.nova");
+    }
+
+    /**
+     * 验证事件 class literal 与同类型的 Nova 监听器方法引用可以在编译期直接匹配。
+     */
+    @Test
+    void compilesExactEventListenerMethodReferenceThroughNoBukkit() {
+        Nova nova = new Nova();
+        nova.install(NovaBukkit.create(pluginProxy()));
+        nova.compileToBytecode(
+                "import java com.novalang.bukkit.BukkitEventListener\n"
+                        + "import java org.bukkit.event.EventPriority\n"
+                        + "import java org.bukkit.event.player.PlayerJoinEvent\n"
+                        + "fun onEvent(event: PlayerJoinEvent) { event.getPlayer().getName() }\n"
+                        + "NoBukkit.event.listen(PlayerJoinEvent, EventPriority.NORMAL, false, ::onEvent)\n"
+                        + "true",
+                "nobukkit-exact-event-listener.nova").run();
+    }
+
+    /**
+     * 验证事件类字面量与回调参数类型不一致时必须在编译期报告错误。
+     */
+    @Test
+    void rejectsMismatchedExactEventListenerMethodReference() {
+        Nova nova = new Nova();
+        nova.install(NovaBukkit.create(pluginProxy()));
+        assertThrows(RuntimeException.class, () -> nova.compileToBytecode(
+                "import java org.bukkit.event.EventPriority\n"
+                        + "import java org.bukkit.event.player.PlayerJoinEvent\n"
+                        + "import java org.bukkit.event.player.PlayerQuitEvent\n"
+                        + "fun onEvent(event: PlayerQuitEvent) { }\n"
+                        + "NoBukkit.event.listen(PlayerJoinEvent, EventPriority.NORMAL, false, ::onEvent)\n",
+                "nobukkit-mismatched-event-listener.nova"));
+    }
+
+    @Test
+    void registersImportedEventClassLiteral() {
+        AtomicReference<Class<?>> eventType = new AtomicReference<Class<?>>();
+        Plugin plugin = pluginProxy(new AtomicReference<Plugin>(),
+                new AtomicReference<Listener>(), new AtomicReference<EventExecutor>(), eventType);
+        Nova nova = new Nova();
+        nova.install(NovaBukkit.create(plugin));
+        nova.compileToBytecode(
+                "import java com.novalang.bukkit.BukkitEventListener\n"
+                        + "import java org.bukkit.event.Event\n"
+                        + "import java org.bukkit.event.EventPriority\n"
+                        + "import java org.bukkit.event.player.PlayerJoinEvent\n"
+                        + "fun onEvent(event: Event) { }\n"
+                        + "NoBukkit.event.listen(PlayerJoinEvent, EventPriority.NORMAL, false, ::onEvent)\n"
+                        + "true",
+                "nobukkit-class-literal.nova").run();
+
+        assertSame(org.bukkit.event.player.PlayerJoinEvent.class, eventType.get());
+    }
+
+    @Test
+    void rejectsStringEventNameDuringCompilation() {
+        Nova nova = new Nova();
+        nova.install(NovaBukkit.create(pluginProxy()));
+        assertThrows(RuntimeException.class, () -> nova.compileToBytecode(
+                "import java org.bukkit.event.Event\n"
+                        + "import java org.bukkit.event.EventPriority\n"
+                        + "import java com.novalang.bukkit.BukkitEventRegistrarTest.TestEvent\n"
+                        + "fun onEvent(event: Event) { }\n"
+                        + "NoBukkit.event.listen(\"org.bukkit.event.player.PlayerJoinEvent\", "
+                        + "EventPriority.NORMAL, false, ::onEvent)",
+                "nobukkit-string-event.nova"));
+    }
+
+    @Test
+    void rejectsNonEventClassDuringCompilation() {
+        Nova nova = new Nova();
+        nova.install(NovaBukkit.create(pluginProxy()));
+        assertThrows(RuntimeException.class, () -> nova.compileToBytecode(
+                "import java java.lang.String\n"
+                        + "import java org.bukkit.event.Event\n"
+                        + "import java org.bukkit.event.EventPriority\n"
+                        + "fun onEvent(event: Event) { }\n"
+                        + "NoBukkit.event.listen(String, EventPriority.NORMAL, false, ::onEvent)",
+                "nobukkit-non-event.nova"));
     }
 
     /**
@@ -184,9 +265,10 @@ class BukkitEventRegistrarTest {
         nova.install(NovaBukkit.create(pluginProxy()));
         nova.compileToBytecode(
                 "import java org.bukkit.event.EventPriority\n"
+                        + "import java org.bukkit.event.Event\n"
+                        + "import java org.bukkit.event.player.PlayerJoinEvent\n"
                         + "fun onEvent(event: Any) { }\n"
-                        + "NoBukkit.event.listen(\"" + TestEvent.class.getName()
-                        + "\", EventPriority.NORMAL, false, ::onEvent)",
+                        + "NoBukkit.event.listen(PlayerJoinEvent, EventPriority.NORMAL, false, ::onEvent)",
                 "nobukkit-any-listener.nova");
     }
 
@@ -196,7 +278,6 @@ class BukkitEventRegistrarTest {
         AtomicReference<EventExecutor> executor = new AtomicReference<EventExecutor>();
         AtomicReference<Plugin> owner = new AtomicReference<Plugin>();
         Plugin plugin = pluginProxy(owner, registeredListener, executor);
-        String eventClassName = TestEvent.class.getName().replace("$", "\\$");
         final Thread ownerThread = Thread.currentThread();
         SchedulerHolder.set(new NovaScheduler() {
             @Override
@@ -227,11 +308,11 @@ class BukkitEventRegistrarTest {
         Files.write(tempDirectory.resolve("entry.nova"), (
                 "import java org.bukkit.event.Event\n"
                         + "import java org.bukkit.event.EventPriority\n"
+                        + "import java com.novalang.bukkit.BukkitEventRegistrarTest.TestEvent\n"
                         + "var count = 0\n"
                         + "fun onEvent(event: Event) { count = count + 1 }\n"
                         + "fun getCount(): Int { return count }\n"
-                        + "fun main() { NoBukkit.event.listen(\"" + eventClassName
-                        + "\", EventPriority.NORMAL, false, ::onEvent) }\n"
+                        + "fun main() { NoBukkit.event.listen(TestEvent, EventPriority.NORMAL, false, ::onEvent) }\n"
         ).getBytes(StandardCharsets.UTF_8));
         Files.write(tempDirectory.resolve("nova.config.yml"), (
                 "version: 1\n"
@@ -262,7 +343,7 @@ class BukkitEventRegistrarTest {
             AtomicInteger explicitCount = new AtomicInteger();
             EventRegistration explicitRegistration = BukkitEventRegistrar.forWorkspace(
                     plugin, generation, generation.getRootScope()).listen(
-                    TestEvent.class.getName(), EventPriority.NORMAL, false,
+                    TestEvent.class, EventPriority.NORMAL, false,
                     event -> explicitCount.incrementAndGet());
             executor.get().execute(registeredListener.get(), new TestEvent());
             assertEquals(1, explicitCount.get());
@@ -285,9 +366,9 @@ class BukkitEventRegistrarTest {
         assertThrows(RuntimeException.class, () -> nova.compileToBytecode(
                 "import java org.bukkit.event.Event\n"
                         + "import java org.bukkit.event.EventPriority\n"
+                        + "import java com.novalang.bukkit.BukkitEventRegistrarTest.TestEvent\n"
                         + "fun missing(event: Event) { }\n"
-                        + "NoBukkit.event.listen(\"" + TestEvent.class.getName()
-                        + "\", EventPriority.NORMAL, false, ::unknown)",
+                        + "NoBukkit.event.listen(TestEvent, EventPriority.NORMAL, false, ::unknown)",
                 "nobukkit-unknown-listener.nova"));
     }
 
@@ -299,11 +380,21 @@ class BukkitEventRegistrarTest {
     private Plugin pluginProxy(AtomicReference<Plugin> owner,
                                AtomicReference<Listener> registeredListener,
                                AtomicReference<EventExecutor> executor) {
+        return pluginProxy(owner, registeredListener, executor, null);
+    }
+
+    private Plugin pluginProxy(AtomicReference<Plugin> owner,
+                               AtomicReference<Listener> registeredListener,
+                               AtomicReference<EventExecutor> executor,
+                               AtomicReference<Class<?>> eventType) {
         PluginManager manager = (PluginManager) Proxy.newProxyInstance(
                 PluginManager.class.getClassLoader(),
                 new Class<?>[]{PluginManager.class},
                 (proxy, method, arguments) -> {
                     if ("registerEvent".equals(method.getName())) {
+                        if (eventType != null) {
+                            eventType.set((Class<?>) arguments[0]);
+                        }
                         owner.set((Plugin) arguments[4]);
                         registeredListener.set((Listener) arguments[1]);
                         executor.set((EventExecutor) arguments[3]);
@@ -330,7 +421,7 @@ class BukkitEventRegistrarTest {
                 });
     }
 
-    static final class TestEvent extends Event {
+    public static final class TestEvent extends Event {
         private static final HandlerList HANDLERS = new HandlerList();
 
         @Override

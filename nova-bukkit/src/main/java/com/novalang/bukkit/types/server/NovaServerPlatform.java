@@ -10,7 +10,6 @@ public final class NovaServerPlatform {
     }
 
     public static void register(JavaTypes.Builder builder) {
-        NovaServerExtra.register(builder);
         NovaOfflinePlayer.register(builder);
         NovaPermission.register(builder);
         NovaMetadata.register(builder);

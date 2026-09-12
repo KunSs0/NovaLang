@@ -9,16 +9,10 @@ public final class NovaWorldEventTypes {
     }
 
     public static void register(JavaTypes.Builder builder) {
-        NovaBukkitRegistrar.register(builder, NovaWorldEvent.class, NovaWorldEvent::register);
-        NovaBukkitRegistrar.register(builder, NovaWorldInitEvent.class, NovaWorldInitEvent::register);
-        NovaBukkitRegistrar.register(builder, NovaWorldLoadEvent.class, NovaWorldLoadEvent::register);
-        NovaBukkitRegistrar.register(builder, NovaWorldSaveEvent.class, NovaWorldSaveEvent::register);
-        NovaBukkitRegistrar.register(builder, NovaWorldUnloadEvent.class, NovaWorldUnloadEvent::register);
         NovaBukkitRegistrar.register(builder, NovaChunkEvent.class, NovaChunkEvent::register);
         NovaBukkitRegistrar.register(builder, NovaChunkLoadEvent.class, NovaChunkLoadEvent::register);
         NovaBukkitRegistrar.register(builder, NovaChunkPopulateEvent.class, NovaChunkPopulateEvent::register);
         NovaBukkitRegistrar.register(builder, NovaChunkUnloadEvent.class, NovaChunkUnloadEvent::register);
-        NovaBukkitRegistrar.register(builder, NovaStructureGrowEvent.class, NovaStructureGrowEvent::register);
         NovaBukkitRegistrar.register(builder, NovaSpawnChangeEvent.class, NovaSpawnChangeEvent::register);
     }
 }

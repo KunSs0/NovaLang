@@ -2,6 +2,7 @@ package com.novalang.bukkit;
 
 import com.novalang.runtime.Nova;
 import com.novalang.runtime.host.JavaTypes;
+import com.novalang.bukkit.core.BukkitJavaTypesModule;
 import com.novalang.runtime.interpreter.ModuleLoader;
 import com.novalang.bukkit.types.entity.NovaEntity;
 import com.novalang.bukkit.types.entity.NovaEntityHierarchy;
@@ -82,6 +83,19 @@ public final class NovaBukkit {
         return builder.build();
     }
 
+    /** 创建指定版本扩展的 Bukkit API 描述。 */
+    public static JavaTypes create(Plugin plugin, BukkitJavaTypesModule module) {
+        if (plugin == null) {
+            throw new IllegalArgumentException("plugin must not be null");
+        }
+        if (module == null) {
+            throw new IllegalArgumentException("module must not be null");
+        }
+        JavaTypes.Builder types = builder(module);
+        NoBukkit.register(types, plugin);
+        return types.build();
+    }
+
     /** 注册由 Bukkit 插件提供、供全部 Nova Workspace 使用的共享逻辑模块。 */
     public static void registerModule(String moduleId, String source) {
         ModuleLoader.registerSharedModule(moduleId, source);
@@ -134,6 +148,16 @@ public final class NovaBukkit {
         NovaBukkitRegistrar.register(builder, NovaEnum.class, NovaEnum::register);
         NovaBukkitRegistrar.register(builder, NovaEventTypes.class, NovaEventTypes::register);
         builder.javaBeanPropertiesFromExtensions();
+        return builder;
+    }
+
+    /** 创建包含指定版本 JavaTypes 扩展的 builder。 */
+    public static JavaTypes.Builder builder(BukkitJavaTypesModule module) {
+        if (module == null) {
+            throw new IllegalArgumentException("module must not be null");
+        }
+        JavaTypes.Builder builder = builder();
+        module.register(builder);
         return builder;
     }
 }

@@ -8,12 +8,5 @@ public final class NovaEntityMoreEvents {
     private NovaEntityMoreEvents() {
     }
     public static void register(JavaTypes.Builder builder) {
-        NovaBukkitRegistrar.register(builder, NovaEntityCombustByBlockEvent.class, NovaEntityCombustByBlockEvent::register);
-        NovaBukkitRegistrar.register(builder, NovaEntityCombustByEntityEvent.class, NovaEntityCombustByEntityEvent::register);
-        NovaBukkitRegistrar.register(builder, NovaEntityUnleashEvent.class, NovaEntityUnleashEvent::register);
-        NovaBukkitRegistrar.register(builder, NovaExpBottleEvent.class, NovaExpBottleEvent::register);
-        NovaBukkitRegistrar.register(builder, NovaFireworkExplodeEvent.class, NovaFireworkExplodeEvent::register);
-        NovaBukkitRegistrar.register(builder, NovaCreeperPowerEvent.class, NovaCreeperPowerEvent::register);
-        NovaBukkitRegistrar.register(builder, NovaEntityBreakDoorEvent.class, NovaEntityBreakDoorEvent::register);
     }
 }

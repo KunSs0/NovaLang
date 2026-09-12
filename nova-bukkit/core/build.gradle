@@ -1,0 +1,29 @@
+plugins {
+    id 'java-library'
+}
+
+description = 'NovaLang Bukkit cross-version core API'
+
+repositories {
+    maven { url 'https://repo.papermc.io/repository/maven-public/' }
+}
+
+dependencies {
+    api project(':nova-runtime-workspace')
+    api project(':nova-mock')
+    compileOnly('io.papermc.paper:paper-api:1.21.8-R0.1-SNAPSHOT')
+}
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_21
+    targetCompatibility = JavaVersion.VERSION_21
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+}
+
+jar {
+    archiveBaseName.set('NovaLang-Bukkit-Core')
+}
+
+// 核心模块不直接依赖 Bukkit 版本 API，避免把特定版本类带入共享类加载器。
