@@ -3937,9 +3937,15 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
                 explicitCollectionTypeArgs.add(typeResolver.resolve(typeArg));
             }
             NovaType collType = inference.inferCollectionFactoryType(
-                    funcName, node.getArgs(), explicitCollectionTypeArgs);
+                    funcName, node.getArgs(), explicitCollectionTypeArgs, contextualExpectedType);
             if (collType != null) {
                 setNovaType(node, collType);
+            } else if (isCollectionFactoryFunction(funcName)) {
+                checker.addDiagnostic(SemanticDiagnostic.Severity.ERROR,
+                        "无法推断集合工厂函数 '" + funcName
+                                + "' 的元素类型，请显式指定类型参数或声明变量类型",
+                        node);
+                setNovaType(node, NovaTypes.ERROR);
             }
             // stdlib Supplier Lambda 函数类型推导
             StdlibRegistry.SupplierLambdaInfo slInfo = StdlibRegistry.getSupplierLambda(funcName);
@@ -5218,6 +5224,14 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
         }
         setNovaType(node, NovaTypes.NOTHING);
         return null;
+    }
+
+    private boolean isCollectionFactoryFunction(String funcName) {
+        return "listOf".equals(funcName) || "mutableListOf".equals(funcName)
+                || "emptyList".equals(funcName) || "setOf".equals(funcName)
+                || "mutableSetOf".equals(funcName) || "emptySet".equals(funcName)
+                || "arrayOf".equals(funcName) || "mapOf".equals(funcName)
+                || "mutableMapOf".equals(funcName) || "emptyMap".equals(funcName);
     }
 
     // ============ 类型 visitor ============
