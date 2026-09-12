@@ -1175,26 +1175,62 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
         JavaTypeDescriptor descriptor = javaReceiverType.getDescriptor();
         if (descriptor == null) return null;
 
-        boolean staticOnly = false;
-        if (memberExpr.getTarget() instanceof Identifier) {
-            String receiverName = ((Identifier) memberExpr.getTarget()).getName();
-            Symbol receiverSymbol = currentScope.resolve(receiverName);
-            if (receiverSymbol != null && receiverSymbol.getKind() == SymbolKind.IMPORT) {
-                staticOnly = true;
-            }
-        }
+        boolean staticOnly = isJavaTypeExpression(memberExpr.getTarget());
 
         return descriptor.resolveMethod(memberExpr.getMember(), analyzedCallArgumentTypes(node),
                 staticOnly, javaReceiverType.getTypeArgs(), superTypeRegistry);
     }
 
+    /**
+     * 解析 Java 外层类成员位置上的嵌套类类型。
+     *
+     * @param memberExpr 外层类到嵌套类的成员表达式
+     * @return 嵌套 Java 类类型；当前成员不是嵌套类时返回 {@code null}
+     */
+    private NovaType resolveNestedJavaType(MemberExpr memberExpr) {
+        if (memberExpr == null) {
+            return null;
+        }
+        NovaType receiverType = getNovaType(memberExpr.getTarget());
+        if (!(receiverType instanceof JavaClassNovaType)) {
+            return null;
+        }
+        JavaTypeDescriptor descriptor = ((JavaClassNovaType) receiverType).getDescriptor();
+        if (descriptor == null) {
+            return null;
+        }
+        JavaTypeDescriptor nestedDescriptor = descriptor.resolveNestedType(memberExpr.getMember());
+        if (nestedDescriptor == null) {
+            return null;
+        }
+        return new JavaClassNovaType(nestedDescriptor, false);
+    }
+
     private boolean isStaticJavaMemberAccess(MemberExpr memberExpr) {
-        if (memberExpr == null || !(memberExpr.getTarget() instanceof Identifier)) {
+        if (memberExpr == null) {
             return false;
         }
-        String receiverName = ((Identifier) memberExpr.getTarget()).getName();
-        Symbol receiverSymbol = currentScope.resolve(receiverName);
-        return receiverSymbol != null && receiverSymbol.getKind() == SymbolKind.IMPORT;
+        return isJavaTypeExpression(memberExpr.getTarget());
+    }
+
+    /**
+     * 判断表达式是否表示 Java 类型路径，而不是 Java 对象实例。
+     *
+     * @param expression 待判断表达式
+     * @return 表达式是已导入 Java 类型或其公开嵌套类型路径时返回 {@code true}
+     */
+    private boolean isJavaTypeExpression(Expression expression) {
+        if (expression instanceof Identifier) {
+            Symbol symbol = currentScope.resolve(((Identifier) expression).getName());
+            return symbol != null && symbol.getKind() == SymbolKind.IMPORT
+                    && symbol.getResolvedNovaType() instanceof JavaClassNovaType;
+        }
+        if (!(expression instanceof MemberExpr)) {
+            return false;
+        }
+        MemberExpr memberExpr = (MemberExpr) expression;
+        return isJavaTypeExpression(memberExpr.getTarget())
+                && resolveNestedJavaType(memberExpr) != null;
     }
 
     private FunctionNovaType expectedFunctionType(Expression expression) {
@@ -4023,20 +4059,35 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
                     setNovaType(node, specialType);
                 } else {
                     NovaType receiverType = memberCallee != null ? getNovaType(memberCallee.getTarget()) : null;
-                    JavaTypeDescriptor.JavaExecutableDescriptor javaMethod = resolveJavaMemberCall(memberCallee, node);
-                    if (javaMethod != null) {
-                        setNovaType(node, javaMethod.getReturnType());
-                    } else {
-                        Symbol extensionRoot = resolveJavaExtensionRoot(receiverType, memberCallee.getMember());
-                        if (extensionRoot != null) {
-                            Symbol extension = resolveJavaFunctionOverload(extensionRoot, node);
-                            checker.checkCallArgCount(node, extension);
-                            checker.checkCallArgTypes(node, extension);
-                            setNovaType(node, extension.getResolvedNovaType());
-                        } else if (receiverType instanceof JavaClassNovaType) {
+                    NovaType nestedJavaType = isJavaTypeExpression(memberCallee)
+                            ? getNovaType(memberCallee) : null;
+                    if (nestedJavaType instanceof JavaClassNovaType) {
+                        JavaTypeDescriptor descriptor = ((JavaClassNovaType) nestedJavaType).getDescriptor();
+                        JavaTypeDescriptor.JavaExecutableDescriptor constructor = descriptor == null
+                                ? null : descriptor.resolveConstructor(analyzedCallArgumentTypes(node));
+                        if (constructor != null) {
+                            setNovaType(node, nestedJavaType.withNullable(false));
+                        } else {
                             checker.addDiagnostic(SemanticDiagnostic.Severity.ERROR,
-                                    "No matching Java method overload found for '" + memberCallee.getMember() + "'",
+                                    "No matching Java constructor found for '" + memberCallee.getMember() + "'",
                                     node);
+                        }
+                    } else {
+                        JavaTypeDescriptor.JavaExecutableDescriptor javaMethod = resolveJavaMemberCall(memberCallee, node);
+                        if (javaMethod != null) {
+                            setNovaType(node, javaMethod.getReturnType());
+                        } else {
+                            Symbol extensionRoot = resolveJavaExtensionRoot(receiverType, memberCallee.getMember());
+                            if (extensionRoot != null) {
+                                Symbol extension = resolveJavaFunctionOverload(extensionRoot, node);
+                                checker.checkCallArgCount(node, extension);
+                                checker.checkCallArgTypes(node, extension);
+                                setNovaType(node, extension.getResolvedNovaType());
+                            } else if (receiverType instanceof JavaClassNovaType) {
+                                checker.addDiagnostic(SemanticDiagnostic.Severity.ERROR,
+                                        "No matching Java method overload found for '" + memberCallee.getMember() + "'",
+                                        node);
+                            }
                         }
                     }
                     if (getNovaType(node) == null) {
@@ -4153,6 +4204,11 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
         if (receiverNovaType != null) {
             if (NovaTypes.isDynamicType(receiverNovaType)) {
                 setNovaType(node, NovaTypes.DYNAMIC);
+                return null;
+            }
+            NovaType nestedJavaType = resolveNestedJavaType(node);
+            if (nestedJavaType != null) {
+                setNovaType(node, nestedJavaType);
                 return null;
             }
             Symbol extensionRoot = resolveJavaExtensionRoot(receiverNovaType, node.getMember());

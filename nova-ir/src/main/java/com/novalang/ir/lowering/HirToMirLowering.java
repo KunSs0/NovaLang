@@ -4310,6 +4310,12 @@ public class HirToMirLowering {
 
         // 限定 Java 类名构造器调用: java.lang.StringBuilder() → NEW_OBJECT
         if (expr.getCallee() instanceof MemberExpr) {
+            NestedJavaClassPath nestedPath = resolveNestedJavaClassPath(expr.getCallee());
+            if (nestedPath != null && nestedPath.memberName == null) {
+                int[] args = lowerArgs(expr.getArgs(), builder);
+                return builder.emitNewObject(
+                        nestedPath.owner.getName().replace('.', '/'), args, expr.getLocation());
+            }
             String qualifiedName = extractQualifiedName(expr.getCallee());
             if (qualifiedName != null) {
                 Class<?> javaClass = resolveJavaClass(qualifiedName);
@@ -4784,6 +4790,11 @@ public class HirToMirLowering {
 
     /** 类名/object/Java import/限定Java类名 静态方法调用。返回 -1 表示不匹配 */
     private int tryStaticOrImportMethodCall(MemberExpr fieldAccess, HirCall expr, MirBuilder builder) {
+        NestedJavaClassPath nestedPath = resolveNestedJavaClassPath(fieldAccess);
+        if (nestedPath != null && nestedPath.memberName != null) {
+            return lowerJavaStaticCall(
+                    nestedPath.owner.getName().replace('.', '/'), nestedPath.memberName, expr, builder);
+        }
         // 检查是否为类名上的方法调用
         if (fieldAccess.getTarget() instanceof Identifier) {
             String targetName = ((Identifier) fieldAccess.getTarget()).getName();
@@ -5266,6 +5277,17 @@ public class HirToMirLowering {
     }
 
     private int lowerFieldAccess(MemberExpr expr, MirBuilder builder) {
+        NestedJavaClassPath nestedPath = resolveNestedJavaClassPath(expr);
+        if (nestedPath != null) {
+            if (nestedPath.memberName == null) {
+                return builder.emitConstClass(
+                        nestedPath.owner.getName().replace('.', '/'), expr.getLocation());
+            }
+            String extra = "$JavaStaticField|"
+                    + nestedPath.owner.getName() + "|" + nestedPath.memberName;
+            return builder.emitInvokeStatic(extra, new int[0],
+                    MirType.ofObject("java/lang/Object"), expr.getLocation());
+        }
         // 如果 target 是类名引用（不是局部变量），使用 GETSTATIC
         if (expr.getTarget() instanceof Identifier) {
             String targetName = ((Identifier) expr.getTarget()).getName();
@@ -5431,6 +5453,79 @@ public class HirToMirLowering {
                 "(Ljava/lang/Object;)Ljava/lang/Object;");
         return builder.emitInvokeDynamic(getInfo, new int[]{target},
                 MirType.ofObject("java/lang/Object"), expr.getLocation());
+    }
+
+    /**
+     * 解析已导入 Java 外层类上的嵌套类路径。
+     *
+     * <p>例如 {@code Outer.Inner.VALUE} 会返回 {@code Inner} 作为静态成员 owner，
+     * 而 {@code Outer.Inner} 本身返回嵌套类字面量。解析过程使用当前脚本 ClassLoader，
+     * 因此也适用于服务端插件提供的类。</p>
+     *
+     * @param expression 待解析的成员表达式
+     * @return 嵌套类路径；不是已导入 Java 类路径时返回 {@code null}
+     */
+    private NestedJavaClassPath resolveNestedJavaClassPath(Expression expression) {
+        List<String> parts = extractMemberPath(expression);
+        if (parts.size() < 2) {
+            return null;
+        }
+        String importedClass = javaImports.get(parts.get(0));
+        if (importedClass == null) {
+            return null;
+        }
+        Class<?> owner = resolveJavaClass(importedClass);
+        if (owner == null) {
+            return null;
+        }
+        int nestedPartCount = 1;
+        for (int index = 1; index < parts.size(); index++) {
+            Class<?> nestedClass = resolveJavaClass(owner.getName() + "." + parts.get(index));
+            if (nestedClass == null) {
+                break;
+            }
+            owner = nestedClass;
+            nestedPartCount++;
+        }
+        int remainingMemberCount = parts.size() - nestedPartCount;
+        if (nestedPartCount == 1 || remainingMemberCount > 1) {
+            return null;
+        }
+        String memberName = remainingMemberCount == 1
+                ? parts.get(nestedPartCount) : null;
+        return new NestedJavaClassPath(owner, memberName);
+    }
+
+    /**
+     * 将成员表达式展开为根标识符到末端成员的名称列表。
+     *
+     * @param expression 成员表达式
+     * @return 成员路径；无法从标识符开始时返回空列表
+     */
+    private List<String> extractMemberPath(Expression expression) {
+        LinkedList<String> parts = new LinkedList<>();
+        Expression current = expression;
+        while (current instanceof MemberExpr) {
+            MemberExpr member = (MemberExpr) current;
+            parts.addFirst(member.getMember());
+            current = member.getTarget();
+        }
+        if (!(current instanceof Identifier)) {
+            return Collections.emptyList();
+        }
+        parts.addFirst(((Identifier) current).getName());
+        return parts;
+    }
+
+    /** 已导入 Java 嵌套类及其待访问静态成员。 */
+    private static final class NestedJavaClassPath {
+        private final Class<?> owner;
+        private final String memberName;
+
+        private NestedJavaClassPath(Class<?> owner, String memberName) {
+            this.owner = owner;
+            this.memberName = memberName;
+        }
     }
 
     /**

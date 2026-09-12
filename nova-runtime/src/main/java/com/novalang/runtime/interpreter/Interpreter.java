@@ -351,10 +351,26 @@ public class Interpreter implements ExecutionContext {
             Lexer lexer = new Lexer(actualSource, fileName);
             Parser parser = new Parser(lexer, fileName);
             Program program = parser.parse();
-            mirPipeline.setScriptMode(true);
-            MirModule mir = mirPipeline.executeToMir(program);
-            mirInterpreter.resetState();
-            mirInterpreter.executeModule(mir);
+            ClassLoader previousContextLoader = Thread.currentThread().getContextClassLoader();
+            if (scriptClassLoader != null) {
+                Thread.currentThread().setContextClassLoader(scriptClassLoader);
+            }
+            try {
+                mirPipeline.setScriptMode(true);
+                MirModule mir = mirPipeline.executeToMir(program);
+                mirInterpreter.resetState();
+                ClassLoader previousScriptClassLoader = JavaInterop.getScriptClassLoader();
+                if (scriptClassLoader != null) {
+                    JavaInterop.setScriptClassLoader(scriptClassLoader);
+                }
+                try {
+                    mirInterpreter.executeModule(mir);
+                } finally {
+                    JavaInterop.setScriptClassLoader(previousScriptClassLoader);
+                }
+            } finally {
+                Thread.currentThread().setContextClassLoader(previousContextLoader);
+            }
             return NovaNull.UNIT;
         });
     }
@@ -772,20 +788,35 @@ public class Interpreter implements ExecutionContext {
         }
         mirPipeline.setExternalValueNames(externalValueNames);
         mirPipeline.setExternalCallableArities(externalCallableArities);
-        MirModule mir = mirPipeline.executeToMir(program);
+        ClassLoader previousCompilationLoader = Thread.currentThread().getContextClassLoader();
+        if (scriptClassLoader != null) {
+            Thread.currentThread().setContextClassLoader(scriptClassLoader);
+        }
+        MirModule mir;
+        try {
+            mir = mirPipeline.executeToMir(program);
+        } finally {
+            Thread.currentThread().setContextClassLoader(previousCompilationLoader);
+        }
 
         // 处理文件注解（在执行前）
         processFileAnnotations(mir);
 
         mirInterpreter.resetState();
         NovaRuntime.setCurrentContext(this);
+        ClassLoader previousContextLoader = Thread.currentThread().getContextClassLoader();
+        ClassLoader previousScriptClassLoader = JavaInterop.getScriptClassLoader();
+        if (scriptClassLoader != null) {
+            Thread.currentThread().setContextClassLoader(scriptClassLoader);
+        }
         if (scriptClassLoader != null) {
             JavaInterop.setScriptClassLoader(scriptClassLoader);
         }
         try {
             return mirInterpreter.executeModule(mir);
         } finally {
-            JavaInterop.setScriptClassLoader(null);
+            JavaInterop.setScriptClassLoader(previousScriptClassLoader);
+            Thread.currentThread().setContextClassLoader(previousContextLoader);
             NovaRuntime.clearCurrentContext();
         }
     }

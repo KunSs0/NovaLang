@@ -97,6 +97,29 @@ public final class JavaTypeDescriptor {
         return qualifiedName;
     }
 
+    /**
+     * 按简单名称解析当前 Java 类型声明的公开嵌套类。
+     *
+     * @param memberName 嵌套类简单名称
+     * @return 嵌套类描述；不存在或不可公开访问时返回 {@code null}
+     */
+    public JavaTypeDescriptor resolveNestedType(String memberName) {
+        if (memberName == null || memberName.isEmpty()) {
+            return null;
+        }
+        Class<?> javaClass = loadJavaClass();
+        if (javaClass == null) {
+            return null;
+        }
+        for (Class<?> nestedClass : javaClass.getDeclaredClasses()) {
+            if (memberName.equals(nestedClass.getSimpleName())
+                    && Modifier.isPublic(nestedClass.getModifiers())) {
+                return JavaTypeOracle.get().resolve(nestedClass.getName());
+            }
+        }
+        return null;
+    }
+
     public Kind getKind() {
         return kind;
     }

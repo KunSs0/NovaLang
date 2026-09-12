@@ -30,6 +30,32 @@ class WorkspaceSharedModuleCompilationTest {
     private static final int ACTION_COUNT = 20;
 
     /**
+     * 验证 Workspace 将依赖模块的 Java 外层类导入转发到消费模块后，嵌套类型仍可解析。
+     *
+     * @throws Exception 测试源码写入、编译或执行失败。
+     */
+    @Test
+    @DisplayName("Workspace 依赖模块导出的 Java 外层类支持嵌套类型")
+    void shouldResolveNestedJavaTypeExportedByDependency() throws Exception {
+        WorkspaceTestSupport.write(tempDirectory, "java-api.nova",
+                "import java java.lang.Thread\n"
+                        + "fun threadState(): String { return Thread.State.NEW.name() }\n");
+        WorkspaceTestSupport.write(tempDirectory, "entry.nova",
+                "import \"@/java-api\"\n"
+                        + "fun execute(): String { return threadState() }\n");
+        Path configFile = WorkspaceTestSupport.writeConfig(tempDirectory, "caller",
+                "  - \"entry.nova\"\n");
+        RuntimeWorkspace workspace = new RuntimeWorkspace(configFile, nova -> { });
+        try {
+            workspace.load();
+            assertEquals("NEW", workspace.invoke("entry.nova", "execute",
+                    Collections.<String, Object>emptyMap(), null));
+        } finally {
+            workspace.dispose();
+        }
+    }
+
+    /**
      * 菱形依赖只能转发原始扩展一次，不能为每一层链接重新生成导出身份。
      * @throws Exception 测试源码写入、编译或执行失败。
      */

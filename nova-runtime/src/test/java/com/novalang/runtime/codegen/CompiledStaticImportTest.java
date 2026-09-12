@@ -13,6 +13,7 @@ import java.net.URL;
 import java.net.URLClassLoader;
 import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
+import java.util.Collections;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
@@ -48,6 +49,91 @@ class CompiledStaticImportTest {
         assertEquals(Integer.MAX_VALUE, nova.compileToBytecode(
                 "import java java.lang.Integer\nInteger.MAX_VALUE",
                 "java-class-static-field.nova").run());
+    }
+
+    @Test
+    @DisplayName("compiled imported Java class resolves nested type static field")
+    void compiledImportedJavaClassShouldResolveNestedTypeStaticField() throws Exception {
+        try (URLClassLoader loader = compileFixture()) {
+            Nova nova = new Nova().setScriptClassLoader(loader);
+            assertEquals("FLOW", nova.compileToBytecode(
+                    "import java dynamic.StaticFixture\n" +
+                            "StaticFixture.Kind.FLOW.name()",
+                    "java-nested-type-through-owner.nova").run());
+            assertEquals(loader.loadClass("dynamic.StaticFixture$Kind"), nova.compileToBytecode(
+                    "import java dynamic.StaticFixture\n" +
+                            "StaticFixture.Kind",
+                    "java-nested-type-literal.nova").run());
+            assertEquals("kind", nova.compileToBytecode(
+                    "import java dynamic.StaticFixture\n" +
+                            "StaticFixture.Kind.label()",
+                    "java-nested-type-static-method.nova").run());
+        }
+    }
+
+    @Test
+    @DisplayName("interpreter imported Java class resolves nested type static field")
+    void interpreterImportedJavaClassShouldResolveNestedTypeStaticField() throws Exception {
+        try (URLClassLoader loader = compileFixture()) {
+            Nova nova = new Nova().setScriptClassLoader(loader);
+            assertEquals("FLOW", nova.eval(
+                    "import java dynamic.StaticFixture\n" +
+                            "StaticFixture.Kind.FLOW.name()",
+                    "java-nested-type-interpreter.nova"));
+            assertEquals(loader.loadClass("dynamic.StaticFixture$Kind"), nova.eval(
+                    "import java dynamic.StaticFixture\n" +
+                            "StaticFixture.Kind",
+                    "java-nested-type-interpreter-literal.nova"));
+            assertEquals("kind", nova.eval(
+                    "import java dynamic.StaticFixture\n" +
+                            "StaticFixture.Kind.label()",
+                    "java-nested-type-interpreter-static-method.nova"));
+        }
+    }
+
+    @Test
+    @DisplayName("module exported Java outer class resolves nested type")
+    void moduleExportedJavaOuterClassShouldResolveNestedType() throws Exception {
+        try (URLClassLoader loader = compileFixture()) {
+            Class<?> outerClass = loader.loadClass("dynamic.StaticFixture");
+            Nova nova = new Nova().setScriptClassLoader(loader);
+            nova.registerModule("dynamic.fixture.api", Collections.<Class<?>>singletonList(outerClass));
+            assertEquals("FLOW", nova.compileToBytecode(
+                    "import \"dynamic.fixture.api\"\n" +
+                            "StaticFixture.Kind.FLOW.name()",
+                    "java-nested-type-module.nova").run());
+        }
+    }
+
+    @Test
+    @DisplayName("module source Java outer import resolves nested type")
+    void moduleSourceJavaOuterImportShouldResolveNestedType() throws Exception {
+        try (URLClassLoader loader = compileFixture()) {
+            Nova nova = new Nova().setScriptClassLoader(loader);
+            nova.registerModule("dynamic.fixture.api", Collections.<Class<?>>emptyList(),
+                    "import java dynamic.StaticFixture\n");
+            assertEquals("FLOW", nova.compileToBytecode(
+                    "import \"dynamic.fixture.api\"\n" +
+                            "StaticFixture.Kind.FLOW.name()",
+                    "java-nested-type-module-source.nova").run());
+        }
+    }
+
+    /**
+     * 验证直接导入 Java 外层类后，嵌套类构造器调用可以通过语义分析和字节码编译。
+     *
+     * @throws Exception 测试夹具加载或 Nova 编译执行失败。
+     */
+    @Test
+    @DisplayName("compiled imported Java outer class resolves nested constructor")
+    void compiledImportedJavaClassShouldResolveNestedConstructor() throws Exception {
+        try (URLClassLoader loader = compileFixture()) {
+            Nova nova = new Nova().setScriptClassLoader(loader);
+            assertEquals("nested", nova.compileToBytecode(
+                    "import java dynamic.StaticFixture\n" +
+                            "StaticFixture.Nested(\"nested\").value()",
+                    "java-nested-constructor.nova").run());
+        }
     }
 
     @Test
@@ -256,7 +342,12 @@ class CompiledStaticImportTest {
                         "public final class StaticFixture {\n" +
                         "    public static final int VALUE = 99;\n" +
                         "    public static final StaticFixture INSTANCE = new StaticFixture();\n" +
-                        "    public enum Kind { FLOW, WAIT }\n" +
+                        "    public enum Kind { FLOW, WAIT; public static String label() { return \"kind\"; } }\n" +
+                        "    public static final class Nested {\n" +
+                        "        private final String value;\n" +
+                        "        public Nested(String value) { this.value = value; }\n" +
+                        "        public String value() { return value; }\n" +
+                        "    }\n" +
                         "    public static int answer(int left, int right) { return left + right; }\n" +
                         "    public long currentTick() { return 42L; }\n" +
                         "    public static String handle(String first, String second, String third) {\n" +
