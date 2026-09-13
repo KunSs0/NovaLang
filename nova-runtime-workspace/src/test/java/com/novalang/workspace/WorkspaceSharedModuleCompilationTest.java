@@ -652,7 +652,7 @@ class WorkspaceSharedModuleCompilationTest {
 
     private String entryWithPrivateRecord(int offset) {
         return "import \"@/main\"\n"
-                + "val records = mutableListOf()\n"
+                + "val records = mutableListOf<Int>()\n"
                 + "class CaptionRecord(val value: Int) {\n"
                 + "    fun total(): Int { return value + records.size }\n"
                 + "}\n"

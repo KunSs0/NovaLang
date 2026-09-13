@@ -4138,7 +4138,7 @@ class InterpreterTest {
         @Test
         @DisplayName("arrayOf 空参数")
         void testArrayOfEmpty() {
-            interpreter.evalRepl("val arr = arrayOf()");
+            interpreter.evalRepl("val arr = arrayOf<Int>()");
             assertEquals(0, interpreter.evalRepl("arr.size").asInt());
         }
 
@@ -4527,7 +4527,7 @@ class InterpreterTest {
             String code = "class Items(var list: List) {\n" +
                     "    fun add(item: String) { list = list + listOf(item) }\n" +
                     "}\n" +
-                    "val items = Items(listOf()).apply {\n" +
+                    "val items = Items(listOf<String>()).apply {\n" +
                     "    add(\"a\")\n" +
                     "    add(\"b\")\n" +
                     "    add(\"c\")\n" +
@@ -5642,7 +5642,7 @@ class InterpreterTest {
         @Test
         @DisplayName("Map isEmpty")
         void testMapIsEmpty() {
-            assertTrue(interpreter.evalRepl("mapOf().isEmpty()").asBool());
+            assertTrue(interpreter.evalRepl("mapOf<String, Int>().isEmpty()").asBool());
             assertFalse(interpreter.evalRepl("mapOf(\"a\" to 1).isEmpty()").asBool());
         }
 
@@ -5810,7 +5810,7 @@ class InterpreterTest {
         @DisplayName("isList")
         void testIsList() {
             assertTrue(interpreter.evalRepl("isList(listOf(1,2,3))").asBool());
-            assertTrue(interpreter.evalRepl("isList(listOf())").asBool());
+            assertTrue(interpreter.evalRepl("isList(listOf<Int>())").asBool());
             assertFalse(interpreter.evalRepl("isList(42)").asBool());
         }
 
@@ -5818,7 +5818,7 @@ class InterpreterTest {
         @DisplayName("isMap")
         void testIsMap() {
             assertTrue(interpreter.evalRepl("isMap(mapOf(\"a\" to 1))").asBool());
-            assertFalse(interpreter.evalRepl("isMap(listOf())").asBool());
+            assertFalse(interpreter.evalRepl("isMap(listOf<Int>())").asBool());
             assertFalse(interpreter.evalRepl("isMap(42)").asBool());
         }
 
@@ -5830,7 +5830,7 @@ class InterpreterTest {
             assertEquals("Boolean", interpreter.evalRepl("typeof(true)").asString());
             assertEquals("Double", interpreter.evalRepl("typeof(3.14)").asString());
             assertEquals("Null", interpreter.evalRepl("typeof(null)").asString());
-            assertEquals("List", interpreter.evalRepl("typeof(listOf())").asString());
+            assertEquals("List", interpreter.evalRepl("typeof(listOf<Int>())").asString());
         }
     }
 
@@ -8146,7 +8146,7 @@ class InterpreterTest {
         @Test
         @DisplayName("条件为空列表 → falsy")
         void testTernaryEmptyListCondition() {
-            assertEquals("no", interpreter.eval("listOf() ? \"yes\" : \"no\"", "test.nova").asString());
+            assertEquals("no", interpreter.eval("listOf<Int>() ? \"yes\" : \"no\"", "test.nova").asString());
         }
 
         @Test
@@ -8158,7 +8158,7 @@ class InterpreterTest {
         @Test
         @DisplayName("条件为空 Map → falsy")
         void testTernaryEmptyMapCondition() {
-            assertEquals("no", interpreter.eval("mapOf() ? \"yes\" : \"no\"", "test.nova").asString());
+            assertEquals("no", interpreter.eval("mapOf<String, Int>() ? \"yes\" : \"no\"", "test.nova").asString());
         }
 
         @Test
@@ -8207,7 +8207,7 @@ class InterpreterTest {
         @Test
         @DisplayName("三元表达式在列表字面量中")
         void testTernaryInListLiteral() {
-            NovaValue result = interpreter.eval("listOf(true ? 1 : 2, false ? 3 : 4)", "test.nova");
+            NovaValue result = interpreter.eval("listOf<Int>(true ? 1 : 2, false ? 3 : 4)", "test.nova");
             assertTrue(result.isList());
             NovaList list = (NovaList) result;
             assertEquals(1, list.get(0).asInt());

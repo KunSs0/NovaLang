@@ -691,7 +691,7 @@ class DeepCoverageTest {
         @Test
         @DisplayName("mutableListOf 空列表")
         void testMutableListOfEmpty() {
-            eval("val list = mutableListOf()");
+            eval("val list = mutableListOf<String>()");
             assertEquals(0, eval("list.size()").asInt());
             eval("list.add(\"hello\")");
             assertEquals(1, eval("list.size()").asInt());
@@ -700,21 +700,21 @@ class DeepCoverageTest {
         @Test
         @DisplayName("emptyList 创建")
         void testEmptyList() {
-            eval("val list = emptyList()");
+            eval("val list = emptyList<Int>()");
             assertEquals(0, eval("list.size()").asInt());
         }
 
         @Test
         @DisplayName("emptyMap 创建")
         void testEmptyMap() {
-            eval("val map = emptyMap()");
+            eval("val map = emptyMap<String, Int>()");
             assertEquals(0, eval("map.size()").asInt());
         }
 
         @Test
         @DisplayName("emptySet 创建")
         void testEmptySet() {
-            eval("val set = emptySet()");
+            eval("val set = emptySet<String>()");
             assertEquals(0, eval("set.size()").asInt());
         }
     }
@@ -840,7 +840,7 @@ class DeepCoverageTest {
         @DisplayName("backing field 模式")
         void testBackingFieldPattern() {
             eval("class Logger {\n"
-                + "    var _logs = mutableListOf()\n"
+                + "    var _logs = mutableListOf<String>()\n"
                 + "    var lastLog: String = \"\"\n"
                 + "        get() = _logs.size().toString() + \" logs\"\n"
                 + "}");

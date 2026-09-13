@@ -691,7 +691,7 @@ class CodegenCoverageTest {
         @Test
         @DisplayName("空列表操作")
         void testEmptyList() throws Exception {
-            Object result = run("val list = listOf()\nlist.size()");
+            Object result = run("val list = listOf<Int>()\nlist.size()");
             assertEquals(0, asInt(result));
         }
 

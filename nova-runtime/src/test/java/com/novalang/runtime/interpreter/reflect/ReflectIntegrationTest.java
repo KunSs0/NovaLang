@@ -312,7 +312,7 @@ class ReflectIntegrationTest {
             interpreter.evalRepl(
                 "fun diff(a, b): List {\n" +
                 "    val info = classOf(a)\n" +
-                "    val result = mutableListOf()\n" +
+                "    val result = mutableListOf<String>()\n" +
                 "    for (f in info.fields) {\n" +
                 "        if (f.get(a) != f.get(b)) result.add(f.name)\n" +
                 "    }\n" +
@@ -339,8 +339,8 @@ class ReflectIntegrationTest {
             interpreter.evalRepl(
                 "fun toMap(obj): Map {\n" +
                 "    val info = classOf(obj)\n" +
-                "    val result = mutableListOf()\n" +
-                "    val map = mapOf()\n" +
+                "    val result = mutableListOf<String>()\n" +
+                "    val map = mapOf<String, Any>()\n" +
                 "    for (f in info.fields) {\n" +
                 "        map[f.name] = f.get(obj)\n" +
                 "    }\n" +

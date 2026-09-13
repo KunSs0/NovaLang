@@ -1050,14 +1050,14 @@ class StdlibCoverageTest {
         @Test
         @DisplayName("map.size()")
         void testMapSize() {
-            assertEquals(0, eval("mapOf().size()").asInt());
+            assertEquals(0, eval("mapOf<String, Int>().size()").asInt());
             assertEquals(2, eval("mapOf(\"a\" to 1, \"b\" to 2).size()").asInt());
         }
 
         @Test
         @DisplayName("map.isEmpty()")
         void testMapIsEmpty() {
-            assertTrue(eval("mapOf().isEmpty()").asBool());
+            assertTrue(eval("mapOf<String, Int>().isEmpty()").asBool());
             assertFalse(eval("mapOf(\"a\" to 1).isEmpty()").asBool());
         }
     }

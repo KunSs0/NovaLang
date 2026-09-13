@@ -532,7 +532,7 @@ class EnginePathCoverageTest {
         @Test
         @DisplayName("Map.isEmpty")
         void testMapIsEmpty() {
-            assertTrue(eval("emptyMap().isEmpty()").asBool());
+            assertTrue(eval("emptyMap<String, Int>().isEmpty()").asBool());
             assertFalse(eval("mapOf(\"a\" to 1).isEmpty()").asBool());
         }
     }
@@ -980,7 +980,7 @@ class EnginePathCoverageTest {
         @Test
         @DisplayName("空 List 的 isEmpty")
         void testEmptyListIsEmpty() {
-            assertTrue(eval("listOf().isEmpty()").asBool());
+            assertTrue(eval("listOf<Int>().isEmpty()").asBool());
         }
 
         @Test

@@ -17,7 +17,7 @@ class CompiledNovaObjectReturnTypeTest {
         java.util.Map<String, Class<?>> loaded = compiler.compileAndLoad(
                 "object Routes {\n"
                         + "    fun rotate(): Any {\n"
-                        + "        val result = mutableListOf()\n"
+                        + "        val result = mutableListOf<String>()\n"
                         + "        result.add(\"north\")\n"
                         + "        return result\n"
                         + "    }\n"

@@ -1085,11 +1085,11 @@ class ScriptModeIntegrationTest {
         @Test void objectMethodKeepsSingletonReceiverAfterSetFieldInitialization() {
             assertEquals(true, run(
                     "object VisibilityState {\n" +
-                    "    val hiddenKeys = mutableMapOf()\n" +
+                    "    val hiddenKeys = mutableMapOf<String, Set<String>>()\n" +
                     "    fun keys(playerId: String, create: Boolean) {\n" +
                     "        var values = hiddenKeys.get(playerId)\n" +
                     "        if (values == null && create) {\n" +
-                    "            values = mutableSetOf()\n" +
+                    "            values = mutableSetOf<String>()\n" +
                     "            hiddenKeys.put(playerId, values)\n" +
                     "        }\n" +
                     "        return values\n" +
@@ -1781,11 +1781,11 @@ class ScriptModeIntegrationTest {
         }
 
         @Test void emptyListFunc() {
-            assertEquals(0, run("emptyList().size()"));
+            assertEquals(0, run("emptyList<Int>().size()"));
         }
 
         @Test void mapOfFunc() {
-            assertEquals("v", run("mapOf(\"k\", \"v\")[\"k\"]"));
+            assertEquals("v", run("mapOf<String, String>(\"k\", \"v\")[\"k\"]"));
         }
 
         @Test void setOfFunc() {
