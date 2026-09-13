@@ -6,6 +6,7 @@ description = 'NovaLang Runtime Workspace - module graph, isolated execution and
 
 dependencies {
     api project(':nova-runtime')
+    implementation project(':nova-ir')
     implementation project(':nova-compiler')
     implementation 'org.yaml:snakeyaml:2.0'
 }

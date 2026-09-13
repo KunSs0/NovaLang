@@ -50,6 +50,26 @@ class JavaClassResolutionPerformanceTest {
     }
 
     @Test
+    @DisplayName("Nova 实例字段访问不应探测 Java 类")
+    void novaInstanceFieldsShouldNotProbeJavaClasses() {
+        CountingClassLoader loader = compileWithCountingLoader(
+                novaInstanceFields(), "instance-fields.nova");
+
+        assertEquals(0, loader.countContaining("Service"),
+                "已声明 Nova 类型的字段访问不应先走 Java 反射探测");
+    }
+
+    @Test
+    @DisplayName("Java 静态方法调用不应探测伪嵌套类")
+    void javaStaticMethodsShouldNotProbeNestedClassCandidates() {
+        CountingClassLoader loader = compileWithCountingLoader(
+                javaStaticMethodCall(), "java-static-method.nova");
+
+        assertEquals(0, loader.countContaining("Math.max"),
+                "已知 Java 静态方法不应先按嵌套类路径调用 Class.forName");
+    }
+
+    @Test
     @DisplayName("Java 方法的 Nova 实参不应探测尚未输出的类")
     void novaArgumentsOfJavaMethodsShouldNotProbeUnemittedClasses() {
         CountingClassLoader loader = compileWithCountingLoader(
@@ -106,6 +126,109 @@ class JavaClassResolutionPerformanceTest {
 
         assertEquals(4, loader.countContaining("MissingJavaImportFixture"),
                 "缺失导入只允许语义类型解析遍历一次候选名，HIR 不应再按 Java 前缀扩散探测");
+    }
+
+    @Test
+    @DisplayName("预检和正式编译共享父加载器时只解析一次嵌套 Java 类")
+    void compilationPhasesShouldShareNestedJavaClassResolution() {
+        ClassLoader sharedParent = new ClassLoader(getClass().getClassLoader()) {
+        };
+        CountingClassLoader preflightLoader = new CountingClassLoader(
+                sharedParent);
+        CountingClassLoader runtimeLoader = new CountingClassLoader(
+                sharedParent);
+        ClassLoader previousLoader = Thread.currentThread().getContextClassLoader();
+        Thread.currentThread().setContextClassLoader(preflightLoader);
+        try {
+            NovaIrCompiler preflightCompiler = new NovaIrCompiler();
+            preflightCompiler.compile(nestedJavaClassSource(), "preflight.nova");
+            long preflightProbes = preflightLoader.countContaining(
+                    "AbstractMap$SimpleEntry");
+
+            Thread.currentThread().setContextClassLoader(runtimeLoader);
+            NovaIrCompiler runtimeCompiler = new NovaIrCompiler();
+            runtimeCompiler.compile(nestedJavaClassSource(), "runtime.nova");
+            long runtimeProbes = runtimeLoader.countContaining(
+                    "AbstractMap$SimpleEntry");
+
+            assertEquals(1, preflightProbes + runtimeProbes,
+                    "共享稳定父加载器时，预检和正式编译应只触发一次嵌套 Java 类解析");
+        } finally {
+            Thread.currentThread().setContextClassLoader(previousLoader);
+        }
+    }
+
+    @Test
+    @DisplayName("同一类加载器的嵌套 Java 类跨编译只解析一次")
+    void sharedClassLoaderShouldCacheNestedJavaClassAcrossCompilers() {
+        ClassLoader sharedParent = new ClassLoader(getClass().getClassLoader()) {
+        };
+        CountingClassLoader loader = new CountingClassLoader(sharedParent);
+        ClassLoader previousLoader = Thread.currentThread().getContextClassLoader();
+        Thread.currentThread().setContextClassLoader(loader);
+        try {
+            NovaIrCompiler firstCompiler = new NovaIrCompiler();
+            firstCompiler.compile(nestedJavaClassSource(), "nested-java-first.nova");
+
+            NovaIrCompiler secondCompiler = new NovaIrCompiler();
+            secondCompiler.compile(nestedJavaClassSource(), "nested-java-second.nova");
+        } finally {
+            Thread.currentThread().setContextClassLoader(previousLoader);
+        }
+
+        assertEquals(1, loader.countContaining("AbstractMap$SimpleEntry"),
+                "同一 ClassLoader 下的嵌套 Java 类解析结果应跨 lowering 实例复用");
+    }
+
+    @Test
+    @DisplayName("父加载器的缺失结果不能阻断子加载器解析")
+    void parentNegativeResolutionMustNotHideChildClass() {
+        BlockingClassLoader parentLoader = new BlockingClassLoader(
+                getClass().getClassLoader(), "java.util.AbstractMap");
+        ClassLoader previousLoader = Thread.currentThread().getContextClassLoader();
+        Thread.currentThread().setContextClassLoader(parentLoader);
+        try {
+            NovaIrCompiler parentCompiler = new NovaIrCompiler();
+            parentCompiler.compile(nestedJavaClassSource(), "parent-missing-java-class.nova");
+
+            DirectClassLoader childLoader = new DirectClassLoader(parentLoader);
+            Thread.currentThread().setContextClassLoader(childLoader);
+            NovaIrCompiler childCompiler = new NovaIrCompiler();
+            childCompiler.compile(nestedJavaClassSource(), "child-java-class.nova");
+
+            assertEquals(1, childLoader.countContaining("AbstractMap$SimpleEntry"),
+                    "父加载器的失败缓存不能阻断子加载器解析自己的 Java 类型");
+        } finally {
+            Thread.currentThread().setContextClassLoader(previousLoader);
+        }
+    }
+
+    @Test
+    @DisplayName("父加载器缺失时同一子加载器的嵌套类失败结果只探测一次")
+    void childLoaderShouldCacheParentNegativeNestedResolution() {
+        BlockingClassLoader parentLoader = new BlockingClassLoader(
+                getClass().getClassLoader(), "java.util.AbstractMap$SimpleEntry");
+        CountingClassLoader childLoader = new CountingClassLoader(parentLoader);
+        ClassLoader previousLoader = Thread.currentThread().getContextClassLoader();
+        long firstProbeCount;
+        long secondProbeCount;
+        Thread.currentThread().setContextClassLoader(childLoader);
+        try {
+            NovaIrCompiler firstCompiler = new NovaIrCompiler();
+            firstCompiler.compile(nestedJavaClassSource(), "child-negative-first.nova");
+            firstProbeCount = childLoader.countContaining("AbstractMap$SimpleEntry");
+
+            NovaIrCompiler secondCompiler = new NovaIrCompiler();
+            secondCompiler.compile(nestedJavaClassSource(), "child-negative-second.nova");
+            secondProbeCount = childLoader.countContaining("AbstractMap$SimpleEntry");
+        } finally {
+            Thread.currentThread().setContextClassLoader(previousLoader);
+        }
+
+        assertEquals(firstProbeCount, secondProbeCount,
+                "父加载器的负缓存传播到子加载器后，缺失嵌套类不应跨 lowering 重复探测");
+        assertEquals(0, childLoader.countContaining("java.lang.java.util"),
+                "限定 Java 名称不应拼接默认包前缀");
     }
 
     private CountingClassLoader compileWithCountingLoader(String source, String sourceName) {
@@ -166,6 +289,25 @@ class JavaClassResolutionPerformanceTest {
         source.append("  }\n");
         source.append("}\n");
         return source.toString();
+    }
+
+    private String novaInstanceFields() {
+        return "class Service { val value: Any = \"ok\" }\n"
+                + "object Test {\n"
+                + "  fun run(): Any {\n"
+                + "    val service = Service()\n"
+                + "    return service.value\n"
+                + "  }\n"
+                + "}\n";
+    }
+
+    private String javaStaticMethodCall() {
+        return "import java java.lang.Math\n"
+                + "object Test {\n"
+                + "  fun run(): Any {\n"
+                + "    return Math.max(1, 2)\n"
+                + "  }\n"
+                + "}\n";
     }
 
     private String novaArgumentsOfJavaMethods(int count) {
@@ -237,10 +379,17 @@ class JavaClassResolutionPerformanceTest {
                 + "fun main() { }\n";
     }
 
-    private static final class CountingClassLoader extends ClassLoader {
+    private String nestedJavaClassSource() {
+        return "import java java.util.AbstractMap\n"
+                + "fun createEntry(): Any {\n"
+                + "  return AbstractMap.SimpleEntry(\"key\", \"value\")\n"
+                + "}\n";
+    }
 
-        private final AtomicInteger probeCount = new AtomicInteger();
-        private final List<String> probedClassNames = new ArrayList<>();
+    private static class CountingClassLoader extends ClassLoader {
+
+        protected final AtomicInteger probeCount = new AtomicInteger();
+        protected final List<String> probedClassNames = new ArrayList<>();
 
         private CountingClassLoader(ClassLoader parent) {
             super(parent);
@@ -257,10 +406,45 @@ class JavaClassResolutionPerformanceTest {
             return probeCount.get();
         }
 
-        private long countContaining(String marker) {
+        protected long countContaining(String marker) {
             return probedClassNames.stream()
                     .filter(name -> name.contains(marker))
                     .count();
+        }
+    }
+
+    private static final class BlockingClassLoader extends ClassLoader {
+
+        private final String blockedClassName;
+
+        private BlockingClassLoader(ClassLoader parent, String blockedClassName) {
+            super(parent);
+            this.blockedClassName = blockedClassName;
+        }
+
+        @Override
+        protected Class<?> loadClass(String name, boolean resolve) throws ClassNotFoundException {
+            if (name.startsWith(blockedClassName)) {
+                throw new ClassNotFoundException(name);
+            }
+            return super.loadClass(name, resolve);
+        }
+    }
+
+    private static final class DirectClassLoader extends CountingClassLoader {
+
+        private DirectClassLoader(ClassLoader parent) {
+            super(parent);
+        }
+
+        @Override
+        protected Class<?> loadClass(String name, boolean resolve) throws ClassNotFoundException {
+            if (name.startsWith("java.util.AbstractMap")) {
+                probeCount.incrementAndGet();
+                probedClassNames.add(name);
+                return Class.forName(name, false, getClass().getClassLoader());
+            }
+            return super.loadClass(name, resolve);
         }
     }
 }

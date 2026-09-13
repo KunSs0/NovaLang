@@ -1,5 +1,6 @@
 package com.novalang.ir.lowering;
 
+import com.novalang.ir.JavaClassLookup;
 import com.novalang.compiler.NovaTypeNames;
 import com.novalang.compiler.analysis.types.JavaTypeDescriptor;
 import com.novalang.compiler.analysis.types.JavaTypeOracle;
@@ -26,6 +27,7 @@ import com.novalang.runtime.stdlib.BuiltinModuleExports;
 import com.novalang.runtime.stdlib.StdlibRegistry;
 import org.objectweb.asm.Type;
 
+import java.lang.ref.WeakReference;
 import java.util.*;
 
 /**
@@ -204,7 +206,32 @@ public class HirToMirLowering {
         "", "java.lang.", "java.util.", "java.io.",
         "java.util.concurrent.", "java.util.function."
     };
+    /**
+     * 跨 lowering 实例共享 Java 类型解析结果。
+     *
+     * <p>Workspace 每次重载都会创建新的 Generation ClassLoader。缓存同时登记
+     * 当前上下文及其父加载器，使新 Generation 能复用宿主插件 ClassLoader 的结果；
+     * 弱引用避免缓存反向持有已销毁的 Generation。</p>
+     */
+    private static final Map<ClassLoader, Map<String, SharedJavaTypeResolution>> SHARED_JAVA_TYPE_CACHE =
+            Collections.synchronizedMap(new WeakHashMap<ClassLoader, Map<String, SharedJavaTypeResolution>>());
     private final Map<String, Class<?>> javaTypeCache = new HashMap<>();
+
+    private static final class SharedJavaTypeResolution {
+        private final WeakReference<Class<?>> javaClass;
+
+        private SharedJavaTypeResolution(Class<?> javaClass) {
+            this.javaClass = javaClass == null ? null : new WeakReference<Class<?>>(javaClass);
+        }
+
+        private Class<?> getJavaClass() {
+            return javaClass == null ? null : javaClass.get();
+        }
+
+        private boolean isNegative() {
+            return javaClass == null;
+        }
+    }
 
     /**
      * Nova 方法名 → Java 方法名别名解析。
@@ -232,16 +259,50 @@ public class HirToMirLowering {
         String javaName = importedName != null
                 ? importedName.replace('/', '.')
                 : name.replace('/', '.');
+        // 限定名通常来自 Java 外层类的嵌套路径；未限定名可能是尚未输出的 Nova 类，
+        // 不能跨 lowering 缓存失败结果。
+        boolean cacheNegativeResolution = importedName != null || javaName.indexOf('.') >= 0;
         ClassLoader contextLoader = Thread.currentThread().getContextClassLoader();
-        for (String prefix : JAVA_PREFIXES) {
-            ClassLoader loader = contextLoader != null
-                    ? contextLoader
-                    : HirToMirLowering.class.getClassLoader();
+        Class<?> localClass = tryLoadLocalJavaClass(javaName, contextLoader);
+        if (localClass != null) {
+            javaTypeCache.put(name, localClass);
+            cacheResolvedJavaType(contextLoader, javaName, localClass);
+            return localClass;
+        }
+        ClassLoader effectiveLoader = contextLoader != null
+                ? contextLoader
+                : HirToMirLowering.class.getClassLoader();
+        if (importedName != null && effectiveLoader instanceof JavaClassLookup) {
+            ClassLoader parentLoader = effectiveLoader.getParent();
+            if (parentLoader != null) {
+                effectiveLoader = parentLoader;
+            }
+        }
+        SharedJavaTypeResolution sharedResolution = findSharedJavaType(
+                effectiveLoader, javaName, cacheNegativeResolution);
+        if (sharedResolution != null) {
+            Class<?> sharedClass = sharedResolution.getJavaClass();
+            if (sharedClass != null) {
+                javaTypeCache.put(name, sharedClass);
+                return sharedClass;
+            }
+            if (sharedResolution.isNegative() && cacheNegativeResolution) {
+                javaTypeCache.put(name, null);
+                return null;
+            }
+        }
+
+        ClassLoader loader = effectiveLoader;
+        String[] prefixes = javaName.indexOf('.') >= 0
+                ? new String[]{""}
+                : JAVA_PREFIXES;
+        for (String prefix : prefixes) {
             String candidate = prefix + javaName;
             while (candidate != null) {
                 try {
                     Class<?> cls = Class.forName(candidate, false, loader);
                     javaTypeCache.put(name, cls);
+                    cacheResolvedJavaType(effectiveLoader, javaName, cls);
                     return cls;
                 } catch (ClassNotFoundException ignored) {
                     int separator = candidate.lastIndexOf('.');
@@ -255,7 +316,151 @@ public class HirToMirLowering {
             }
         }
         javaTypeCache.put(name, null);
+        if (cacheNegativeResolution) {
+            putSharedJavaType(effectiveLoader, javaName, new SharedJavaTypeResolution(null));
+            ClassLoader parentLoader = effectiveLoader.getParent();
+            if (parentLoader != null) {
+                putSharedJavaType(parentLoader, javaName, new SharedJavaTypeResolution(null));
+            }
+        }
         return null;
+    }
+
+    private static Class<?> tryLoadLocalJavaClass(String javaName, ClassLoader loader) {
+        if (!(loader instanceof JavaClassLookup)) {
+            return null;
+        }
+        JavaClassLookup lookup = (JavaClassLookup) loader;
+        String candidate = javaName;
+        while (candidate != null) {
+            if (lookup.hasLocalClass(candidate)) {
+                try {
+                    return Class.forName(candidate, false, loader);
+                } catch (ClassNotFoundException ignored) {
+                    return null;
+                }
+            }
+            int separator = candidate.lastIndexOf('.');
+            if (separator < 0) {
+                candidate = null;
+            } else {
+                candidate = candidate.substring(0, separator)
+                        + '$' + candidate.substring(separator + 1);
+            }
+        }
+        return null;
+    }
+
+    private static SharedJavaTypeResolution findSharedJavaType(ClassLoader effectiveLoader,
+                                                                 String javaName,
+                                                                 boolean allowNegativeResolution) {
+        SharedJavaTypeResolution resolution = getSharedJavaType(effectiveLoader, javaName);
+        if (resolution != null) {
+            return resolution;
+        }
+
+        ClassLoader parentLoader = effectiveLoader.getParent();
+        while (parentLoader != null) {
+            resolution = getSharedJavaType(parentLoader, javaName);
+            if (resolution != null) {
+                Class<?> sharedClass = resolution.getJavaClass();
+                if (sharedClass != null) {
+                    return resolution;
+                }
+                if (allowNegativeResolution) {
+                    Class<?> visibleClass = tryLoadJavaClass(javaName, effectiveLoader);
+                    if (visibleClass != null) {
+                        cacheResolvedJavaType(effectiveLoader, javaName, visibleClass);
+                        return new SharedJavaTypeResolution(visibleClass);
+                    }
+                    // 父加载器的负结果不能直接作为子加载器的结果返回：子加载器
+                    // 可能定义自己的同名类。但探测结果对当前子加载器仍然稳定，
+                    // 需要落到子加载器键下，避免每个 lowering 再次穿透父级负缓存。
+                    SharedJavaTypeResolution childNegative = new SharedJavaTypeResolution(null);
+                    putSharedJavaType(effectiveLoader, javaName, childNegative);
+                    return childNegative;
+                }
+            }
+            parentLoader = parentLoader.getParent();
+        }
+
+        return null;
+    }
+
+    private static Class<?> tryLoadJavaClass(String javaName, ClassLoader loader) {
+        String candidate = javaName;
+        while (candidate != null) {
+            try {
+                return Class.forName(candidate, false, loader);
+            } catch (ClassNotFoundException ignored) {
+                int separator = candidate.lastIndexOf('.');
+                if (separator < 0) {
+                    candidate = null;
+                } else {
+                    candidate = candidate.substring(0, separator)
+                            + '$' + candidate.substring(separator + 1);
+                }
+            }
+        }
+        return null;
+    }
+
+    private static void cacheResolvedJavaType(ClassLoader effectiveLoader, String javaName, Class<?> javaClass) {
+        ClassLoader definingLoader = javaClass.getClassLoader();
+        SharedJavaTypeResolution resolution = new SharedJavaTypeResolution(javaClass);
+        if (definingLoader == null) {
+            putSharedJavaType(effectiveLoader, javaName, resolution);
+            ClassLoader parentLoader = effectiveLoader.getParent();
+            if (parentLoader != null) {
+                putSharedJavaType(parentLoader, javaName, resolution);
+            }
+            return;
+        }
+        putSharedJavaType(definingLoader, javaName, resolution);
+        if (definingLoader != effectiveLoader) {
+            putSharedJavaType(effectiveLoader, javaName, resolution);
+        }
+    }
+
+    private static SharedJavaTypeResolution getSharedJavaType(ClassLoader loader, String javaName) {
+        if (loader == null || javaName == null) {
+            return null;
+        }
+        Map<String, SharedJavaTypeResolution> cache;
+        synchronized (SHARED_JAVA_TYPE_CACHE) {
+            cache = SHARED_JAVA_TYPE_CACHE.get(loader);
+        }
+        if (cache == null) {
+            return null;
+        }
+        synchronized (cache) {
+            SharedJavaTypeResolution resolution = cache.get(javaName);
+            if (resolution == null) {
+                return null;
+            }
+            if (!resolution.isNegative() && resolution.getJavaClass() == null) {
+                cache.remove(javaName);
+            }
+            return resolution;
+        }
+    }
+
+    private static void putSharedJavaType(ClassLoader loader, String javaName,
+                                           SharedJavaTypeResolution resolution) {
+        if (loader == null || javaName == null || resolution == null) {
+            return;
+        }
+        Map<String, SharedJavaTypeResolution> cache;
+        synchronized (SHARED_JAVA_TYPE_CACHE) {
+            cache = SHARED_JAVA_TYPE_CACHE.get(loader);
+            if (cache == null) {
+                cache = new HashMap<String, SharedJavaTypeResolution>();
+                SHARED_JAVA_TYPE_CACHE.put(loader, cache);
+            }
+        }
+        synchronized (cache) {
+            cache.put(javaName, resolution);
+        }
     }
 
     /**
@@ -5390,7 +5595,10 @@ public class HirToMirLowering {
         if (targetType != null && targetType.getKind() == MirType.Kind.OBJECT
                 && targetType.getClassName() != null) {
             String owner = targetType.getClassName();
-            Class<?> cls = resolveJavaClass(owner);
+            Class<?> cls = null;
+            if (!classNames.contains(owner)) {
+                cls = resolveJavaClass(owner);
+            }
             if (cls != null) {
                 // 1) 同名无参方法（如 size()）
                 java.lang.reflect.Method m = findJavaMethod(cls, fieldName, 0);
@@ -5488,6 +5696,9 @@ public class HirToMirLowering {
             } catch (NoSuchFieldException ignored) {
                 // 没有同名静态字段时继续尝试解析嵌套类型。
             }
+            if (hasPublicStaticMethod(owner, parts.get(index))) {
+                break;
+            }
             Class<?> nestedClass = resolveJavaClass(owner.getName() + "." + parts.get(index));
             if (nestedClass == null) {
                 break;
@@ -5502,6 +5713,17 @@ public class HirToMirLowering {
         String memberName = remainingMemberCount == 1
                 ? parts.get(nestedPartCount) : null;
         return new NestedJavaClassPath(owner, memberName);
+    }
+
+    private boolean hasPublicStaticMethod(Class<?> owner, String name) {
+        java.lang.reflect.Method[] methods = owner.getMethods();
+        for (java.lang.reflect.Method method : methods) {
+            if (method.getName().equals(name)
+                    && java.lang.reflect.Modifier.isStatic(method.getModifiers())) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
