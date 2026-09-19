@@ -59,7 +59,7 @@ subprojects {
 
     // 统一 Maven 发布到本地仓库
     afterEvaluate {
-        // 只为有普通 JAR 产物的模块发布（nova-cli 的 jar.enabled=false，走单独的 shadow 发布）
+        // 只为有普通 JAR 产物的模块发布；CLI 的独立 fat JAR 另行发布。
         if (tasks.findByName('jar')?.enabled != false) {
             publishing {
                 publications {

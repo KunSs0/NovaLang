@@ -50,7 +50,7 @@ dependencies {
 }
 
 tasks.named('compileJava') {
-    dependsOn(':nova-cli:shadowJar')
+    dependsOn(':nova-cli:jar')
 }
 
 tasks.register('mockBukkitTest', Test) {
@@ -97,7 +97,7 @@ processResources {
 
 // Bukkit 服务端只安装一个完整产物，业务插件通过硬依赖共享 NovaLang 类加载器。
 shadowJar {
-    dependsOn(':nova-cli:shadowJar')
+    dependsOn(':nova-cli:jar')
     archiveBaseName.set('NovaLang')
     archiveClassifier.set('')
     manifest {
@@ -137,6 +137,32 @@ tasks.register('verifyPluginJar') {
 
     doLast {
         File pluginJar = shadowJar.archiveFile.get().asFile
+        java.util.zip.ZipFile zipFile = new java.util.zip.ZipFile(pluginJar)
+        try {
+            List<String> entryNames = new ArrayList<>()
+            java.util.Enumeration<? extends java.util.zip.ZipEntry> entries = zipFile.entries()
+            while (entries.hasMoreElements()) {
+                entryNames.add(entries.nextElement().name)
+            }
+
+            Map<String, Integer> entryCounts = entryNames.countBy { it }
+            List<String> duplicateEntries = entryCounts.findAll { key, value -> value > 1 }.keySet().toList()
+            if (!duplicateEntries.isEmpty()) {
+                throw new GradleException("The NovaLang Bukkit JAR contains duplicate entries: ${duplicateEntries.take(10)}")
+            }
+
+            List<String> bundledBukkitApi = entryNames.findAll {
+                it.startsWith('org/bukkit/') ||
+                    it.startsWith('io/papermc/') ||
+                    it.startsWith('com/destroystokyo/paper/')
+            }
+            if (!bundledBukkitApi.isEmpty()) {
+                throw new GradleException("The NovaLang Bukkit JAR must not bundle Bukkit/Paper API classes: ${bundledBukkitApi.take(10)}")
+            }
+        } finally {
+            zipFile.close()
+        }
+
         if (!zipTree(pluginJar).matching { include 'plugin.yml' }.files) {
             throw new GradleException('The NovaLang Bukkit JAR does not contain plugin.yml.')
         }
