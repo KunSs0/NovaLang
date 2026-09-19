@@ -1,0 +1,3 @@
+package com.novalang.bukkit.types.event;
+import com.novalang.bukkit.Requires; import com.novalang.bukkit.types.value.NovaTypeSupport; import com.novalang.runtime.host.JavaTypes; import org.bukkit.Achievement; import org.bukkit.event.player.PlayerAchievementAwardedEvent;
+@Requires(classes = {"org.bukkit.event.player.PlayerAchievementAwardedEvent"}) public final class NovaPlayerAchievementAwardedEvent { private NovaPlayerAchievementAwardedEvent() { } public static void register(JavaTypes.Builder b){b.extension(PlayerAchievementAwardedEvent.class,"achievement",f->f.returns(Achievement.class).invoke(a->NovaTypeSupport.argument(a,0,PlayerAchievementAwardedEvent.class).getAchievement()));} }

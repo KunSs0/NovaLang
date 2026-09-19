@@ -1,0 +1,5 @@
+package com.novalang.bukkit.types.inventory;
+import com.novalang.bukkit.Requires; import com.novalang.runtime.host.JavaTypes; import org.bukkit.NamespacedKey; import java.lang.reflect.Method;
+/** 1.20+ TrimPattern 的 Fluxon 函数契约。 */
+@Requires(classes={"org.bukkit.inventory.meta.trim.TrimPattern"},methods={"org.bukkit.inventory.meta.trim.TrimPattern#getTranslationKey","org.bukkit.inventory.meta.trim.TrimPattern#getKey"})
+public final class NovaTrimPattern { private static final String TYPE="org.bukkit.inventory.meta.trim.TrimPattern"; private NovaTrimPattern(){} public static void register(JavaTypes.Builder b){Class<?>t=NovaInventoryReflection.type(NovaTrimPattern.class,TYPE);Method gt=NovaInventoryReflection.method(t,"getTranslationKey"),gk=NovaInventoryReflection.method(t,"getKey");b.extension(t,"getTranslationKey",f->f.returns(String.class).invoke(a->NovaInventoryReflection.invoke(gt,a[0])));b.extension(t,"getKey",f->f.returns(NamespacedKey.class).invoke(a->NovaInventoryReflection.invoke(gk,a[0])));}}

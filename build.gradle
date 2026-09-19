@@ -1,0 +1,88 @@
+plugins {
+    id 'java'
+    id 'idea'
+}
+
+allprojects {
+    group = 'com.novalang'
+    version = '0.2.0'
+
+    repositories {
+        mavenCentral()
+    }
+}
+
+subprojects {
+    apply plugin: 'java'
+    apply plugin: 'maven-publish'
+    apply plugin: 'jacoco'
+
+    // 全面兼容 JDK 8
+    java {
+        sourceCompatibility = JavaVersion.VERSION_1_8
+        targetCompatibility = JavaVersion.VERSION_1_8
+    }
+
+    tasks.withType(JavaCompile) {
+        options.encoding = 'UTF-8'
+        options.compilerArgs << '-Xlint:all'
+        options.compilerArgs << '-Xlint:-serial'
+    }
+
+    tasks.withType(Jar) {
+        manifest {
+            attributes 'Implementation-Version': project.version
+        }
+    }
+
+    dependencies {
+        testImplementation 'org.junit.jupiter:junit-jupiter:5.10.0'
+        testImplementation 'org.assertj:assertj-core:3.24.2'
+        testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+    }
+
+    test {
+        useJUnitPlatform()
+        testLogging {
+            events 'passed', 'skipped', 'failed'
+        }
+        finalizedBy jacocoTestReport
+    }
+
+    jacocoTestReport {
+        dependsOn test
+        reports {
+            html.required = true
+            xml.required = true
+        }
+    }
+
+    // 统一 Maven 发布到本地仓库
+    afterEvaluate {
+        // 只为有普通 JAR 产物的模块发布（nova-cli 的 jar.enabled=false，走单独的 shadow 发布）
+        if (tasks.findByName('jar')?.enabled != false) {
+            publishing {
+                publications {
+                    maven(MavenPublication) {
+                        groupId = project.group
+                        artifactId = project.name
+                        version = project.version
+                        from components.java
+                    }
+                }
+                repositories {
+                    mavenLocal()
+                }
+            }
+        } else {
+            publishing {
+                repositories {
+                    mavenLocal()
+                }
+            }
+        }
+    }
+}
+
+// 根项目不需要编译
+jar.enabled = false

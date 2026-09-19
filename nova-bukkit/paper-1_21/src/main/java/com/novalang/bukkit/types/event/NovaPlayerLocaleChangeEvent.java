@@ -1,0 +1,3 @@
+package com.novalang.bukkit.types.event;
+import com.novalang.bukkit.Requires; import com.novalang.bukkit.types.value.NovaTypeSupport; import com.novalang.runtime.host.JavaTypes; import org.bukkit.event.player.PlayerLocaleChangeEvent;
+@Requires(classes = {"org.bukkit.event.player.PlayerLocaleChangeEvent"}) public final class NovaPlayerLocaleChangeEvent { private NovaPlayerLocaleChangeEvent() { } public static void register(JavaTypes.Builder b){b.extension(PlayerLocaleChangeEvent.class,"locale",f->f.returns(String.class).invoke(a->NovaTypeSupport.argument(a,0,PlayerLocaleChangeEvent.class).getLocale()));} }

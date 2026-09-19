@@ -1,0 +1,9 @@
+// 指定符号导入并重命名
+import shared.greet as sayHello
+
+// 通配符导入 shared.nova 的全部顶层符号
+import shared.*
+
+println(sayHello("Nova"))
+println("项目: " + projectName)
+println(greet("World"))

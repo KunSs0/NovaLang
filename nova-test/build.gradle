@@ -1,0 +1,13 @@
+plugins {
+    id 'java-library'
+}
+
+description = 'NovaLang 底层单元测试执行 API'
+
+dependencies {
+    api project(':nova-runtime')
+}
+
+tasks.withType(JavaCompile) {
+    options.encoding = 'UTF-8'
+}

@@ -1,0 +1,20 @@
+package com.novalang.bukkit.types.entity;
+
+import com.novalang.bukkit.Requires;
+import com.novalang.bukkit.paper.entity.PaperEntityReflection;
+import com.novalang.runtime.host.JavaTypeRef;
+import com.novalang.runtime.host.JavaTypes;
+import java.lang.reflect.Method;
+
+/** 1.14+ Panda 及 Gene 的 Fluxon 函数契约。 */
+@Requires(classes = {"org.bukkit.entity.Panda", "org.bukkit.entity.Panda$Gene"}, methods = {"org.bukkit.entity.Panda#getMainGene", "org.bukkit.entity.Panda#setMainGene", "org.bukkit.entity.Panda#getHiddenGene", "org.bukkit.entity.Panda#setHiddenGene", "org.bukkit.entity.Panda#isRolling", "org.bukkit.entity.Panda#setRolling", "org.bukkit.entity.Panda#isSneezing", "org.bukkit.entity.Panda#setSneezing", "org.bukkit.entity.Panda#isOnBack", "org.bukkit.entity.Panda#setOnBack", "org.bukkit.entity.Panda#isEating", "org.bukkit.entity.Panda#setEating", "org.bukkit.entity.Panda#isScared", "org.bukkit.entity.Panda#getUnhappyTicks", "org.bukkit.entity.Panda$Gene#isRecessive"})
+public final class NovaPanda {
+    private static final String TYPE = "org.bukkit.entity.Panda";
+    private static final String GENE = "org.bukkit.entity.Panda$Gene";
+    private NovaPanda() { }
+    public static void register(JavaTypes.Builder builder) {
+        Class<?> type = PaperEntityReflection.type(NovaPanda.class, TYPE); Class<?> geneType = PaperEntityReflection.type(NovaPanda.class, GENE); Method main = PaperEntityReflection.method(type, "getMainGene"); Method setMain = PaperEntityReflection.method(type, "setMainGene", geneType); Method hidden = PaperEntityReflection.method(type, "getHiddenGene"); Method setHidden = PaperEntityReflection.method(type, "setHiddenGene", geneType); Method rolling = PaperEntityReflection.method(type, "isRolling"); Method setRolling = PaperEntityReflection.method(type, "setRolling", Boolean.TYPE); Method sneezing = PaperEntityReflection.method(type, "isSneezing"); Method setSneezing = PaperEntityReflection.method(type, "setSneezing", Boolean.TYPE); Method back = PaperEntityReflection.method(type, "isOnBack"); Method setBack = PaperEntityReflection.method(type, "setOnBack", Boolean.TYPE); Method eating = PaperEntityReflection.method(type, "isEating"); Method setEating = PaperEntityReflection.method(type, "setEating", Boolean.TYPE); Method scared = PaperEntityReflection.method(type, "isScared"); Method unhappy = PaperEntityReflection.method(type, "getUnhappyTicks"); Method recessive = PaperEntityReflection.method(geneType, "isRecessive"); JavaTypeRef gene = JavaTypeRef.javaType(geneType);
+        builder.extension(type, "mainGene", f -> f.returns(gene).invoke(a -> PaperEntityReflection.invoke(main, a[0]))); builder.extension(type, "setMainGene", f -> f.param("gene", gene).returns(Void.TYPE).invoke(a -> PaperEntityReflection.invoke(setMain, a[0], a[1]))); builder.extension(type, "hiddenGene", f -> f.returns(gene).invoke(a -> PaperEntityReflection.invoke(hidden, a[0]))); builder.extension(type, "setHiddenGene", f -> f.param("gene", gene).returns(Void.TYPE).invoke(a -> PaperEntityReflection.invoke(setHidden, a[0], a[1]))); flag(builder, type, "isRolling", "setRolling", rolling, setRolling); flag(builder, type, "isSneezing", "setSneezing", sneezing, setSneezing); flag(builder, type, "isOnBack", "setOnBack", back, setBack); flag(builder, type, "isEating", "setEating", eating, setEating); builder.extension(type, "isScared", f -> f.returns(Boolean.class).invoke(a -> PaperEntityReflection.invoke(scared, a[0]))); builder.extension(type, "unhappyTicks", f -> f.returns(Integer.class).invoke(a -> PaperEntityReflection.invoke(unhappy, a[0]))); builder.extension(geneType, "isRecessive", f -> f.returns(Boolean.class).invoke(a -> PaperEntityReflection.invoke(recessive, a[0])));
+    }
+    private static void flag(JavaTypes.Builder builder, Class<?> type, String getterName, String setterName, Method getter, Method setter) { builder.extension(type, getterName, f -> f.returns(Boolean.class).invoke(a -> PaperEntityReflection.invoke(getter, a[0]))); builder.extension(type, setterName, f -> f.param("value", Boolean.class).returns(Void.TYPE).invoke(a -> PaperEntityReflection.invoke(setter, a[0], a[1]))); }
+}

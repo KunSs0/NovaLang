@@ -1,0 +1,304 @@
+package com.novalang.runtime.stdlib;
+
+import java.util.List;
+import java.util.concurrent.*;
+
+import com.novalang.runtime.NovaErrors;
+import com.novalang.runtime.NovaException;
+import com.novalang.runtime.NovaException.ErrorKind;
+import com.novalang.runtime.NovaType;
+
+/**
+ * 编译路径的结构化并发辅助类。
+ *
+ * <p>编译器将 {@code coroutineScope { s -> ... }} 编译为
+ * {@code INVOKESTATIC StructuredConcurrencyHelper.coroutineScope(lambda)}。</p>
+ */
+public final class StructuredConcurrencyHelper {
+
+    private StructuredConcurrencyHelper() {}
+
+    // ============ Dispatchers 常量（编译路径） ============
+
+    /** 编译路径的 Dispatchers 对象，通过 NovaDynamic.getMember 访问 IO/Default/Unconfined 字段 */
+    public static final CompileDispatchers DISPATCHERS = new CompileDispatchers();
+
+    public static final class CompileDispatchers {
+        public final Executor IO = Executors.newCachedThreadPool(r -> {
+            Thread t = new Thread(r, "nova-io");
+            t.setDaemon(true);
+            return t;
+        });
+        public final Executor Default = ForkJoinPool.commonPool();
+        public final Executor Unconfined = (Executor) Runnable::run;
+        /** 宿主主线程执行器，由 Interpreter.setScheduler() 动态注入 */
+        public volatile Executor Main;
+
+        /** 重置可变状态（用于测试清理） */
+        public void reset() {
+            Main = null;
+        }
+    }
+
+    /** 重置全局调度器状态（用于测试清理或多实例场景） */
+    public static void resetGlobalState() {
+        DISPATCHERS.reset();
+    }
+
+    // ============ 顶层函数 ============
+
+    /** vararg 入口：coroutineScope(block) 或 coroutineScope(dispatcher, block) */
+    public static Object coroutineScopeVararg(Object[] args) {
+        if (args.length == 1) return coroutineScope(args[0]);
+        if (args.length == 2) return coroutineScopeWithDispatcher(args[0], args[1]);
+        throw new NovaException(ErrorKind.ARGUMENT_MISMATCH, "coroutineScope 需要 1 或 2 个参数，但传入了 " + args.length + " 个");
+    }
+
+    /** vararg 入口：supervisorScope(block) 或 supervisorScope(dispatcher, block) */
+    public static Object supervisorScopeVararg(Object[] args) {
+        if (args.length == 1) return supervisorScope(args[0]);
+        if (args.length == 2) return supervisorScopeWithDispatcher(args[0], args[1]);
+        throw new NovaException(ErrorKind.ARGUMENT_MISMATCH, "supervisorScope 需要 1 或 2 个参数，但传入了 " + args.length + " 个");
+    }
+
+    public static Object coroutineScope(Object block) {
+        // 优先使用 Interpreter 的结构化并发（NovaScope）
+        com.novalang.runtime.ExecutionContext ctx = com.novalang.runtime.NovaRuntime.currentContext();
+        if (ctx != null) return ctx.runInScope(block, false);
+        return runScope(block, false, ForkJoinPool.commonPool());
+    }
+
+    public static Object coroutineScopeWithDispatcher(Object dispatcher, Object block) {
+        com.novalang.runtime.ExecutionContext ctx = com.novalang.runtime.NovaRuntime.currentContext();
+        if (ctx != null) return ctx.runInScope(block, false);
+        Executor exec = dispatcher instanceof Executor ? (Executor) dispatcher : ForkJoinPool.commonPool();
+        return runScope(block, false, exec);
+    }
+
+    /** vararg 入口：withContext(dispatcher, block) — 在指定 executor 上执行 block 并阻塞等待结果 */
+    public static Object withContextVararg(Object[] args) {
+        // 代理到 Interpreter Builtins
+        com.novalang.runtime.ExecutionContext ctx = com.novalang.runtime.NovaRuntime.currentContext();
+        if (ctx != null) {
+            java.util.List<com.novalang.runtime.NovaValue> novaArgs = new java.util.ArrayList<>(args.length);
+            for (Object arg : args) {
+                novaArgs.add(arg instanceof com.novalang.runtime.NovaValue
+                    ? (com.novalang.runtime.NovaValue) arg
+                    : com.novalang.runtime.AbstractNovaValue.fromJava(arg));
+            }
+            com.novalang.runtime.NovaValue result = ctx.callFunction("withContext", novaArgs);
+            if (result != null) return result.toJavaValue();
+        }
+        if (args.length != 2) throw new NovaException(ErrorKind.ARGUMENT_MISMATCH, "withContext 需要 2 个参数 (dispatcher, block)，但传入了 " + args.length + " 个");
+        Executor exec = args[0] instanceof Executor ? (Executor) args[0] : ForkJoinPool.commonPool();
+        Object block = args[1];
+        CompletableFuture<Object> future = CompletableFuture.supplyAsync(() -> {
+            try {
+                return invoke0(block);
+            } catch (RuntimeException e) {
+                throw e;
+            } catch (Exception e) {
+                throw NovaErrors.wrap(e);
+            }
+        }, exec);
+        try {
+            return future.get();
+        } catch (ExecutionException e) {
+            Throwable cause = e.getCause();
+            if (cause instanceof RuntimeException) throw (RuntimeException) cause;
+            throw NovaErrors.wrap("withContext 执行失败", cause != null ? cause : e);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new NovaException(ErrorKind.INTERNAL, "withContext 被中断");
+        }
+    }
+
+    public static Object supervisorScope(Object block) {
+        com.novalang.runtime.ExecutionContext ctx = com.novalang.runtime.NovaRuntime.currentContext();
+        if (ctx != null) return ctx.runInScope(block, true);
+        return runScope(block, true, ForkJoinPool.commonPool());
+    }
+
+    public static Object supervisorScopeWithDispatcher(Object dispatcher, Object block) {
+        com.novalang.runtime.ExecutionContext ctx = com.novalang.runtime.NovaRuntime.currentContext();
+        if (ctx != null) return ctx.runInScope(block, true);
+        Executor exec = dispatcher instanceof Executor ? (Executor) dispatcher : ForkJoinPool.commonPool();
+        return runScope(block, true, exec);
+    }
+
+    private static Object runScope(Object block, boolean supervisor, Executor executor) {
+        CompileScope scope = new CompileScope(supervisor, executor);
+        Object result = null;
+        Throwable blockError = null;
+        try {
+            result = invokeWith1Arg(block, scope);
+        } catch (Exception e) {
+            blockError = e;
+        }
+        // 无论 block 是否抛异常，都等待所有子任务完成
+        scope.joinAll();
+        if (blockError != null) {
+            if (blockError instanceof RuntimeException) throw (RuntimeException) blockError;
+            throw NovaErrors.wrap(blockError);
+        }
+        return result;
+    }
+
+    // ============ 编译路径的 Scope ============
+
+    @NovaType(name = "Scope", description = "结构化并发作用域")
+    public static final class CompileScope {
+        private final boolean supervisor;
+        private final Executor executor;
+        private final List<CompletableFuture<Object>> children = new CopyOnWriteArrayList<>();
+        private volatile boolean cancelled = false;
+        private volatile Throwable firstError = null;
+
+        CompileScope(boolean supervisor, Executor executor) {
+            this.supervisor = supervisor;
+            this.executor = executor;
+        }
+
+        /** scope.async { block } */
+        public CompileDeferred async(Object block) {
+            if (cancelled) throw new NovaException(ErrorKind.INTERNAL, "Scope 已取消");
+            CompletableFuture<Object> future = CompletableFuture.supplyAsync(() -> {
+                try {
+                    return invoke0(block);
+                } catch (Exception e) {
+                    recordChildError(e);
+                    throw e;
+                }
+            }, executor);
+            children.add(future);
+            return new CompileDeferred(future);
+        }
+
+        /** scope.launch { block } */
+        public CompileJob launch(Object block) {
+            if (cancelled) throw new NovaException(ErrorKind.INTERNAL, "Scope 已取消");
+            CompletableFuture<Object> future = CompletableFuture.supplyAsync(() -> {
+                try {
+                    invoke0(block);
+                    return null;
+                } catch (Exception e) {
+                    recordChildError(e);
+                    throw e;
+                }
+            }, executor);
+            children.add(future);
+            return new CompileJob(future);
+        }
+
+        public void cancel() {
+            cancelled = true;
+            for (CompletableFuture<Object> child : children) {
+                try { child.cancel(true); } catch (Exception ignored) {}
+            }
+        }
+
+        public boolean isActive() { return !cancelled && firstError == null; }
+        public boolean isCancelled() { return cancelled; }
+
+        void joinAll() {
+            // 有子任务失败时先取消剩余子任务
+            if (!supervisor && firstError != null) {
+                cancel();
+            }
+            // 等待所有子任务完成（含已取消的）
+            for (CompletableFuture<Object> child : children) {
+                try { child.join(); } catch (Exception ignored) {}
+            }
+            // coroutineScope: 传播首个子任务错误
+            if (!supervisor && firstError != null) {
+                if (firstError instanceof RuntimeException) throw (RuntimeException) firstError;
+                throw NovaErrors.wrap("coroutineScope 子任务失败", firstError);
+            }
+        }
+
+        /** 仅记录首个错误，不立即取消（避免从 supplier 内部取消自身 future） */
+        private void recordChildError(Exception e) {
+            if (supervisor) return;
+            if (firstError == null) {
+                synchronized (this) {
+                    if (firstError == null) { firstError = e; }
+                }
+            }
+        }
+
+        /** typeof 支持 */
+        @Override public String toString() { return "Scope"; }
+    }
+
+    // ============ 编译路径的 Deferred ============
+
+    @NovaType(name = "Deferred", description = "异步任务结果")
+    public static final class CompileDeferred {
+        private final CompletableFuture<Object> future;
+
+        CompileDeferred(CompletableFuture<Object> future) { this.future = future; }
+
+        public Object get() {
+            try {
+                return future.get();
+            } catch (ExecutionException e) {
+                Throwable cause = e.getCause();
+                if (cause instanceof RuntimeException) throw (RuntimeException) cause;
+                throw NovaErrors.wrap("Deferred 执行失败", cause);
+            } catch (CancellationException e) {
+                throw new NovaException(ErrorKind.INTERNAL, "Deferred 已被取消");
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new NovaException(ErrorKind.INTERNAL, "Deferred 被中断");
+            }
+        }
+
+        public boolean cancel() { return future.cancel(true); }
+        public Object await() { return get(); }
+        public boolean isDone() { return future.isDone(); }
+        public boolean isCancelled() { return future.isCancelled(); }
+
+        @Override public String toString() { return "Deferred"; }
+    }
+
+    // ============ 编译路径的 Job ============
+
+    @NovaType(name = "Job", description = "后台任务句柄")
+    public static final class CompileJob {
+        private final CompletableFuture<Object> future;
+
+        public CompileJob(CompletableFuture<Object> future) { this.future = future; }
+
+        public void join() {
+            try {
+                future.get();
+            } catch (ExecutionException e) {
+                Throwable cause = e.getCause();
+                if (cause instanceof RuntimeException) throw (RuntimeException) cause;
+                throw NovaErrors.wrap("Job 执行失败", cause);
+            } catch (CancellationException e) {
+                // Job was cancelled — normal for coroutineScope cancellation
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new NovaException(ErrorKind.INTERNAL, "Job 被中断");
+            }
+        }
+
+        public boolean cancel() { return future.cancel(true); }
+        public boolean isActive() { return !future.isDone(); }
+        public boolean isCompleted() { return future.isDone(); }
+        public boolean isCancelled() { return future.isCancelled(); }
+
+        @Override public String toString() { return "Job"; }
+    }
+
+    // ============ Lambda 调用辅助（委托 LambdaUtils 统一 MethodHandle 缓存） ============
+
+    private static Object invokeWith1Arg(Object lambda, Object arg) {
+        return LambdaUtils.invokeFlexible(lambda, arg);
+    }
+
+    private static Object invoke0(Object lambda) {
+        return LambdaUtils.invoke0(lambda);
+    }
+}

@@ -1,0 +1,73 @@
+plugins {
+    id 'java'
+    id 'application'
+    id 'com.gradleup.shadow' version '8.3.9'
+}
+
+description = 'NovaLang Command Line Interface'
+
+application {
+    mainClass = 'com.novalang.cli.Main'
+}
+
+dependencies {
+    implementation project(':nova-compiler')
+    implementation project(':nova-ir')
+    implementation project(':nova-runtime')
+    implementation project(':nova-script')
+    implementation project(':nova-runtime-workspace')
+
+    // 命令行解析
+    implementation 'info.picocli:picocli:4.7.5'
+    annotationProcessor 'info.picocli:picocli-codegen:4.7.5'
+
+    // JLine - REPL 支持
+    implementation 'org.jline:jline:3.25.0'
+}
+
+// Fat JAR 配置
+shadowJar {
+    archiveClassifier.set('')  // 不带后缀，直接作为主产物
+    mergeServiceFiles()
+
+    // 重定位 Caffeine 到我们自己的包下，避免 Bukkit ClassLoader 版本冲突
+    relocate 'com.github.benmanes.caffeine', 'com.novalang.deps.caffeine'
+    relocate 'org.checkerframework', 'com.novalang.deps.checkerframework'
+}
+
+// 使用 shadow jar 作为默认 jar
+jar.enabled = false
+tasks.build.dependsOn shadowJar
+
+// 显式声明 distTar/distZip/startScripts 依赖 shadowJar，避免 Gradle 8.13+ 隐式依赖报错
+tasks.distTar.dependsOn shadowJar
+tasks.distZip.dependsOn shadowJar
+tasks.startScripts.dependsOn shadowJar
+
+// 创建可执行分发包
+distributions {
+    main {
+        distributionBaseName = 'nova'
+    }
+}
+
+// 将 Shadow JAR 复制到 VSCode 扩展的 server/ 目录
+tasks.register('bundleToVscode', Copy) {
+    dependsOn shadowJar
+    from(shadowJar.archiveFile)
+    into(rootProject.file('vscode-nova/server'))
+    group = 'build'
+    description = 'Copy CLI JAR to vscode-nova/server/ for bundled distribution'
+}
+
+// 发布 shadow JAR 到 Maven
+publishing {
+    publications {
+        shadow(MavenPublication) {
+            groupId = project.group
+            artifactId = 'nova-cli'
+            version = project.version
+            artifact(shadowJar)
+        }
+    }
+}

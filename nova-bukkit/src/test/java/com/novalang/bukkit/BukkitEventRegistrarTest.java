@@ -1,0 +1,436 @@
+package com.novalang.bukkit;
+
+import com.novalang.runtime.Nova;
+import com.novalang.runtime.NovaScheduler;
+import com.novalang.runtime.SchedulerHolder;
+import com.novalang.runtime.interpreter.JavaInterop;
+import com.novalang.workspace.RuntimeWorkspace;
+import com.novalang.workspace.WorkspaceGeneration;
+import org.bukkit.event.Event;
+import org.bukkit.event.EventPriority;
+import org.bukkit.event.HandlerList;
+import org.bukkit.plugin.Plugin;
+import org.bukkit.plugin.PluginManager;
+import org.bukkit.Server;
+import org.bukkit.plugin.EventExecutor;
+import org.bukkit.event.Listener;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+
+import java.lang.reflect.Proxy;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
+
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+
+public class BukkitEventRegistrarTest {
+
+    @TempDir
+    Path tempDirectory;
+
+    @BeforeEach
+    void installScriptClassLoader() {
+        JavaInterop.setScriptClassLoader(BukkitEventRegistrarTest.class.getClassLoader());
+    }
+
+    @AfterEach
+    void clearScriptClassLoader() {
+        JavaInterop.setScriptClassLoader(null);
+    }
+
+    @Test
+    void acceptsEventClassDirectly() throws Exception {
+        EventRegistration registration = BukkitEventRegistrar.forPlugin(pluginProxy()).listen(
+                TestEvent.class, EventPriority.NORMAL, false, event -> {
+                });
+
+        assertNotNull(registration);
+        registration.dispose();
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void rejectsInvalidEventClassAtRuntimeBoundary() {
+        assertThrows(IllegalArgumentException.class,
+                () -> BukkitEventRegistrar.forPlugin(pluginProxy()).listen(
+                        null, EventPriority.NORMAL, false, event -> {
+                        }));
+        assertThrows(IllegalArgumentException.class,
+                () -> BukkitEventRegistrar.forPlugin(pluginProxy()).listen(
+                        (Class) String.class, EventPriority.NORMAL, false, event -> {
+                        }));
+    }
+
+    @Test
+    void standaloneRegistrationUsesBoundPluginAndIsIdempotentlyDisposable() throws Exception {
+        AtomicReference<Plugin> owner = new AtomicReference<Plugin>();
+        AtomicReference<Listener> registeredListener = new AtomicReference<Listener>();
+        AtomicReference<EventExecutor> executor = new AtomicReference<EventExecutor>();
+        Plugin plugin = pluginProxy(owner, registeredListener, executor);
+        AtomicInteger invocations = new AtomicInteger();
+
+        EventRegistration registration = BukkitEventRegistrar.forPlugin(plugin).listen(
+                TestEvent.class, EventPriority.NORMAL, false,
+                event -> invocations.incrementAndGet());
+
+        assertSame(plugin, owner.get());
+        executor.get().execute(registeredListener.get(), new TestEvent());
+        assertSame(1, invocations.get());
+
+        registration.dispose();
+        registration.dispose();
+        executor.get().execute(registeredListener.get(), new TestEvent());
+        assertSame(1, invocations.get());
+    }
+
+    @Test
+    void compilesStrongListenerMethodReferenceThroughNoBukkit() {
+        Nova nova = new Nova();
+        nova.install(NovaBukkit.create(pluginProxy()));
+        nova.compileToBytecode(
+                "import java com.novalang.bukkit.BukkitEventListener\n"
+                        + "import java org.bukkit.event.Event\n"
+                        + "import java org.bukkit.event.EventPriority\n"
+                        + "import java org.bukkit.event.player.PlayerJoinEvent\n"
+                        + "fun onEvent(event: Event) { }\n"
+                        + "NoBukkit.event.listen(PlayerJoinEvent, EventPriority.NORMAL, false, ::onEvent)\n"
+                        + "true",
+                "nobukkit-listener.nova");
+    }
+
+    /**
+     * 验证事件 class literal 与同类型的 Nova 监听器方法引用可以在编译期直接匹配。
+     */
+    @Test
+    void compilesExactEventListenerMethodReferenceThroughNoBukkit() {
+        Nova nova = new Nova();
+        nova.install(NovaBukkit.create(pluginProxy()));
+        nova.compileToBytecode(
+                "import java com.novalang.bukkit.BukkitEventListener\n"
+                        + "import java org.bukkit.event.EventPriority\n"
+                        + "import java org.bukkit.event.player.PlayerJoinEvent\n"
+                        + "fun onEvent(event: PlayerJoinEvent) { event.getPlayer().getName() }\n"
+                        + "NoBukkit.event.listen(PlayerJoinEvent, EventPriority.NORMAL, false, ::onEvent)\n"
+                        + "true",
+                "nobukkit-exact-event-listener.nova").run();
+    }
+
+    /**
+     * 验证事件类字面量与回调参数类型不一致时必须在编译期报告错误。
+     */
+    @Test
+    void rejectsMismatchedExactEventListenerMethodReference() {
+        Nova nova = new Nova();
+        nova.install(NovaBukkit.create(pluginProxy()));
+        assertThrows(RuntimeException.class, () -> nova.compileToBytecode(
+                "import java org.bukkit.event.EventPriority\n"
+                        + "import java org.bukkit.event.player.PlayerJoinEvent\n"
+                        + "import java org.bukkit.event.player.PlayerQuitEvent\n"
+                        + "fun onEvent(event: PlayerQuitEvent) { }\n"
+                        + "NoBukkit.event.listen(PlayerJoinEvent, EventPriority.NORMAL, false, ::onEvent)\n",
+                "nobukkit-mismatched-event-listener.nova"));
+    }
+
+    @Test
+    void registersImportedEventClassLiteral() {
+        AtomicReference<Class<?>> eventType = new AtomicReference<Class<?>>();
+        Plugin plugin = pluginProxy(new AtomicReference<Plugin>(),
+                new AtomicReference<Listener>(), new AtomicReference<EventExecutor>(), eventType);
+        Nova nova = new Nova();
+        nova.install(NovaBukkit.create(plugin));
+        nova.compileToBytecode(
+                "import java com.novalang.bukkit.BukkitEventListener\n"
+                        + "import java org.bukkit.event.Event\n"
+                        + "import java org.bukkit.event.EventPriority\n"
+                        + "import java org.bukkit.event.player.PlayerJoinEvent\n"
+                        + "fun onEvent(event: Event) { }\n"
+                        + "NoBukkit.event.listen(PlayerJoinEvent, EventPriority.NORMAL, false, ::onEvent)\n"
+                        + "true",
+                "nobukkit-class-literal.nova").run();
+
+        assertSame(org.bukkit.event.player.PlayerJoinEvent.class, eventType.get());
+    }
+
+    @Test
+    void rejectsStringEventNameDuringCompilation() {
+        Nova nova = new Nova();
+        nova.install(NovaBukkit.create(pluginProxy()));
+        assertThrows(RuntimeException.class, () -> nova.compileToBytecode(
+                "import java org.bukkit.event.Event\n"
+                        + "import java org.bukkit.event.EventPriority\n"
+                        + "import java com.novalang.bukkit.BukkitEventRegistrarTest.TestEvent\n"
+                        + "fun onEvent(event: Event) { }\n"
+                        + "NoBukkit.event.listen(\"org.bukkit.event.player.PlayerJoinEvent\", "
+                        + "EventPriority.NORMAL, false, ::onEvent)",
+                "nobukkit-string-event.nova"));
+    }
+
+    @Test
+    void rejectsNonEventClassDuringCompilation() {
+        Nova nova = new Nova();
+        nova.install(NovaBukkit.create(pluginProxy()));
+        assertThrows(RuntimeException.class, () -> nova.compileToBytecode(
+                "import java java.lang.String\n"
+                        + "import java org.bukkit.event.Event\n"
+                        + "import java org.bukkit.event.EventPriority\n"
+                        + "fun onEvent(event: Event) { }\n"
+                        + "NoBukkit.event.listen(String, EventPriority.NORMAL, false, ::onEvent)",
+                "nobukkit-non-event.nova"));
+    }
+
+    /**
+     * 验证跨 Workspace 编译组导出的 Bukkit Vector 参数不会因 Java 类型解析丢失限定名。
+     *
+     * @throws Exception 工作区源码写入、编译或执行失败。
+     */
+    @Test
+    void compilesBukkitVectorParameterAcrossWorkspaceGroups() throws Exception {
+        final Thread ownerThread = Thread.currentThread();
+        SchedulerHolder.set(new NovaScheduler() {
+            @Override
+            public java.util.concurrent.Executor mainExecutor() {
+                return Runnable::run;
+            }
+
+            @Override
+            public java.util.concurrent.Executor asyncExecutor() {
+                return Runnable::run;
+            }
+
+            @Override
+            public boolean isMainThread() {
+                return Thread.currentThread() == ownerThread;
+            }
+
+            @Override
+            public Cancellable scheduleLater(long delayMs, Runnable task) {
+                throw new UnsupportedOperationException("vector type test does not schedule tasks");
+            }
+
+            @Override
+            public Cancellable scheduleRepeat(long delayMs, long periodMs, Runnable task) {
+                throw new UnsupportedOperationException("vector type test does not schedule tasks");
+            }
+        });
+        Files.write(tempDirectory.resolve("vector-api.nova"), (
+                "import java org.bukkit.util.Vector\n"
+                        + "object VectorApi {\n"
+                        + "    fun acceptVector(direction: Vector): Int { return direction.getBlockX() }\n"
+                        + "}\n").getBytes(StandardCharsets.UTF_8));
+        Files.write(tempDirectory.resolve("entry.nova"), (
+                "import java org.bukkit.util.Vector\n"
+                        + "import \"@/vector-api\"\n"
+                        + "fun execute(): Int { return VectorApi.acceptVector(Vector(4.0f, 2.0f, 1.0f)) }\n"
+        ).getBytes(StandardCharsets.UTF_8));
+        Files.write(tempDirectory.resolve("nova.config.yml"), (
+                "version: 1\n"
+                        + "name: bukkit-vector-workspace\n"
+                        + "aliases:\n"
+                        + "  \"@\": \".\"\n"
+                        + "sources:\n"
+                        + "  - .\n"
+                        + "entries:\n"
+                        + "  - entry.nova\n"
+                        + "runtime:\n"
+                        + "  security: trusted-server\n"
+                        + "  thread: main\n"
+        ).getBytes(StandardCharsets.UTF_8));
+        RuntimeWorkspace workspace = new RuntimeWorkspace(
+                tempDirectory.resolve("nova.config.yml"),
+                nova -> {
+                    NovaBukkit.install(nova, pluginProxy());
+                    nova.setScriptClassLoader(BukkitEventRegistrarTest.class.getClassLoader());
+                });
+        try {
+            workspace.load();
+            assertEquals(4, workspace.invoke("entry.nova", "execute",
+                    java.util.Collections.emptyMap(), null));
+        } finally {
+            workspace.dispose();
+            SchedulerHolder.clear();
+        }
+    }
+
+    @Test
+    void acceptsAnyParameterForListenerMethodReference() {
+        Nova nova = new Nova();
+        nova.install(NovaBukkit.create(pluginProxy()));
+        nova.compileToBytecode(
+                "import java org.bukkit.event.EventPriority\n"
+                        + "import java org.bukkit.event.Event\n"
+                        + "import java org.bukkit.event.player.PlayerJoinEvent\n"
+                        + "fun onEvent(event: Any) { }\n"
+                        + "NoBukkit.event.listen(PlayerJoinEvent, EventPriority.NORMAL, false, ::onEvent)",
+                "nobukkit-any-listener.nova");
+    }
+
+    @Test
+    void workspaceRegistrationIsDisposedWithGeneration() throws Exception {
+        AtomicReference<Listener> registeredListener = new AtomicReference<Listener>();
+        AtomicReference<EventExecutor> executor = new AtomicReference<EventExecutor>();
+        AtomicReference<Plugin> owner = new AtomicReference<Plugin>();
+        Plugin plugin = pluginProxy(owner, registeredListener, executor);
+        final Thread ownerThread = Thread.currentThread();
+        SchedulerHolder.set(new NovaScheduler() {
+            @Override
+            public java.util.concurrent.Executor mainExecutor() {
+                return Runnable::run;
+            }
+
+            @Override
+            public java.util.concurrent.Executor asyncExecutor() {
+                return Runnable::run;
+            }
+
+            @Override
+            public boolean isMainThread() {
+                return Thread.currentThread() == ownerThread;
+            }
+
+            @Override
+            public Cancellable scheduleLater(long delayMs, Runnable task) {
+                throw new UnsupportedOperationException("event lifecycle test does not schedule tasks");
+            }
+
+            @Override
+            public Cancellable scheduleRepeat(long delayMs, long periodMs, Runnable task) {
+                throw new UnsupportedOperationException("event lifecycle test does not schedule tasks");
+            }
+        });
+        Files.write(tempDirectory.resolve("entry.nova"), (
+                "import java org.bukkit.event.Event\n"
+                        + "import java org.bukkit.event.EventPriority\n"
+                        + "import java com.novalang.bukkit.BukkitEventRegistrarTest.TestEvent\n"
+                        + "var count = 0\n"
+                        + "fun onEvent(event: Event) { count = count + 1 }\n"
+                        + "fun getCount(): Int { return count }\n"
+                        + "fun main() { NoBukkit.event.listen(TestEvent, EventPriority.NORMAL, false, ::onEvent) }\n"
+        ).getBytes(StandardCharsets.UTF_8));
+        Files.write(tempDirectory.resolve("nova.config.yml"), (
+                "version: 1\n"
+                        + "name: bukkit-event-workspace\n"
+                        + "aliases:\n"
+                        + "  \"@\": \".\"\n"
+                        + "sources:\n"
+                        + "  - .\n"
+                        + "entries:\n"
+                        + "  - entry.nova\n"
+                        + "runtime:\n"
+                        + "  security: trusted-server\n"
+                        + "  thread: main\n"
+        ).getBytes(StandardCharsets.UTF_8));
+        RuntimeWorkspace workspace = new RuntimeWorkspace(
+                tempDirectory.resolve("nova.config.yml"),
+                nova -> {
+                    NovaBukkit.install(nova, plugin);
+                    nova.setScriptClassLoader(BukkitEventRegistrarTest.class.getClassLoader());
+                });
+        try {
+            workspace.load();
+            assertSame(plugin, owner.get());
+            executor.get().execute(registeredListener.get(), new TestEvent());
+            assertSame(1, workspace.invoke("entry.nova", "getCount",
+                    java.util.Collections.emptyMap(), null));
+            WorkspaceGeneration generation = workspace.getGeneration();
+            AtomicInteger explicitCount = new AtomicInteger();
+            EventRegistration explicitRegistration = BukkitEventRegistrar.forWorkspace(
+                    plugin, generation, generation.getRootScope()).listen(
+                    TestEvent.class, EventPriority.NORMAL, false,
+                    event -> explicitCount.incrementAndGet());
+            executor.get().execute(registeredListener.get(), new TestEvent());
+            assertEquals(1, explicitCount.get());
+            explicitRegistration.dispose();
+            executor.get().execute(registeredListener.get(), new TestEvent());
+            assertEquals(1, explicitCount.get());
+            workspace.dispose();
+            assertThrows(RuntimeException.class, () -> workspace.invoke("entry.nova", "getCount",
+                    java.util.Collections.emptyMap(), null));
+        } finally {
+            workspace.dispose();
+            SchedulerHolder.clear();
+        }
+    }
+
+    @Test
+    void rejectsInvalidListenerMethodReferenceBeforeRegistration() {
+        Nova nova = new Nova();
+        nova.install(NovaBukkit.create(pluginProxy()));
+        assertThrows(RuntimeException.class, () -> nova.compileToBytecode(
+                "import java org.bukkit.event.Event\n"
+                        + "import java org.bukkit.event.EventPriority\n"
+                        + "import java com.novalang.bukkit.BukkitEventRegistrarTest.TestEvent\n"
+                        + "fun missing(event: Event) { }\n"
+                        + "NoBukkit.event.listen(TestEvent, EventPriority.NORMAL, false, ::unknown)",
+                "nobukkit-unknown-listener.nova"));
+    }
+
+    private Plugin pluginProxy() {
+        return pluginProxy(new AtomicReference<Plugin>(), new AtomicReference<Listener>(),
+                new AtomicReference<EventExecutor>());
+    }
+
+    private Plugin pluginProxy(AtomicReference<Plugin> owner,
+                               AtomicReference<Listener> registeredListener,
+                               AtomicReference<EventExecutor> executor) {
+        return pluginProxy(owner, registeredListener, executor, null);
+    }
+
+    private Plugin pluginProxy(AtomicReference<Plugin> owner,
+                               AtomicReference<Listener> registeredListener,
+                               AtomicReference<EventExecutor> executor,
+                               AtomicReference<Class<?>> eventType) {
+        PluginManager manager = (PluginManager) Proxy.newProxyInstance(
+                PluginManager.class.getClassLoader(),
+                new Class<?>[]{PluginManager.class},
+                (proxy, method, arguments) -> {
+                    if ("registerEvent".equals(method.getName())) {
+                        if (eventType != null) {
+                            eventType.set((Class<?>) arguments[0]);
+                        }
+                        owner.set((Plugin) arguments[4]);
+                        registeredListener.set((Listener) arguments[1]);
+                        executor.set((EventExecutor) arguments[3]);
+                    }
+                    return null;
+                });
+        Server server = (Server) Proxy.newProxyInstance(
+                Server.class.getClassLoader(),
+                new Class<?>[]{Server.class},
+                (proxy, method, arguments) -> {
+                    if ("getPluginManager".equals(method.getName())) {
+                        return manager;
+                    }
+                    return null;
+                });
+        return (Plugin) Proxy.newProxyInstance(
+                Plugin.class.getClassLoader(),
+                new Class<?>[]{Plugin.class},
+                (proxy, method, arguments) -> {
+                    if ("getServer".equals(method.getName())) {
+                        return server;
+                    }
+                    return null;
+                });
+    }
+
+    public static final class TestEvent extends Event {
+        private static final HandlerList HANDLERS = new HandlerList();
+
+        @Override
+        public HandlerList getHandlers() {
+            return HANDLERS;
+        }
+
+        public static HandlerList getHandlerList() {
+            return HANDLERS;
+        }
+    }
+}

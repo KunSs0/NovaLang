@@ -1,0 +1,13 @@
+plugins {
+    id 'java-library'
+}
+
+description = 'NovaLang JSR-223 ScriptEngine'
+
+dependencies {
+    api project(':nova-runtime')
+    api project(':nova-ir')
+}
+
+// JSR-223 引擎已包含在 nova-runtime-with-dependencies.jar 中
+// 此模块不单独发布

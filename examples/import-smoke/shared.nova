@@ -1,0 +1,5 @@
+val projectName = "NovaLang"
+
+fun greet(name: String): String {
+    return "Hello, " + name + " from " + projectName + "!"
+}

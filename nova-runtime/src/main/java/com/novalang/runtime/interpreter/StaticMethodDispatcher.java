@@ -1,0 +1,959 @@
+package com.novalang.runtime.interpreter;
+
+import com.novalang.ir.mir.*;
+import com.novalang.runtime.*;
+import com.novalang.runtime.resolution.MethodNameCanonicalizer;
+import com.novalang.runtime.types.NovaClass;
+import com.novalang.runtime.interpreter.reflect.NovaClassInfo;
+import com.novalang.runtime.stdlib.StdlibRegistry;
+
+import java.util.*;
+
+/**
+ * 静态方法分派器。
+ *
+ * <p>处理 INVOKE_STATIC 指令中的方法查找与调用链，
+ * 包括 $ScopeCall、$PartialApplication、$ENV、$PipeCall、
+ * Nova 运行时类分派、Java 静态方法等。从 MirCallDispatcher 拆分而来。</p>
+ */
+final class StaticMethodDispatcher {
+
+    // ===== MIR 特殊标记 =====
+    private static final String MARKER_SCOPE_CALL = "$ScopeCall";
+    private static final String MARKER_PARTIAL_APP = "$PartialApplication|";
+    private static final String MARKER_ENV = "$ENV|";
+    private static final String MARKER_SCRIPT_CTX = "com/novalang/runtime/NovaScriptContext|";
+    private static final String MARKER_BIND_METHOD = "$BIND_METHOD";
+    private static final String MARKER_PIPE_CALL = "$PipeCall";
+    private static final String MARKER_RANGE = "$RANGE";
+    private static final String MARKER_MODULE = "$Module";
+    private static final String MARKER_LAMBDA = "$Lambda$";
+    private static final String MARKER_METHOD_REF = "$MethodRef$";
+    private static final String MARKER_JAVA_STATIC_IMPORT = "$JavaStaticImport|";
+    private static final String MARKER_JAVA_STATIC_FIELD = "$JavaStaticField|";
+
+    // ===== 特殊方法名 =====
+    private static final String SPECIAL_INIT = "<init>";
+    private static final String SPECIAL_CLINIT = "<clinit>";
+
+    // ===== Nova 运行时类名 =====
+    private static final String NOVA_PAIR = "com/novalang/runtime/NovaPair";
+    private static final String NOVA_DYNAMIC = "com/novalang/runtime/NovaDynamic";
+    private static final String NOVA_SCOPE_FUNCTIONS = "com/novalang/runtime/stdlib/NovaScopeFunctions";
+    private static final String NOVA_LAMBDA_INVOKER = "com/novalang/runtime/stdlib/LambdaInvoker";
+    private static final String NOVA_ASYNC_HELPER = "com/novalang/runtime/stdlib/AsyncHelper";
+    private static final String NOVA_COLLECTIONS = "com/novalang/runtime/NovaCollections";
+    private static final String NOVA_CLASS_INFO = "com/novalang/runtime/interpreter/reflect/NovaClassInfo";
+
+    /** JVM 内部名 → Java 点分名: "java/lang/String" → "java.lang.String" */
+    private static String toJavaDotName(String internalName) {
+        return internalName.replace("/", ".");
+    }
+
+    /** Class.forName 结果缓存，避免重复解析 */
+    private final Map<String, Class<?>> classNameCache = new HashMap<>();
+
+    private final Interpreter interp;
+    private final MemberResolver resolver;
+    private final MirCallDispatcher dispatcher;
+    private final VirtualMethodDispatcher virtualDispatcher;
+    private final MirInterpreter mirInterp;
+    private final Map<String, MirCallable> mirFunctions;
+    private final Map<String, MirInterpreter.MirClassInfo> mirClasses;
+    private final List<StaticDispatchRule> dispatchRules;
+
+    StaticMethodDispatcher(Interpreter interp, MemberResolver resolver,
+                           MirCallDispatcher dispatcher, VirtualMethodDispatcher virtualDispatcher,
+                           MirInterpreter mirInterp,
+                           Map<String, MirCallable> mirFunctions,
+                           Map<String, MirInterpreter.MirClassInfo> mirClasses) {
+        this.interp = interp;
+        this.resolver = resolver;
+        this.dispatcher = dispatcher;
+        this.virtualDispatcher = virtualDispatcher;
+        this.mirInterp = mirInterp;
+        this.mirFunctions = mirFunctions;
+        this.mirClasses = mirClasses;
+        this.dispatchRules = Arrays.<StaticDispatchRule>asList(
+                this::tryBindMarkerDispatch,
+                this::tryPipeMarkerDispatch,
+                this::tryRangeMarkerDispatch,
+                this::tryModuleDispatch,
+                this::tryNovaRuntimeDispatchRule,
+                this::tryEnvironmentDispatchRule,
+                this::trySharedRegistryDispatchRule,
+                this::tryClassStaticDispatchRule,
+                this::tryEnumOrJavaStaticDispatchRule
+        );
+    }
+
+    // ============ INVOKE_STATIC 入口 ============
+
+    void executeInvokeStatic(MirFrame frame, MirInst inst) {
+        // 特殊标记快速分派（编译期分类，避免运行时字符串匹配）
+        switch (inst.specialKind) {
+            case MirInst.SK_SCOPE_CALL:
+                executeScopeCall(frame, inst);
+                return;
+            case MirInst.SK_PARTIAL_APP:
+                executePartialApp(frame, inst);
+                return;
+            case MirInst.SK_ENV_ACCESS:
+                executeEnvAccess(frame, inst);
+                return;
+            default:
+                break;
+        }
+
+        // SK_NORMAL: 惰性解析调用站点（首次解析后缓存在 inst.cache）
+        // 防御性回退：MIR Pass 重建指令可能丢失 specialKind，这里惰性修复
+        String extra = inst.extraAs();
+        if (extra.startsWith(MARKER_JAVA_STATIC_IMPORT)) {
+            executeJavaStaticImport(frame, inst, extra, false);
+            return;
+        }
+        if (extra.startsWith(MARKER_JAVA_STATIC_FIELD)) {
+            executeJavaStaticImport(frame, inst, extra, true);
+            return;
+        }
+        if (extra.length() > 0 && extra.charAt(0) == '$') {
+            if (MARKER_SCOPE_CALL.equals(extra)) { inst.specialKind = MirInst.SK_SCOPE_CALL; executeScopeCall(frame, inst); return; }
+            if (extra.startsWith(MARKER_PARTIAL_APP)) { inst.specialKind = MirInst.SK_PARTIAL_APP; executePartialApp(frame, inst); return; }
+            if (extra.startsWith(MARKER_ENV)) { inst.specialKind = MirInst.SK_ENV_ACCESS; executeEnvAccess(frame, inst); return; }
+        } else if (extra.startsWith(MARKER_SCRIPT_CTX)) {
+            inst.specialKind = MirInst.SK_ENV_ACCESS; executeEnvAccess(frame, inst); return;
+        }
+        MirCallSite cs;
+        Object cached = inst.cache;
+        if (cached instanceof MirCallSite) {
+            cs = (MirCallSite) cached;
+        } else {
+            cs = MirCallSite.parseStatic(extra);
+            inst.cache = cs;
+        }
+        String owner = cs.owner;
+        String methodName = cs.methodName;
+
+        // 热路径：$PipeCall 或模块内函数调用（缓存 MirCallable + fastCall 快速路径）
+        if (owner != null && methodName.indexOf('%') < 0 && methodName.indexOf('#') < 0
+                && methodName.indexOf('@') < 0
+                && (MARKER_PIPE_CALL.equals(owner) || owner.endsWith(MARKER_MODULE))) {
+            MirCallable resolved = cs.resolvedCallable;
+            if (resolved == null) {
+                resolved = mirFunctions.get(methodName);
+                if (resolved != null) {
+                    cs.resolvedCallable = resolved;
+                    MirFunction fn = resolved.getFunction();
+                    String fnName = fn.getName();
+                    boolean noThis = fn.getLocals().isEmpty()
+                            || !"this".equals(fn.getLocals().get(0).getName());
+                    cs.fastCallEligible = noThis
+                            && !SPECIAL_INIT.equals(fnName) && !SPECIAL_CLINIT.equals(fnName);
+                }
+            }
+            if (resolved != null) {
+                NovaValue result;
+                if (cs.fastCallEligible && mirInterp.pendingReifiedTypeArgs == null) {
+                    result = mirInterp.fastCall(frame, resolved.getFunction(), inst);
+                } else {
+                    NovaValue[] argsArray = mirInterp.collectArgsArray(frame, inst.getOperands());
+                    result = resolved.callDirect(interp, argsArray);
+                }
+                if (inst.getDest() >= 0) frame.locals[inst.getDest()] = result != null ? result : NovaNull.UNIT;
+                return;
+            }
+        }
+
+        NovaValue[] argsArray = mirInterp.collectArgsArray(frame, inst.getOperands());
+        List<NovaValue> args = Arrays.asList(argsArray);
+        NovaValue result = invokeStaticMethod(owner, methodName, args);
+        if (inst.getDest() >= 0) {
+            frame.locals[inst.getDest()] = result != null ? result : NovaNull.UNIT;
+        }
+    }
+
+    /** 解释器路径的 Java 静态导入分派，和字节码路径共用 MethodHandleCache 重载解析。 */
+    private void executeJavaStaticImport(MirFrame frame, MirInst inst,
+                                         String extra, boolean field) {
+        String prefix = field ? MARKER_JAVA_STATIC_FIELD : MARKER_JAVA_STATIC_IMPORT;
+        String payload = extra.substring(prefix.length());
+        int separator = payload.lastIndexOf('|');
+        if (separator <= 0 || separator == payload.length() - 1) {
+            throw new NovaRuntimeException(NovaException.ErrorKind.JAVA_INTEROP,
+                    "Invalid Java static import marker: " + extra, null);
+        }
+        String[] classNames = payload.substring(0, separator).split(",");
+        String memberName = payload.substring(separator + 1);
+        for (int index = classNames.length - 1; index >= 0; index--) {
+            String candidate = classNames[index];
+            String className = candidate.trim();
+            if (className.isEmpty()) {
+                continue;
+            }
+            Class<?> javaClass;
+            try {
+                javaClass = JavaInterop.loadClass(className.replace('/', '.'));
+            } catch (ClassNotFoundException exception) {
+                continue;
+            }
+            if (!interp.getSecurityPolicy().isClassAllowed(javaClass.getName())) {
+                throw NovaSecurityPolicy.denied("Cannot access class: " + javaClass.getName());
+            }
+            try {
+                if (field) {
+                    java.lang.reflect.Field javaField = javaClass.getField(memberName);
+                    if (!java.lang.reflect.Modifier.isStatic(javaField.getModifiers())) {
+                        continue;
+                    }
+                    Object value = javaField.get(null);
+                    setResult(frame, inst, AbstractNovaValue.fromJava(value));
+                    return;
+                }
+                List<NovaValue> args = new ArrayList<>();
+                for (int operand : inst.getOperands()) {
+                    args.add(frame.get(operand));
+                }
+                if (!interp.getSecurityPolicy().isMethodAllowed(javaClass.getName(), memberName)) {
+                    throw NovaSecurityPolicy.denied(
+                            "Cannot call method '" + memberName + "' on " + javaClass.getName());
+                }
+                Object[] javaArgs = new Object[args.size()];
+                for (int i = 0; i < args.size(); i++) {
+                    javaArgs[i] = args.get(i).toJavaValue();
+                }
+                Object value = MethodHandleCache.getInstance().invokeStatic(javaClass, memberName, javaArgs);
+                setResult(frame, inst, AbstractNovaValue.fromJava(value));
+                return;
+            } catch (NoSuchFieldException exception) {
+                continue;
+            } catch (IllegalAccessException exception) {
+                throw new NovaRuntimeException(NovaException.ErrorKind.JAVA_INTEROP,
+                        "Cannot access Java static field '" + javaClass.getName() + "." + memberName + "'",
+                        null, exception);
+            } catch (NovaRuntimeException exception) {
+                if (!exception.getMessage().startsWith("Static method not found:")) {
+                    throw exception;
+                }
+            } catch (Throwable exception) {
+                throw new NovaRuntimeException(NovaException.ErrorKind.JAVA_INTEROP,
+                        "Java static import '" + javaClass.getName() + "." + memberName + "' failed",
+                        null, exception);
+            }
+        }
+        throw new NovaRuntimeException(NovaException.ErrorKind.JAVA_INTEROP,
+                "Cannot find Java static member '" + payload + "'",
+                "Check the imported class, member name, and argument types");
+    }
+
+    private void setResult(MirFrame frame, MirInst inst, NovaValue value) {
+        if (inst.getDest() >= 0) {
+            frame.locals[inst.getDest()] = value != null ? value : NovaNull.UNIT;
+        }
+    }
+
+    // ============ 特殊标记处理 ============
+
+    /** $ScopeCall — receiver.block() 中 block 是局部变量 callable，以 receiver 为 scopeReceiver 调用 */
+    private void executeScopeCall(MirFrame frame, MirInst inst) {
+        int[] ops = inst.getOperands();
+        NovaValue callable = frame.get(ops[0]);
+        NovaValue receiver = frame.get(ops[1]);
+        List<NovaValue> callArgs = new ArrayList<>();
+        for (int i = 2; i < ops.length; i++) {
+            callArgs.add(frame.get(ops[i]));
+        }
+        NovaCallable extracted = dispatcher.extractCallable(callable);
+        if (extracted != null) {
+            NovaValue result = dispatcher.withScopeReceiver(receiver, () -> extracted.call(interp, callArgs));
+            if (inst.getDest() >= 0) frame.locals[inst.getDest()] = result != null ? result : NovaNull.UNIT;
+            return;
+        }
+        // callable 不可调用 → 尝试作为普通方法调用
+        NovaValue result = virtualDispatcher.invokeVirtualMethod(receiver, callable != null ? callable.asString() : "invoke", null, callArgs);
+        if (inst.getDest() >= 0) frame.locals[inst.getDest()] = result != null ? result : NovaNull.UNIT;
+    }
+
+    /** $PartialApplication|mask → 创建 NovaPartialApplication */
+    private void executePartialApp(MirFrame frame, MirInst inst) {
+        String extra = inst.extraAs();
+        int mask = Integer.parseInt(extra.substring(MARKER_PARTIAL_APP.length()));
+        int[] ops = inst.getOperands();
+        NovaValue callee = frame.get(ops[0]);
+        List<Object> partialArgs = new ArrayList<>();
+        for (int i = 1; i < ops.length; i++) {
+            if ((mask & (1 << (i - 1))) != 0) {
+                partialArgs.add(NovaPartialApplication.PLACEHOLDER);
+            } else {
+                partialArgs.add(frame.get(ops[i]));
+            }
+        }
+        NovaCallable calleeCallable = dispatcher.extractCallable(callee);
+        if (calleeCallable == null) {
+            throw new NovaRuntimeException(NovaException.ErrorKind.TYPE_MISMATCH, "偏应用需要可调用对象, 实际为 " + callee.getTypeName(), null);
+        }
+        NovaValue result = new NovaPartialApplication(calleeCallable, partialArgs);
+        if (inst.getDest() >= 0) frame.locals[inst.getDest()] = result;
+    }
+
+    /** $ENV|op 或 com/novalang/runtime/NovaScriptContext|op — 环境变量访问 */
+    void executeEnvAccess(MirFrame frame, MirInst inst) {
+        String extra = inst.extraAs();
+        int[] ops = inst.getOperands();
+        if (extra.contains("|get|") && ops != null && ops.length > 0) {
+            // NovaScriptContext.get(name) → Environment.tryGet(name)
+            NovaValue nameVal = frame.locals[ops[0]];
+            String name = nameVal != null ? nameVal.asString() : null;
+            NovaValue value = name != null ? interp.getEnvironment().tryGet(name) : null;
+            // 作用域函数: 从接收者对象读取字段
+            if (value == null && name != null && dispatcher.scopeReceiver instanceof NovaObject) {
+                NovaObject obj = (NovaObject) dispatcher.scopeReceiver;
+                if (obj.hasField(name)) {
+                    value = obj.getField(name);
+                }
+            }
+            if (value == null && "this".equals(name) && dispatcher.scopeReceiver != null) {
+                value = dispatcher.scopeReceiver;
+            }
+            // 作用域成员解析: receiver lambda / 作用域函数中，解析 scopeReceiver 的成员方法
+            if (value == null && name != null && dispatcher.scopeReceiver != null) {
+                try {
+                    value = resolver.resolveMemberOnValue(dispatcher.scopeReceiver, name, null);
+                } catch (NovaRuntimeException ignored) {}
+            }
+            // 通配符 Java 导入回退（import java java.util.* 等）
+            if (value == null && name != null) {
+                value = dispatcher.resolveWildcardJavaImport(name);
+            }
+            // shared() 全局注册表回退（变量 + 命名空间代理）
+            if (value == null && name != null) {
+                NovaRuntime.RegisteredEntry entry = NovaRuntime.shared().lookup(name);
+                if (entry != null) {
+                    Object v = entry.getValue();
+                    value = v instanceof NovaValue ? (NovaValue) v : AbstractNovaValue.fromJava(v);
+                }
+                if (value == null) {
+                    NovaRuntime.NovaNamespace nsProxy = NovaRuntime.shared().getNamespaceProxy(name);
+                    if (nsProxy != null) value = nsProxy;
+                }
+            }
+            // JVM 全局桥接回退（其他插件注册的变量/函数）
+            if (value == null && name != null) {
+                Object globalResult = NovaRuntime.callGlobal(name);
+                if (globalResult != NovaRuntime.NOT_FOUND) {
+                    value = globalResult instanceof NovaValue
+                            ? (NovaValue) globalResult : AbstractNovaValue.fromJava(globalResult);
+                }
+            }
+            if (value == null && name != null && !interp.getEnvironment().contains(name)) {
+                throw new NovaRuntimeException(NovaException.ErrorKind.UNDEFINED, "未定义的变量: " + name, null);
+            }
+            if (inst.getDest() >= 0) {
+                frame.locals[inst.getDest()] = value != null ? value : NovaNull.NULL;
+            }
+        } else if (extra.contains("|defineVal|") && ops != null && ops.length > 1) {
+            NovaValue nameVal = frame.locals[ops[0]];
+            NovaValue value = frame.get(ops[1]);
+            String name = nameVal != null ? nameVal.asString() : null;
+            if (name != null && value != null) {
+                if (!interp.isReplMode()) {
+                    MirInst prev = dispatcher.envVarDefinedBy.get(name);
+                    if (prev != null && prev != inst) {
+                        // 不同 BasicBlock 允许重定义（when/if 块级作用域）
+                        Integer prevBlock = dispatcher.envVarDefinedInBlock.get(name);
+                        if (prevBlock != null && prevBlock == frame.currentBlockId) {
+                            throw new NovaRuntimeException(NovaException.ErrorKind.UNDEFINED, "变量已定义: " + name, null);
+                        }
+                    }
+                    dispatcher.envVarDefinedBy.put(name, inst);
+                    dispatcher.envVarDefinedInBlock.put(name, frame.currentBlockId);
+                }
+                interp.getEnvironment().redefine(name, value, false);
+            }
+        } else if (extra.contains("|defineVar|") && ops != null && ops.length > 1) {
+            NovaValue nameVal = frame.locals[ops[0]];
+            NovaValue value = frame.get(ops[1]);
+            String name = nameVal != null ? nameVal.asString() : null;
+            if (name != null && value != null) {
+                if (!interp.isReplMode()) {
+                    MirInst prev = dispatcher.envVarDefinedBy.get(name);
+                    if (prev != null && prev != inst) {
+                        Integer prevBlock = dispatcher.envVarDefinedInBlock.get(name);
+                        if (prevBlock != null && prevBlock == frame.currentBlockId) {
+                            throw new NovaRuntimeException(NovaException.ErrorKind.UNDEFINED, "变量已定义: " + name, null);
+                        }
+                    }
+                    dispatcher.envVarDefinedBy.put(name, inst);
+                    dispatcher.envVarDefinedInBlock.put(name, frame.currentBlockId);
+                }
+                interp.getEnvironment().redefine(name, value, true);
+            }
+        } else if (extra.contains("|set|") && ops != null && ops.length > 1) {
+            NovaValue nameVal = frame.locals[ops[0]];
+            NovaValue value = frame.get(ops[1]);
+            String name = nameVal != null ? nameVal.asString() : null;
+            if (name != null && value != null) {
+                if (dispatcher.scopeReceiver instanceof NovaObject
+                        && ((NovaObject) dispatcher.scopeReceiver).hasField(name)) {
+                    ((NovaObject) dispatcher.scopeReceiver).setField(name, value);
+                } else if (!interp.getEnvironment().tryAssign(name, value)) {
+                    interp.getEnvironment().redefine(name, value, true);
+                }
+            }
+        }
+    }
+
+    // ============ 静态方法分派主链 ============
+
+    private NovaValue invokeStaticMethod(String owner, String methodName, List<NovaValue> args) {
+        List<String> candidates = MethodNameCanonicalizer.lookupCandidates(methodName);
+        for (int i = 0; i < candidates.size(); i++) {
+            NovaValue resolved = dispatchStatic(new StaticCall(owner, candidates.get(i), args));
+            if (resolved != null) return resolved;
+        }
+        throw new NovaRuntimeException(NovaException.ErrorKind.UNDEFINED, "静态方法未找到: "
+                + (owner != null ? owner + "." : "") + methodName, null);
+    }
+
+    /** $BIND_METHOD — interpreterMode 下实例方法引用 (obj::method) */
+    private NovaValue dispatchStatic(StaticCall call) {
+        for (int i = 0; i < dispatchRules.size(); i++) {
+            NovaValue result = dispatchRules.get(i).tryDispatch(call);
+            if (result != null) return result;
+        }
+        return null;
+    }
+
+    private NovaValue tryBindMarkerDispatch(StaticCall call) {
+        return MARKER_BIND_METHOD.equals(call.owner) ? handleBindMethod(call.methodName, call.args) : null;
+    }
+
+    private NovaValue tryPipeMarkerDispatch(StaticCall call) {
+        return MARKER_PIPE_CALL.equals(call.owner) ? handlePipeCall(call.methodName, call.args) : null;
+    }
+
+    private NovaValue tryRangeMarkerDispatch(StaticCall call) {
+        if (MARKER_RANGE.equals(call.owner) && "create".equals(call.methodName) && call.args.size() == 3) {
+            return new NovaRange(call.args.get(0).asInt(), call.args.get(1).asInt(), call.args.get(2).asBoolean());
+        }
+        return null;
+    }
+
+    private NovaValue tryModuleDispatch(StaticCall call) {
+        if (call.owner != null && call.owner.endsWith(MARKER_MODULE)) {
+            MirCallable func = mirFunctions.get(call.methodName);
+            if (func != null) return func.call(interp, call.args);
+        }
+        return null;
+    }
+
+    private NovaValue tryNovaRuntimeDispatchRule(StaticCall call) {
+        return call.owner != null ? tryNovaRuntimeDispatch(call.owner, call.methodName, call.args) : null;
+    }
+
+    private NovaValue tryEnvironmentDispatchRule(StaticCall call) {
+        return tryEnvironmentLookup(call.methodName, call.args);
+    }
+
+    private NovaValue tryClassStaticDispatchRule(StaticCall call) {
+        return call.owner != null ? tryClassStaticDispatch(call.owner, call.methodName, call.args) : null;
+    }
+
+    private NovaValue tryEnumOrJavaStaticDispatchRule(StaticCall call) {
+        return call.owner != null ? tryEnumOrJavaStatic(call.owner, call.methodName, call.args) : null;
+    }
+
+    private NovaValue handleBindMethod(String methodName, List<NovaValue> args) {
+        if (!"bind".equals(methodName) || args.size() != 2) {
+            throw new NovaRuntimeException(NovaException.ErrorKind.INTERNAL, "无效的 $BIND_METHOD 调用", null);
+        }
+        NovaValue target = args.get(0);
+        String name = args.get(1).asString();
+        if (target instanceof NovaObject) {
+            NovaCallable method = ((NovaObject) target).getMethod(name);
+            if (method != null) return new NovaBoundMethod(target, method);
+        }
+        if (target instanceof NovaEnumEntry) {
+            NovaCallable method = ((NovaEnumEntry) target).getMethod(name);
+            if (method != null) return new NovaBoundMethod(target, method);
+        }
+        NovaValue member = resolver.resolveMemberOnValue(target, name, null);
+        if (member instanceof NovaCallable) return member;
+        throw new NovaRuntimeException(NovaException.ErrorKind.UNDEFINED, "无法在 " + target.getTypeName() + " 上绑定方法 '" + name + "'", null);
+    }
+
+    /**
+     * 命名参数重排：根据目标函数的参数列表，将 [positional..., namedValues...]
+     * 按正确的参数顺序排列，缺失的参数填 NovaNull.NULL（由函数体的默认值处理）。
+     */
+    private List<NovaValue> reorderNamedArgs(String funcName, List<NovaValue> args,
+                                              int positionalCount, String[] namedKeys) {
+        // 查找目标函数的参数名列表（先 mirFunctions，再 Environment）
+        List<String> paramNames = null;
+        MirCallable func = mirFunctions.get(funcName);
+        if (func != null) {
+            List<com.novalang.ir.mir.MirParam> params = func.getFunction().getParams();
+            paramNames = new ArrayList<>();
+            for (com.novalang.ir.mir.MirParam p : params) paramNames.add(p.getName());
+        }
+        if (paramNames == null) {
+            // 跨 REPL：从 Environment 中查找已注册的 MirCallable
+            NovaValue envVal = interp.getEnvironment().tryGet(funcName);
+            if (envVal instanceof MirCallable) {
+                List<com.novalang.ir.mir.MirParam> params = ((MirCallable) envVal).getFunction().getParams();
+                paramNames = new ArrayList<>();
+                for (com.novalang.ir.mir.MirParam p : params) paramNames.add(p.getName());
+            } else if (envVal instanceof NovaCallable) {
+                // 非 MirCallable 但有 paramNames 方法
+                List<String> pn = ((NovaCallable) envVal).getParamNames();
+                if (pn != null && !pn.isEmpty()) paramNames = pn;
+            }
+        }
+        if (paramNames == null) {
+            return args;
+        }
+
+        // 构建重排后的参数列表
+        List<NovaValue> reordered = new ArrayList<>(Collections.nCopies(paramNames.size(), NovaNull.NULL));
+        // 先放位置参数
+        for (int i = 0; i < positionalCount && i < paramNames.size(); i++) {
+            reordered.set(i, args.get(i));
+        }
+        // 再放命名参数
+        for (int k = 0; k < namedKeys.length; k++) {
+            int paramIdx = paramNames.indexOf(namedKeys[k]);
+            if (paramIdx >= 0) {
+                reordered.set(paramIdx, args.get(positionalCount + k));
+            }
+        }
+        return reordered;
+    }
+
+    /** $PipeCall — 管道操作符: 解析 spread/reified/named，先查函数再尝试方法调用 */
+    private NovaValue handlePipeCall(String methodName, List<NovaValue> args) {
+        // 解析命名参数标记: funcName@named:positionalCount:key1,key2
+        int namedPositionalCount = -1;
+        String[] namedKeys = null;
+        int atIdx = methodName.indexOf('@');
+        if (atIdx >= 0) {
+            String namedPart = methodName.substring(atIdx + 1);
+            methodName = methodName.substring(0, atIdx);
+            if (namedPart.startsWith("named:")) {
+                String rest = namedPart.substring(6); // "positionalCount:key1,key2"
+                int colonIdx = rest.indexOf(':');
+                namedPositionalCount = Integer.parseInt(rest.substring(0, colonIdx));
+                namedKeys = rest.substring(colonIdx + 1).split(",");
+            }
+        }
+        // 解析 spread 标记: methodName%spread:0,2
+        Set<Integer> spreadIndices = null;
+        int pctIdx = methodName.indexOf('%');
+        if (pctIdx >= 0) {
+            String spreadPart = methodName.substring(pctIdx + 1);
+            methodName = methodName.substring(0, pctIdx);
+            if (spreadPart.startsWith("spread:")) {
+                spreadIndices = new HashSet<>();
+                for (String s : spreadPart.substring(7).split(",")) {
+                    spreadIndices.add(Integer.parseInt(s.trim()));
+                }
+            }
+        }
+        // 解析 reified 类型参数: methodName#TypeArg1,TypeArg2
+        String[] reifiedTypeArgs = null;
+        int hashIdx = methodName.indexOf('#');
+        if (hashIdx >= 0) {
+            reifiedTypeArgs = methodName.substring(hashIdx + 1).split(",");
+            methodName = methodName.substring(0, hashIdx);
+        }
+        // spread 展开
+        if (spreadIndices != null && !spreadIndices.isEmpty()) {
+            List<NovaValue> expanded = new ArrayList<>();
+            for (int i = 0; i < args.size(); i++) {
+                if (spreadIndices.contains(i) && args.get(i) instanceof NovaList) {
+                    NovaList list = (NovaList) args.get(i);
+                    for (int j = 0; j < list.size(); j++) expanded.add(list.get(j));
+                } else {
+                    expanded.add(args.get(i));
+                }
+            }
+            args = expanded;
+        }
+        // 命名参数重排：将位置参数+命名参数按目标函数的参数列表重新排列
+        if (namedKeys != null && namedPositionalCount >= 0) {
+            args = reorderNamedArgs(methodName, args, namedPositionalCount, namedKeys);
+        }
+        // 1. 查 mirFunctions
+        MirCallable func = mirFunctions.get(methodName);
+        if (func != null) {
+            if (reifiedTypeArgs != null) mirInterp.pendingReifiedTypeArgs = reifiedTypeArgs;
+            return func.call(interp, args);
+        }
+        // 2. 查 Environment
+        NovaValue envVal = interp.getEnvironment().tryGet(methodName);
+        if (envVal instanceof NovaCallable) {
+            if (reifiedTypeArgs != null) mirInterp.pendingReifiedTypeArgs = reifiedTypeArgs;
+            return ((NovaCallable) envVal).call(interp, args);
+        }
+        if (envVal instanceof NovaObject) {
+            NovaCallable invokeMethod = ((NovaObject) envVal).getMethod("invoke");
+            if (invokeMethod != null) {
+                List<NovaValue> invokeArgs = new ArrayList<>();
+                invokeArgs.add(envVal);
+                invokeArgs.addAll(args);
+                return invokeMethod.call(interp, invokeArgs);
+            }
+        }
+        if (envVal instanceof NovaClass) {
+            return ((NovaClass) envVal).call(interp, args);
+        }
+        // 3. 查通配符 Java 导入 (java.lang 等)
+        NovaValue javaClassVal = dispatcher.resolveWildcardJavaImport(methodName);
+        if (javaClassVal instanceof NovaCallable) {
+            return ((NovaCallable) javaClassVal).call(interp, args);
+        }
+        // 4. 回退: shared() 全局注册表
+        NovaValue sharedResult = trySharedRegistryLookup(methodName, args);
+        if (sharedResult != null) return sharedResult;
+        // 5. 回退: scopeReceiver 方法调用（receiver lambda / with 块内裸方法调用）
+        if (dispatcher.scopeReceiver != null) {
+            try {
+                return virtualDispatcher.invokeVirtualMethod(
+                        dispatcher.scopeReceiver, methodName, null, args);
+            } catch (NovaRuntimeException ignored) {
+                // scopeReceiver 上也找不到此方法 → 继续下面的回退
+            }
+        }
+        // 6. 回退: args[0].methodName(args[1:])
+        if (!args.isEmpty()) {
+            NovaValue target = args.get(0);
+            List<NovaValue> methodArgs = args.size() > 1 ? args.subList(1, args.size()) : Collections.emptyList();
+            return virtualDispatcher.invokeVirtualMethod(target, methodName, null, methodArgs);
+        }
+        throw new NovaRuntimeException(NovaException.ErrorKind.UNDEFINED, "未定义的函数: " + methodName, null);
+    }
+
+    // ============ Nova 运行时类分派 ============
+
+    /** Nova 运行时类分派: NovaPair/NovaDynamic/LambdaInvoker/AsyncHelper/ScopeFunctions/Collections/ClassInfo */
+    private NovaValue tryNovaRuntimeDispatch(String owner, String methodName, List<NovaValue> args) {
+        // NovaPair.of
+        if (NOVA_PAIR.equals(owner) && "of".equals(methodName) && args.size() == 2) {
+            return NovaPair.of(args.get(0), args.get(1));
+        }
+        // NovaDynamic
+        if (NOVA_DYNAMIC.equals(owner)) {
+            if (methodName.startsWith("invoke") && args.size() >= 2) {
+                NovaValue target = args.get(0);
+                String dynMethodName = args.get(1).asString();
+                List<NovaValue> dynArgs = args.size() > 2 ? args.subList(2, args.size()) : Collections.emptyList();
+                return virtualDispatcher.invokeVirtualMethod(target, dynMethodName, null, dynArgs);
+            }
+            if ("getMember".equals(methodName) && args.size() == 2) {
+                NovaValue target = args.get(0);
+                String memberName2 = args.get(1).asString();
+                if (target instanceof MirCallable) {
+                    NovaValue fieldVal = ((MirCallable) target).getCaptureField(memberName2);
+                    if (fieldVal != null) return fieldVal;
+                    if (dispatcher.scopeReceiver != null) {
+                        NovaValue resolved = dispatcher.resolveFieldOnValue(dispatcher.scopeReceiver, memberName2);
+                        if (resolved != null) return resolved;
+                    }
+                    NovaValue envVal = interp.getEnvironment().tryGet(memberName2);
+                    return envVal != null ? envVal : NovaNull.NULL;
+                }
+                NovaValue member = resolver.resolveMemberOnValue(target, memberName2, null);
+                return member != null ? member : NovaNull.NULL;
+            }
+            if ("setMember".equals(methodName) && args.size() == 3) {
+                NovaValue target = args.get(0);
+                String memberName2 = args.get(1).asString();
+                if (target instanceof NovaObject) {
+                    ((NovaObject) target).setField(memberName2, args.get(2));
+                } else if (target instanceof MirCallable) {
+                    if (((MirCallable) target).getCaptureField(memberName2) != null) {
+                        ((MirCallable) target).setCaptureField(memberName2, args.get(2));
+                    } else if (dispatcher.scopeReceiver instanceof NovaObject
+                            && ((NovaObject) dispatcher.scopeReceiver).hasField(memberName2)) {
+                        ((NovaObject) dispatcher.scopeReceiver).setField(memberName2, args.get(2));
+                    } else {
+                        interp.getEnvironment().redefine(memberName2, args.get(2), true);
+                    }
+                }
+                return NovaNull.UNIT;
+            }
+        }
+        // LambdaInvoker.invokeN
+        if (NOVA_LAMBDA_INVOKER.equals(owner) && methodName.startsWith("invoke") && !args.isEmpty()) {
+            NovaValue fn = args.get(0);
+            List<NovaValue> fnArgs = args.subList(1, args.size());
+            NovaCallable fnCallable = dispatcher.extractCallable(fn);
+            if (fnCallable != null) return fnCallable.call(interp, fnArgs);
+            return virtualDispatcher.invokeVirtualMethod(fn, "invoke", null, fnArgs);
+        }
+        // AsyncHelper.run
+        if (NOVA_ASYNC_HELPER.equals(owner) && "run".equals(methodName) && args.size() == 1) {
+            NovaCallable asyncCallable = dispatcher.extractCallable(args.get(0));
+            if (asyncCallable != null) return new NovaFuture(asyncCallable, interp);
+        }
+        // NovaScopeFunctions
+        if (NOVA_SCOPE_FUNCTIONS.equals(owner) && args.size() >= 2) {
+            NovaValue self = args.get(0);
+            NovaCallable lambda = dispatcher.extractCallable(args.get(1));
+            if (lambda != null) {
+                NovaValue scopeResult = dispatcher.tryExecuteScopeFunction(methodName, self, lambda);
+                if (scopeResult != null) return scopeResult;
+            }
+        }
+        // StdlibRegistry varargs 函数
+        StdlibRegistry.NativeFunctionInfo nfInfo = StdlibRegistry.getNativeFunction(methodName);
+        if (nfInfo != null && nfInfo.arity == -1 && args.size() == 1 && args.get(0) instanceof NovaList) {
+            List<NovaValue> actualArgs = ((NovaList) args.get(0)).getElements();
+            Object[] javaArgs = new Object[actualArgs.size()];
+            for (int i = 0; i < actualArgs.size(); i++) {
+                NovaValue arg = actualArgs.get(i);
+                if (arg instanceof NovaList) {
+                    NovaList list = (NovaList) arg;
+                    Object[] arr = new Object[list.size()];
+                    for (int j = 0; j < list.size(); j++) arr[j] = list.get(j).toJavaValue();
+                    javaArgs[i] = arr;
+                } else {
+                    javaArgs[i] = arg.toJavaValue();
+                }
+            }
+            return AbstractNovaValue.fromJava(nfInfo.impl.apply(javaArgs));
+        }
+        // Stdlib 扩展方法 / CollectionOps
+        if (owner.startsWith("com/novalang/runtime/stdlib/")
+                && (owner.endsWith("Extensions") || owner.endsWith("CollectionOps"))
+                && !args.isEmpty()) {
+            NovaValue receiver = args.get(0);
+            List<NovaValue> methodArgs = args.size() > 1 ? args.subList(1, args.size()) : Collections.emptyList();
+            // NovaList 常用方法快速路径：绕过 Java stdlib bridge
+            if (receiver instanceof NovaList) {
+                NovaList novaList = (NovaList) receiver;
+                if ("add".equals(methodName) && methodArgs.size() == 1) {
+                    novaList.add(methodArgs.get(0));
+                    return NovaBoolean.TRUE;
+                }
+                // HOF 批量快速路径：最后一个参数是 MirCallable 时尝试帧复用
+                int lambdaIdx = methodArgs.size() - 1;
+                if (lambdaIdx >= 0) {
+                    NovaCallable callable = dispatcher.extractCallable(methodArgs.get(lambdaIdx));
+                    if (callable instanceof MirCallable) {
+                        NovaValue extra = lambdaIdx > 0 ? methodArgs.get(0) : null;
+                        NovaValue r = mirInterp.batchExec(
+                                novaList, methodName, extra, (MirCallable) callable);
+                        if (r != null) return r;
+                    }
+                }
+            }
+            // NovaMap HOF 批量快速路径
+            if (receiver instanceof NovaMap) {
+                int lambdaIdx = methodArgs.size() - 1;
+                if (lambdaIdx >= 0) {
+                    NovaCallable callable = dispatcher.extractCallable(methodArgs.get(lambdaIdx));
+                    if (callable instanceof MirCallable) {
+                        NovaValue extra = lambdaIdx > 0 ? methodArgs.get(0) : null;
+                        NovaValue r = mirInterp.batchExecMap(
+                                (NovaMap) receiver, methodName, extra, (MirCallable) callable);
+                        if (r != null) return r;
+                    }
+                }
+            }
+            NovaCallable userExt = interp.findExtension(receiver, methodName);
+            if (userExt != null) {
+                return dispatcher.bindAndExecute(receiver, userExt, methodArgs);
+            }
+            List<NovaValue> effectiveMethodArgs = methodArgs;
+            Object receiverValue = receiver.toJavaValue();
+            if (receiverValue != null) {
+                StdlibRegistry.ExtensionMethodInfo extension = StdlibRegistry.findExtensionMethod(
+                        receiverValue.getClass(), methodName, -1);
+                if (extension != null && extension.isVarargs
+                        && methodArgs.size() == 1 && methodArgs.get(0) instanceof NovaList) {
+                    effectiveMethodArgs = ((NovaList) methodArgs.get(0)).getElements();
+                }
+            }
+            NovaValue stdlibMethod = resolver.tryStdlibFallback(receiver, methodName);
+            if (stdlibMethod instanceof NovaCallable) return ((NovaCallable) stdlibMethod).call(interp, effectiveMethodArgs);
+            return virtualDispatcher.invokeVirtualMethod(receiver, methodName, null, effectiveMethodArgs);
+        }
+        // NovaCollections 拦截
+        if (NOVA_COLLECTIONS.equals(owner)) {
+            if ("createRange".equals(methodName) && args.size() == 3) {
+                return new NovaRange(args.get(0).asInt(), args.get(1).asInt(), args.get(2).asBoolean());
+            }
+            if ("toIterable".equals(methodName) && args.size() == 1) return args.get(0);
+            if ("componentN".equals(methodName) && args.size() == 2) {
+                return handleComponentN(args.get(0), args.get(1).asInt());
+            }
+        }
+        // NovaClassInfo.fromJavaClass — 反射 API 拦截
+        if (NOVA_CLASS_INFO.equals(owner) && "fromJavaClass".equals(methodName) && args.size() == 1) {
+            return handleClassInfoFromJavaClass(args.get(0));
+        }
+        return null;
+    }
+
+    // ============ 环境 / 类 / 枚举 / Java 静态 ============
+
+    /** 从全局环境查找函数/callable */
+    private NovaValue tryEnvironmentLookup(String methodName, List<NovaValue> args) {
+        NovaValue funcVal = interp.getEnvironment().tryGet(methodName);
+        if (funcVal instanceof NovaCallable) return ((NovaCallable) funcVal).call(interp, args);
+        if (funcVal != null) {
+            NovaCallable extracted = dispatcher.extractCallable(funcVal);
+            if (extracted != null) return extracted.call(interp, args);
+        }
+        return null;
+    }
+
+    /** NovaRuntime.shared() 全局注册表回退 */
+    private NovaValue trySharedRegistryDispatchRule(StaticCall call) {
+        return trySharedRegistryLookup(call.methodName, call.args);
+    }
+
+    private NovaValue trySharedRegistryLookup(String methodName, List<NovaValue> args) {
+        NovaRuntime rt = NovaRuntime.shared();
+        // 短名查找
+        NovaRuntime.RegisteredEntry entry = rt.lookup(methodName);
+        if (entry != null) {
+            Object[] javaArgs = new Object[args.size()];
+            for (int i = 0; i < args.size(); i++) javaArgs[i] = args.get(i).toJavaValue();
+            Object result = entry.invoke(javaArgs);
+            return AbstractNovaValue.fromJava(result);
+        }
+        // 命名空间代理
+        NovaRuntime.NovaNamespace ns = rt.getNamespaceProxy(methodName);
+        if (ns != null && args.isEmpty()) {
+            return ns;
+        }
+        // JVM 全局桥接（其他插件 relocate 后的 NovaRuntime 注册的函数）
+        Object[] javaArgs2 = new Object[args.size()];
+        for (int i = 0; i < args.size(); i++) javaArgs2[i] = args.get(i).toJavaValue();
+        Object globalResult = NovaRuntime.callGlobal(methodName, javaArgs2);
+        if (globalResult != NovaRuntime.NOT_FOUND) {
+            return AbstractNovaValue.fromJava(globalResult);
+        }
+        return null;
+    }
+
+    /** Nova 类的静态方法/字段/构造器 */
+    private NovaValue tryClassStaticDispatch(String owner, String methodName, List<NovaValue> args) {
+        MirInterpreter.MirClassInfo classInfo = mirClasses.get(owner);
+        if (classInfo != null && classInfo.novaClass != null) {
+            NovaCallable method = classInfo.novaClass.findMethod(methodName);
+            if (method != null) return method.call(interp, args);
+            NovaValue staticField = classInfo.novaClass.getStaticField(methodName);
+            if (staticField instanceof NovaCallable) return ((NovaCallable) staticField).call(interp, args);
+        }
+        // 从环境查找类
+        String normalizedOwner = toJavaDotName(owner);
+        NovaValue classVal = interp.getEnvironment().tryGet(normalizedOwner);
+        if (classVal == null) classVal = interp.getEnvironment().tryGet(owner);
+        if (classVal instanceof NovaClass) {
+            NovaClass cls = (NovaClass) classVal;
+            NovaCallable method = cls.findMethod(methodName);
+            if (method != null) return method.call(interp, args);
+            NovaValue staticField = cls.getStaticField(methodName);
+            if (staticField instanceof NovaCallable) return ((NovaCallable) staticField).call(interp, args);
+        }
+        // 构造器调用
+        if (classInfo != null && SPECIAL_INIT.equals(methodName)) {
+            return classInfo.novaClass.call(interp, args);
+        }
+        return null;
+    }
+
+    /** 枚举静态方法 + Java 反射静态方法 */
+    private NovaValue tryEnumOrJavaStatic(String owner, String methodName, List<NovaValue> args) {
+        // 枚举 values/valueOf
+        if ("values".equals(methodName) || "valueOf".equals(methodName)) {
+            String normalizedOwner = toJavaDotName(owner);
+            NovaValue classVal = interp.getEnvironment().tryGet(normalizedOwner);
+            if (classVal == null) classVal = interp.getEnvironment().tryGet(owner);
+            if (classVal instanceof NovaEnum) {
+                NovaEnum enumType = (NovaEnum) classVal;
+                if ("values".equals(methodName)) return new NovaList(new ArrayList<>(enumType.values()));
+                if ("valueOf".equals(methodName) && args.size() == 1) {
+                    NovaEnumEntry entry = enumType.getEntry(args.get(0).asString());
+                    if (entry != null) return entry;
+                    throw new NovaRuntimeException(NovaException.ErrorKind.UNDEFINED, "未找到枚举常量 " + args.get(0).asString(), null);
+                }
+            }
+        }
+        // Java 静态方法调用（通过 MethodHandleCache 缓存）
+        try {
+            String dotName = toJavaDotName(owner);
+            Class<?> javaClass = classNameCache.computeIfAbsent(dotName, n -> {
+                try { return JavaInterop.loadClass(n); } catch (ClassNotFoundException e) { return null; }
+            });
+            if (javaClass == null) return null;
+            Object[] javaArgs = new Object[args.size()];
+            for (int i = 0; i < args.size(); i++) javaArgs[i] = args.get(i).toJavaValue();
+            Object result = MethodHandleCache.getInstance().invokeStatic(javaClass, methodName, javaArgs);
+            return AbstractNovaValue.fromJava(result);
+        } catch (NovaRuntimeException e) {
+            if (e.getMessage() != null && e.getMessage().startsWith("Static method not found:")) {
+                // method not found → fall through
+            } else {
+                throw e;
+            }
+        } catch (Throwable e) {
+            // 方法执行时的真实异常，包装后重抛
+            throw new NovaRuntimeException(NovaException.ErrorKind.JAVA_INTEROP,
+                    owner + "." + methodName + " 调用失败: " + e.getMessage(), null, e);
+        }
+        return null;
+    }
+
+    // ============ 辅助方法 ============
+
+    /** componentN 解构操作（委托 NovaValue.componentN，NovaObject 保留用户方法回退） */
+    private NovaValue handleComponentN(NovaValue target, int n) {
+        if (target instanceof NovaObject) {
+            NovaObject obj = (NovaObject) target;
+            if (obj.getNovaClass().getDataFieldOrder() != null) {
+                return obj.componentN(n);
+            }
+            // 非 data class：查找用户自定义 componentN 方法
+            NovaCallable method = obj.getMethod("component" + n);
+            if (method != null) return method.call(interp, Collections.singletonList(obj));
+            throw new NovaRuntimeException(NovaException.ErrorKind.TYPE_MISMATCH, "无法解构: " + obj.getNovaClass().getName(), null);
+        }
+        return target.componentN(n);
+    }
+
+    /** classOf() → NovaClassInfo */
+    private NovaValue handleClassInfoFromJavaClass(NovaValue arg) {
+        if (arg instanceof NovaClass) {
+            NovaClass cls = (NovaClass) arg;
+            Object cached = cls.getCachedClassInfo();
+            if (cached instanceof NovaValue) return (NovaValue) cached;
+            NovaClassInfo info = NovaClassInfo.fromNovaClass(cls);
+            cls.setCachedClassInfo(info);
+            return info;
+        }
+        if (arg instanceof ScalarizedNovaObject) {
+            NovaClass cls = ((ScalarizedNovaObject) arg).getNovaClass();
+            Object cached = cls.getCachedClassInfo();
+            if (cached instanceof NovaValue) return (NovaValue) cached;
+            NovaClassInfo info = NovaClassInfo.fromNovaClass(cls);
+            cls.setCachedClassInfo(info);
+            return info;
+        }
+        if (arg instanceof NovaObject) {
+            NovaClass cls = ((NovaObject) arg).getNovaClass();
+            Object cached = cls.getCachedClassInfo();
+            if (cached instanceof NovaValue) return (NovaValue) cached;
+            NovaClassInfo info = NovaClassInfo.fromNovaClass(cls);
+            cls.setCachedClassInfo(info);
+            return info;
+        }
+        if (arg instanceof NovaExternalObject) {
+            Object javaVal = arg.toJavaValue();
+            if (javaVal instanceof Class) return NovaClassInfo.fromJavaClass((Class<?>) javaVal);
+            return NovaClassInfo.fromJavaClass(javaVal.getClass());
+        }
+        return NovaNull.NULL;
+    }
+}

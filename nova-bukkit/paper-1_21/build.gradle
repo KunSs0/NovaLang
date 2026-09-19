@@ -1,0 +1,37 @@
+plugins {
+    id 'java-library'
+}
+
+description = 'NovaLang Paper 1.21.x Bukkit extensions'
+
+repositories {
+    maven { url 'https://repo.papermc.io/repository/maven-public/' }
+}
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_21
+    targetCompatibility = JavaVersion.VERSION_21
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+}
+
+dependencies {
+    api project(':nova-bukkit:core')
+    compileOnly('io.papermc.paper:paper-api:1.21.8-R0.1-SNAPSHOT')
+    testImplementation('io.papermc.paper:paper-api:1.21.8-R0.1-SNAPSHOT')
+    testImplementation('com.github.seeseemelk:MockBukkit-v1.21:3.133.2')
+}
+
+test {
+    useJUnitPlatform()
+    javaLauncher = javaToolchains.launcherFor {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+}
+
+jar {
+    archiveBaseName.set('NovaLang-Bukkit-Paper-1.21')
+}
+
+// Paper 1.21.x 独有扩展只在此模块编译，运行时通过 Requires 条件注册。

@@ -1,0 +1,733 @@
+package com.novalang.compiler.analysis.types;
+
+import com.novalang.runtime.resolution.JavaOverloadResolver;
+import com.novalang.runtime.metadata.NovaFunctionSignature;
+import com.novalang.runtime.metadata.NovaPropertySignature;
+
+import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
+import java.lang.reflect.Constructor;
+import java.lang.reflect.Field;
+import java.lang.reflect.GenericArrayType;
+import java.lang.reflect.ParameterizedType;
+import java.lang.reflect.Type;
+import java.lang.reflect.TypeVariable;
+import java.lang.reflect.WildcardType;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+
+/**
+ * Cached compile-time description of a Java type.
+ * This is compiler-only metadata and never participates in runtime hot paths.
+ */
+public final class JavaTypeDescriptor {
+
+    public enum Kind {
+        CLASS,
+        INTERFACE,
+        ENUM,
+        ANNOTATION
+    }
+
+    private final String simpleName;
+    private final String qualifiedName;
+    private final Kind kind;
+    private final String superClassQualifiedName;
+    private final List<String> interfaceQualifiedNames;
+    private final int typeParameterCount;
+    private final boolean functionalInterface;
+    private final Method samMethod;
+
+    public static final class JavaExecutableDescriptor {
+        private final List<NovaType> paramTypes;
+        private final NovaType returnType;
+        private final boolean varArgs;
+
+        JavaExecutableDescriptor(List<NovaType> paramTypes, NovaType returnType, boolean varArgs) {
+            this.paramTypes = paramTypes;
+            this.returnType = returnType;
+            this.varArgs = varArgs;
+        }
+
+        public List<NovaType> getParamTypes() {
+            return paramTypes;
+        }
+
+        public NovaType getReturnType() {
+            return returnType;
+        }
+
+        public boolean isVarArgs() {
+            return varArgs;
+        }
+    }
+
+    JavaTypeDescriptor(Class<?> javaClass, Method samMethod) {
+        this.simpleName = javaClass.getSimpleName();
+        this.qualifiedName = javaClass.getName();
+        this.kind = determineKind(javaClass);
+        Class<?> superClass = javaClass.getSuperclass();
+        this.superClassQualifiedName = superClass != null ? superClass.getName() : null;
+        List<String> interfaceNames = new ArrayList<String>();
+        for (Class<?> iface : javaClass.getInterfaces()) {
+            interfaceNames.add(iface.getName());
+        }
+        this.interfaceQualifiedNames = Collections.unmodifiableList(interfaceNames);
+        this.typeParameterCount = javaClass.getTypeParameters().length;
+        this.functionalInterface = samMethod != null;
+        this.samMethod = samMethod;
+    }
+
+    private static Kind determineKind(Class<?> javaClass) {
+        if (javaClass.isAnnotation()) return Kind.ANNOTATION;
+        if (javaClass.isEnum()) return Kind.ENUM;
+        if (javaClass.isInterface()) return Kind.INTERFACE;
+        return Kind.CLASS;
+    }
+
+    public String getSimpleName() {
+        return simpleName;
+    }
+
+    public String getQualifiedName() {
+        return qualifiedName;
+    }
+
+    /**
+     * 按简单名称解析当前 Java 类型声明的公开嵌套类。
+     *
+     * @param memberName 嵌套类简单名称
+     * @return 嵌套类描述；不存在或不可公开访问时返回 {@code null}
+     */
+    public JavaTypeDescriptor resolveNestedType(String memberName) {
+        if (memberName == null || memberName.isEmpty()) {
+            return null;
+        }
+        Class<?> javaClass = loadJavaClass();
+        if (javaClass == null) {
+            return null;
+        }
+        for (Class<?> nestedClass : javaClass.getDeclaredClasses()) {
+            if (memberName.equals(nestedClass.getSimpleName())
+                    && Modifier.isPublic(nestedClass.getModifiers())) {
+                return JavaTypeOracle.get().resolve(nestedClass.getName());
+            }
+        }
+        return null;
+    }
+
+    /**
+     * 按名称解析当前 Java 类型声明的公开静态字段。
+     *
+     * <p>该方法只检查字段本身，不把 JavaBean getter 当作属性。这样语义分析可以
+     * 在嵌套类型解析之前识别 Kotlin 编译器生成的 {@code Companion} 静态字段。</p>
+     *
+     * @param memberName 静态字段名称
+     * @param receiverTypeArguments 接收者类型参数，用于解析泛型字段类型
+     * @return 静态字段类型；不存在或不可公开访问时返回 {@code null}
+     */
+    public NovaType resolveStaticField(String memberName,
+                                       List<NovaTypeArgument> receiverTypeArguments) {
+        if (memberName == null || memberName.isEmpty()) {
+            return null;
+        }
+        Class<?> javaClass = loadJavaClass();
+        if (javaClass == null) {
+            return null;
+        }
+        try {
+            Field field = javaClass.getField(memberName);
+            if (!Modifier.isStatic(field.getModifiers())) {
+                return null;
+            }
+            Map<TypeVariable<?>, NovaType> typeBindings = receiverTypeBindings(
+                    javaClass, receiverTypeArguments);
+            NovaPropertySignature signature = field.getAnnotation(NovaPropertySignature.class);
+            if (signature != null) {
+                return novaTypeFromDescriptor(signature.type(), signature.nullable());
+            }
+            return toNovaType(field.getGenericType(), typeBindings);
+        } catch (NoSuchFieldException ignored) {
+            return null;
+        }
+    }
+
+    public NovaType resolveStaticField(String memberName) {
+        return resolveStaticField(memberName, Collections.<NovaTypeArgument>emptyList());
+    }
+
+    public Kind getKind() {
+        return kind;
+    }
+
+    public String getSuperClassQualifiedName() {
+        return superClassQualifiedName;
+    }
+
+    public List<String> getInterfaceQualifiedNames() {
+        return interfaceQualifiedNames;
+    }
+
+    public int getTypeParameterCount() {
+        return typeParameterCount;
+    }
+
+    public boolean isFunctionalInterface() {
+        return functionalInterface;
+    }
+
+    public Method getSamMethod() {
+        return samMethod;
+    }
+
+    public boolean isAssignableFrom(JavaTypeDescriptor other) {
+        if (other == null) return false;
+        try {
+            Class<?> target = loadClassWithoutInitialization(qualifiedName);
+            Class<?> source = loadClassWithoutInitialization(other.qualifiedName);
+            if (target == null || source == null) return false;
+            return target.isAssignableFrom(source);
+        } catch (ClassNotFoundException e) {
+            return false;
+        }
+    }
+
+    public FunctionNovaType toSamFunctionType(boolean nullable) {
+        if (samMethod == null) return null;
+        List<NovaType> paramTypes = new ArrayList<NovaType>();
+        for (Class<?> paramType : samMethod.getParameterTypes()) {
+            paramTypes.add(JavaTypeOracle.get().toNovaType(paramType, false));
+        }
+        NovaType returnType = JavaTypeOracle.get().toNovaType(samMethod.getReturnType(), false);
+        return new FunctionNovaType(null, paramTypes, returnType, nullable);
+    }
+
+    public JavaExecutableDescriptor resolveMethod(String methodName, List<NovaType> argTypes, boolean staticOnly) {
+        return resolveMethod(methodName, argTypes, staticOnly,
+                Collections.<NovaTypeArgument>emptyList());
+    }
+
+    public JavaExecutableDescriptor resolveMethod(String methodName, List<NovaType> argTypes,
+                                                   boolean staticOnly,
+                                                   List<NovaTypeArgument> receiverTypeArguments) {
+        return resolveMethod(methodName, argTypes, staticOnly, receiverTypeArguments, null);
+    }
+
+    /**
+     * 解析方法重载，并在 Nova 声明的参数类型参与匹配时保留当前语义分析的继承关系。
+     *
+     * <p>跨 Workspace 编译组导出的 Nova object 会由 Java 静态导入链接；其函数签名
+     * 来自 {@link NovaFunctionSignature}，参数却可能是当前组刚声明的 Nova 类。此时
+     * 不能丢弃 {@code superTypeRegistry}，否则接口实现关系无法参与重载匹配。</p>
+     */
+    public JavaExecutableDescriptor resolveMethod(String methodName, List<NovaType> argTypes,
+                                                   boolean staticOnly,
+                                                   List<NovaTypeArgument> receiverTypeArguments,
+                                                   SuperTypeRegistry superTypeRegistry) {
+        List<JavaExecutableDescriptor> novaOverloads = novaMethodOverloads(methodName, staticOnly);
+        if (!novaOverloads.isEmpty()) {
+            return selectNovaMethod(novaOverloads, argTypes, superTypeRegistry);
+        }
+        Class<?> javaClass = loadJavaClass();
+        if (javaClass == null) return null;
+        List<Method> candidates = new ArrayList<Method>();
+        for (Method method : javaClass.getMethods()) {
+            if (methodName.equals(method.getName())) {
+                candidates.add(method);
+            }
+        }
+        if (containsFunctionType(argTypes)) {
+            List<Method> functionCompatible = new ArrayList<Method>();
+            for (Method method : candidates) {
+                if (Modifier.isStatic(method.getModifiers()) != staticOnly) {
+                    continue;
+                }
+                if (isNovaMethodCompatible(method, argTypes, superTypeRegistry)) {
+                    functionCompatible.add(method);
+                }
+            }
+            if (functionCompatible.size() == 1) {
+                return toExecutableDescriptor(functionCompatible.get(0), receiverTypeArguments);
+            }
+            if (functionCompatible.isEmpty()) {
+                return null;
+            }
+            candidates = functionCompatible;
+        }
+        Method bestMethod = JavaOverloadResolver.selectBestMethod(
+                candidates, staticOnly, JavaTypeOracle.get().toJavaArgumentTypes(argTypes));
+        return bestMethod != null
+                ? toExecutableDescriptor(bestMethod, receiverTypeArguments)
+                : null;
+    }
+
+    /**
+     * 判断参数列表中是否包含 Nova 函数类型，函数类型不能降级为 Object 参与 Java 重载解析。
+     */
+    private boolean containsFunctionType(List<NovaType> argumentTypes) {
+        if (argumentTypes == null) {
+            return false;
+        }
+        for (NovaType argumentType : argumentTypes) {
+            if (argumentType instanceof FunctionNovaType) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 使用 Nova 类型系统检查 Java 方法是否接受给定参数，包括 SAM 函数参数。
+     */
+    private boolean isNovaMethodCompatible(Method method,
+                                            List<NovaType> argumentTypes,
+                                            SuperTypeRegistry superTypeRegistry) {
+        if (method == null || argumentTypes == null) {
+            return false;
+        }
+        Class<?>[] parameterClasses = method.getParameterTypes();
+        boolean varArgs = method.isVarArgs();
+        if (!varArgs && parameterClasses.length != argumentTypes.size()) {
+            return false;
+        }
+        int fixedCount = varArgs ? Math.max(parameterClasses.length - 1, 0) : parameterClasses.length;
+        if (argumentTypes.size() < fixedCount) {
+            return false;
+        }
+        for (int index = 0; index < argumentTypes.size(); index++) {
+            int parameterIndex = index;
+            if (varArgs && parameterIndex >= parameterClasses.length) {
+                parameterIndex = parameterClasses.length - 1;
+            }
+            if (parameterIndex < 0 || parameterIndex >= parameterClasses.length) {
+                return false;
+            }
+            Class<?> parameterClass = parameterClasses[parameterIndex];
+            if (varArgs && parameterIndex == parameterClasses.length - 1) {
+                parameterClass = parameterClass.getComponentType();
+            }
+            NovaType parameterType = JavaTypeOracle.get().toNovaType(parameterClass, false);
+            if (!TypeCompatibility.isAssignable(parameterType, argumentTypes.get(index), superTypeRegistry)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    public JavaExecutableDescriptor resolveConstructor(List<NovaType> argTypes) {
+        Class<?> javaClass = loadJavaClass();
+        if (javaClass == null) return null;
+        Constructor<?> bestCtor = JavaOverloadResolver.selectBestConstructor(
+                Arrays.asList(javaClass.getConstructors()),
+                JavaTypeOracle.get().toJavaArgumentTypes(argTypes));
+        return bestCtor != null ? toExecutableDescriptor(bestCtor) : null;
+    }
+
+    public List<JavaExecutableDescriptor> methodOverloads(String methodName, boolean staticOnly) {
+        return methodOverloads(methodName, staticOnly,
+                Collections.<NovaTypeArgument>emptyList());
+    }
+
+    public List<JavaExecutableDescriptor> methodOverloads(String methodName, boolean staticOnly,
+                                                         List<NovaTypeArgument> receiverTypeArguments) {
+        List<JavaExecutableDescriptor> novaOverloads = novaMethodOverloads(methodName, staticOnly);
+        if (!novaOverloads.isEmpty()) {
+            return novaOverloads;
+        }
+        Class<?> javaClass = loadJavaClass();
+        if (javaClass == null) return Collections.emptyList();
+        List<JavaExecutableDescriptor> overloads = new ArrayList<JavaExecutableDescriptor>();
+        for (Method method : javaClass.getMethods()) {
+            if (!methodName.equals(method.getName())) continue;
+            if (Modifier.isStatic(method.getModifiers()) != staticOnly) continue;
+            overloads.add(toExecutableDescriptor(method, receiverTypeArguments));
+        }
+        return overloads;
+    }
+
+    public List<JavaExecutableDescriptor> constructorOverloads() {
+        Class<?> javaClass = loadJavaClass();
+        if (javaClass == null) return Collections.emptyList();
+        List<JavaExecutableDescriptor> overloads = new ArrayList<JavaExecutableDescriptor>();
+        for (Constructor<?> ctor : javaClass.getConstructors()) {
+            overloads.add(toExecutableDescriptor(ctor));
+        }
+        return overloads;
+    }
+
+    /**
+     * 读取 Nova 字节码保留的源码函数签名。
+     *
+     * <p>生成的方法本身使用全 Object JVM 描述符，普通 Java 反射只能得到 Any。
+     * Workspace 跨编译组静态导入必须走此元数据，才能保留 Nova 返回类型。</p>
+     */
+    public List<JavaExecutableDescriptor> novaStaticMethodOverloads(String methodName) {
+        return novaMethodOverloads(methodName, true);
+    }
+
+    private List<JavaExecutableDescriptor> novaMethodOverloads(String methodName,
+                                                               boolean staticOnly) {
+        Class<?> javaClass = loadJavaClass();
+        if (javaClass == null) {
+            return Collections.emptyList();
+        }
+        List<JavaExecutableDescriptor> overloads = new ArrayList<JavaExecutableDescriptor>();
+        for (Method method : javaClass.getDeclaredMethods()) {
+            if (!methodName.equals(method.getName())
+                    || Modifier.isStatic(method.getModifiers()) != staticOnly) {
+                continue;
+            }
+            NovaFunctionSignature signature = method.getAnnotation(NovaFunctionSignature.class);
+            if (signature == null) {
+                continue;
+            }
+            List<NovaType> parameterTypes = new ArrayList<NovaType>();
+            boolean[] nullableParameters = signature.parameterNullable();
+            int parameterIndex = 0;
+            for (String descriptor : signature.parameterTypes()) {
+                boolean nullable = parameterIndex < nullableParameters.length
+                        && nullableParameters[parameterIndex];
+                parameterTypes.add(novaTypeFromDescriptor(descriptor, nullable));
+                parameterIndex++;
+            }
+            NovaType returnType = novaTypeFromDescriptor(
+                    signature.returnType(), signature.returnNullable());
+            overloads.add(new JavaExecutableDescriptor(
+                    parameterTypes, returnType, signature.vararg()));
+        }
+        return overloads;
+    }
+
+    private JavaExecutableDescriptor selectNovaMethod(List<JavaExecutableDescriptor> overloads,
+                                                       List<NovaType> argumentTypes,
+                                                       SuperTypeRegistry superTypeRegistry) {
+        for (JavaExecutableDescriptor overload : overloads) {
+            List<NovaType> parameterTypes = overload.getParamTypes();
+            int minimumCount = overload.isVarArgs()
+                    ? Math.max(parameterTypes.size() - 1, 0)
+                    : parameterTypes.size();
+            if (argumentTypes.size() < minimumCount) {
+                continue;
+            }
+            if (!overload.isVarArgs() && argumentTypes.size() != parameterTypes.size()) {
+                continue;
+            }
+            boolean compatible = true;
+            for (int index = 0; index < argumentTypes.size(); index++) {
+                int parameterIndex = index;
+                if (parameterIndex >= parameterTypes.size()) {
+                    parameterIndex = parameterTypes.size() - 1;
+                }
+                if (parameterIndex < 0 || !TypeCompatibility.isAssignable(
+                        parameterTypes.get(parameterIndex), argumentTypes.get(index), superTypeRegistry)) {
+                    compatible = false;
+                    break;
+                }
+            }
+            if (compatible) {
+                return overload;
+            }
+        }
+        return null;
+    }
+
+    private NovaType novaTypeFromDescriptor(String descriptor, boolean nullable) {
+        if (descriptor == null || descriptor.isEmpty()) {
+            return NovaTypes.DYNAMIC.withNullable(nullable);
+        }
+        if ("V".equals(descriptor)) {
+            return NovaTypes.UNIT;
+        }
+        if ("I".equals(descriptor)) {
+            return NovaTypes.INT.withNullable(nullable);
+        }
+        if ("J".equals(descriptor)) {
+            return NovaTypes.LONG.withNullable(nullable);
+        }
+        if ("F".equals(descriptor)) {
+            return NovaTypes.FLOAT.withNullable(nullable);
+        }
+        if ("D".equals(descriptor)) {
+            return NovaTypes.DOUBLE.withNullable(nullable);
+        }
+        if ("Z".equals(descriptor)) {
+            return NovaTypes.BOOLEAN.withNullable(nullable);
+        }
+        if ("C".equals(descriptor)) {
+            return NovaTypes.CHAR.withNullable(nullable);
+        }
+        if ("Ljava/lang/Object;".equals(descriptor)) {
+            return NovaTypes.DYNAMIC.withNullable(nullable);
+        }
+        if (descriptor.charAt(0) == 'L' && descriptor.endsWith(";")) {
+            String qualifiedName = descriptor.substring(1, descriptor.length() - 1)
+                    .replace('/', '.');
+            JavaTypeDescriptor resolved = JavaTypeOracle.get().resolve(qualifiedName);
+            if (resolved != null) {
+                return new JavaClassNovaType(resolved, nullable);
+            }
+        }
+        return NovaTypes.DYNAMIC.withNullable(nullable);
+    }
+
+    public NovaType resolveProperty(String memberName, boolean staticOnly) {
+        return resolveProperty(memberName, staticOnly,
+                Collections.<NovaTypeArgument>emptyList());
+    }
+
+    public NovaType resolveProperty(String memberName, boolean staticOnly,
+                                    List<NovaTypeArgument> receiverTypeArguments) {
+        Class<?> javaClass = loadJavaClass();
+        if (javaClass == null || memberName == null || memberName.isEmpty()) {
+            return null;
+        }
+        Map<TypeVariable<?>, NovaType> typeBindings = receiverTypeBindings(
+                javaClass, receiverTypeArguments);
+        try {
+            Field field = javaClass.getField(memberName);
+            if (Modifier.isStatic(field.getModifiers()) == staticOnly) {
+                NovaPropertySignature signature = field.getAnnotation(NovaPropertySignature.class);
+                if (signature != null) {
+                    return novaTypeFromDescriptor(signature.type(), signature.nullable());
+                }
+                return toNovaType(field.getGenericType(), typeBindings);
+            }
+        } catch (NoSuchFieldException ignored) {
+        }
+
+        String capitalized = Character.toUpperCase(memberName.charAt(0)) + memberName.substring(1);
+        String[] getterNames = { "get" + capitalized, "is" + capitalized, memberName };
+        for (String getterName : getterNames) {
+            try {
+                Method getter = javaClass.getMethod(getterName);
+                if (Modifier.isStatic(getter.getModifiers()) != staticOnly) {
+                    continue;
+                }
+                if ("is".concat(capitalized).equals(getterName)
+                        && getter.getReturnType() != Boolean.TYPE
+                        && getter.getReturnType() != Boolean.class) {
+                    continue;
+                }
+                return toNovaType(getter.getGenericReturnType(), typeBindings);
+            } catch (NoSuchMethodException ignored) {
+            }
+        }
+        return null;
+    }
+
+    /**
+     * 判断 Java 属性是否存在可写入口。公开且非 final 的字段，或单参数 JavaBean
+     * {@code setXxx(...)} 方法，都会被视为可写属性。
+     */
+    public boolean hasWritableProperty(String memberName, boolean staticOnly) {
+        Class<?> javaClass = loadJavaClass();
+        if (javaClass == null || memberName == null || memberName.isEmpty()) {
+            return false;
+        }
+        try {
+            Field field = javaClass.getField(memberName);
+            int modifiers = field.getModifiers();
+            if (Modifier.isStatic(modifiers) == staticOnly && !Modifier.isFinal(modifiers)) {
+                return true;
+            }
+        } catch (NoSuchFieldException ignored) {
+        }
+
+        String setterName = "set" + Character.toUpperCase(memberName.charAt(0))
+                + memberName.substring(1);
+        for (Method method : javaClass.getMethods()) {
+            if (setterName.equals(method.getName())
+                    && method.getParameterCount() == 1
+                    && Modifier.isStatic(method.getModifiers()) == staticOnly) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 按赋值表达式的静态类型解析 Java 属性 setter。返回值的第一个参数类型就是
+     * setter 接受的属性类型；不存在匹配 setter 时返回 {@code null}。
+     */
+    public JavaExecutableDescriptor resolvePropertySetter(String memberName,
+                                                           NovaType valueType,
+                                                           boolean staticOnly) {
+        return resolvePropertySetter(memberName, valueType, staticOnly,
+                Collections.<NovaTypeArgument>emptyList());
+    }
+
+    public JavaExecutableDescriptor resolvePropertySetter(String memberName,
+                                                           NovaType valueType,
+                                                           boolean staticOnly,
+                                                           List<NovaTypeArgument> receiverTypeArguments) {
+        Class<?> javaClass = loadJavaClass();
+        if (javaClass == null || memberName == null || memberName.isEmpty()) {
+            return null;
+        }
+        Map<TypeVariable<?>, NovaType> typeBindings = receiverTypeBindings(
+                javaClass, receiverTypeArguments);
+        try {
+            Field field = javaClass.getField(memberName);
+            int modifiers = field.getModifiers();
+            if (Modifier.isStatic(modifiers) == staticOnly && !Modifier.isFinal(modifiers)) {
+                NovaPropertySignature signature = field.getAnnotation(NovaPropertySignature.class);
+                NovaType fieldType;
+                if (signature != null) {
+                    fieldType = novaTypeFromDescriptor(signature.type(), signature.nullable());
+                } else {
+                    fieldType = toNovaType(field.getGenericType(), typeBindings);
+                }
+                List<NovaType> parameterTypes = Collections.singletonList(fieldType);
+                return new JavaExecutableDescriptor(parameterTypes, NovaTypes.UNIT, false);
+            }
+        } catch (NoSuchFieldException ignored) {
+        }
+
+        String setterName = "set" + Character.toUpperCase(memberName.charAt(0))
+                + memberName.substring(1);
+        List<Method> candidates = new ArrayList<Method>();
+        for (Method method : javaClass.getMethods()) {
+            if (setterName.equals(method.getName()) && method.getParameterCount() == 1) {
+                candidates.add(method);
+            }
+        }
+        Class<?>[] argumentTypes = JavaTypeOracle.get().toJavaArgumentTypes(
+                Collections.singletonList(valueType));
+        Method bestMethod = JavaOverloadResolver.selectBestMethod(
+                candidates, staticOnly, argumentTypes);
+        return bestMethod != null
+                ? toExecutableDescriptor(bestMethod, receiverTypeArguments)
+                : null;
+    }
+
+    private JavaExecutableDescriptor toExecutableDescriptor(Method method) {
+        return toExecutableDescriptor(method, Collections.<NovaTypeArgument>emptyList());
+    }
+
+    private JavaExecutableDescriptor toExecutableDescriptor(
+            Method method, List<NovaTypeArgument> receiverTypeArguments) {
+        Class<?> javaClass = loadJavaClass();
+        Map<TypeVariable<?>, NovaType> typeBindings = receiverTypeBindings(
+                javaClass, receiverTypeArguments);
+        List<NovaType> paramTypes = new ArrayList<NovaType>();
+        for (Type paramType : method.getGenericParameterTypes()) {
+            paramTypes.add(toNovaType(paramType, typeBindings));
+        }
+        NovaType returnType = toNovaType(method.getGenericReturnType(), typeBindings);
+        return new JavaExecutableDescriptor(paramTypes, returnType, method.isVarArgs());
+    }
+
+    private Map<TypeVariable<?>, NovaType> receiverTypeBindings(
+            Class<?> javaClass, List<NovaTypeArgument> receiverTypeArguments) {
+        Map<TypeVariable<?>, NovaType> bindings =
+                new LinkedHashMap<TypeVariable<?>, NovaType>();
+        if (javaClass == null || receiverTypeArguments == null) {
+            return bindings;
+        }
+        TypeVariable<?>[] typeParameters = javaClass.getTypeParameters();
+        int count = Math.min(typeParameters.length, receiverTypeArguments.size());
+        for (int i = 0; i < count; i++) {
+            NovaTypeArgument argument = receiverTypeArguments.get(i);
+            NovaType argumentType = argument != null ? argument.getType() : null;
+            if (argumentType != null) {
+                bindings.put(typeParameters[i], argumentType);
+            }
+        }
+        return bindings;
+    }
+
+    private NovaType toNovaType(Type type, Map<TypeVariable<?>, NovaType> typeBindings) {
+        if (type instanceof Class<?>) {
+            return JavaTypeOracle.get().toNovaType((Class<?>) type, false);
+        }
+        if (type instanceof TypeVariable<?>) {
+            NovaType boundType = typeBindings.get(type);
+            return boundType != null ? boundType : NovaTypes.ANY;
+        }
+        if (type instanceof ParameterizedType) {
+            ParameterizedType parameterizedType = (ParameterizedType) type;
+            Type rawType = parameterizedType.getRawType();
+            if (!(rawType instanceof Class<?>)) {
+                return NovaTypes.ANY;
+            }
+            List<NovaTypeArgument> arguments = new ArrayList<NovaTypeArgument>();
+            for (Type argument : parameterizedType.getActualTypeArguments()) {
+                arguments.add(NovaTypeArgument.invariant(
+                        toNovaType(argument, typeBindings)));
+            }
+            NovaType rawNovaType = JavaTypeOracle.get().toNovaType(
+                    (Class<?>) rawType, false);
+            if (rawNovaType instanceof JavaClassNovaType) {
+                JavaClassNovaType javaType = (JavaClassNovaType) rawNovaType;
+                return new JavaClassNovaType(javaType.getDescriptor(), arguments, false);
+            }
+            if (rawNovaType instanceof ClassNovaType) {
+                return new ClassNovaType(rawNovaType.getTypeName(), arguments, false);
+            }
+            return rawNovaType;
+        }
+        if (type instanceof WildcardType) {
+            WildcardType wildcardType = (WildcardType) type;
+            Type[] upperBounds = wildcardType.getUpperBounds();
+            if (upperBounds.length > 0) {
+                return toNovaType(upperBounds[0], typeBindings);
+            }
+            return NovaTypes.ANY;
+        }
+        if (type instanceof GenericArrayType) {
+            GenericArrayType arrayType = (GenericArrayType) type;
+            NovaType elementType = toNovaType(
+                    arrayType.getGenericComponentType(), typeBindings);
+            return new ClassNovaType("Array",
+                    Collections.singletonList(NovaTypeArgument.invariant(elementType)), false);
+        }
+        return NovaTypes.ANY;
+    }
+
+    private JavaExecutableDescriptor toExecutableDescriptor(Constructor<?> constructor) {
+        List<NovaType> paramTypes = new ArrayList<NovaType>();
+        for (Class<?> paramType : constructor.getParameterTypes()) {
+            paramTypes.add(JavaTypeOracle.get().toNovaType(paramType, false));
+        }
+        NovaType returnType = new JavaClassNovaType(this, false);
+        return new JavaExecutableDescriptor(paramTypes, returnType, constructor.isVarArgs());
+    }
+
+    private Class<?> loadJavaClass() {
+        try {
+            ClassLoader contextLoader = Thread.currentThread().getContextClassLoader();
+            if (contextLoader != null) {
+                return Class.forName(qualifiedName, false, contextLoader);
+            }
+            return Class.forName(qualifiedName, false, JavaTypeDescriptor.class.getClassLoader());
+        } catch (ClassNotFoundException e) {
+            return null;
+        }
+    }
+
+    private static Class<?> loadClassWithoutInitialization(String name) throws ClassNotFoundException {
+        ClassLoader contextLoader = Thread.currentThread().getContextClassLoader();
+        if (contextLoader != null) {
+            return Class.forName(name, false, contextLoader);
+        }
+        return Class.forName(name, false, JavaTypeDescriptor.class.getClassLoader());
+    }
+
+    static Method findSamMethod(Class<?> javaClass) {
+        if (!javaClass.isInterface()) return null;
+        Method candidate = null;
+        for (Method method : javaClass.getMethods()) {
+            if (Modifier.isStatic(method.getModifiers())) continue;
+            if (method.isDefault()) continue;
+            if (method.getDeclaringClass() == Object.class) continue;
+            if (!Modifier.isAbstract(method.getModifiers())) continue;
+            if (candidate != null) return null;
+            candidate = method;
+        }
+        return candidate;
+    }
+}

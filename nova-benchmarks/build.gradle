@@ -1,0 +1,180 @@
+plugins {
+    id 'java-library'
+    id 'me.champeau.jmh' version '0.7.2'
+}
+
+description = 'Nova vs Fluxon vs Nashorn vs GraalJS vs Groovy vs JEXL vs Javet(V8) vs Java performance benchmarks'
+
+def benchmarksEnabled = providers.gradleProperty('enableBenchmarks')
+        .map { it.toBoolean() }
+        .orElse(false)
+        .get()
+
+if (benchmarksEnabled) {
+    // GraalVM Polyglot 24.x requires Java 17 bytecode, so benchmarks must opt
+    // into a newer toolchain than the rest of the project.
+    java {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+
+    tasks.withType(JavaCompile).configureEach {
+        options.release = 17
+    }
+} else {
+    // Benchmarks are opt-in and should not participate in normal CI/release builds.
+    tasks.withType(JavaCompile).configureEach {
+        enabled = false
+    }
+    tasks.withType(Test).configureEach {
+        enabled = false
+    }
+    tasks.matching { task ->
+        task.name == 'jmh' || task.name.startsWith('jmh')
+    }.configureEach {
+        enabled = false
+    }
+}
+
+def resolveOptionalPath = { String propertyName, String defaultPath ->
+    def value = project.findProperty(propertyName)
+    if (!value) {
+        return file(defaultPath)
+    }
+    File explicit = new File(value.toString())
+    return explicit.isAbsolute() ? explicit : project.file(value.toString())
+}
+
+def fluxonCoreJar = providers.gradleProperty('fluxonCoreJar')
+        .orElse('F:/minecraft/bukkit/fluxon/core/build/libs/fluxon-core-1.6.31.jar')
+        .get()
+
+if (benchmarksEnabled && !file(fluxonCoreJar).isFile()) {
+    throw new GradleException("Fluxon core JAR not found: ${fluxonCoreJar}. Build F:/minecraft/bukkit/fluxon with :core:jar or pass -PfluxonCoreJar=<path>.")
+}
+
+dependencies {
+    implementation project(':nova-runtime')
+    implementation 'org.openjdk.nashorn:nashorn-core:15.4'
+    implementation 'org.graalvm.polyglot:polyglot:24.1.1'
+    implementation 'org.graalvm.polyglot:js:24.1.1'
+    implementation 'org.apache.groovy:groovy:4.0.23'
+    implementation 'org.apache.commons:commons-jexl3:3.4.0'
+    implementation 'com.caoccao.javet:javet:5.0.5'
+    implementation 'com.caoccao.javet:javet-v8-windows-x86_64:5.0.5'
+    implementation files(fluxonCoreJar)
+    implementation 'org.ow2.asm:asm:9.5'
+    implementation 'it.unimi.dsi:fastutil:8.5.9'
+    implementation 'com.google.code.gson:gson:2.11.0'
+    implementation 'com.google.guava:guava:33.3.1-jre'
+    implementation 'org.jetbrains:annotations:24.0.0'
+
+    jmh 'org.openjdk.jmh:jmh-core:1.37'
+    jmhAnnotationProcessor 'org.openjdk.jmh:jmh-generator-annprocess:1.37'
+}
+
+// JMH includes 支持命令行覆盖: -PjmhFilter=JavaInteropJmhBenchmark
+def jmhFilter = providers.gradleProperty('jmhFilter')
+        .orElse('ScriptEngineComparisonJmhBenchmark|JavaInteropJmhBenchmark')
+        .get()
+
+jmh {
+    includes = [jmhFilter]
+    benchmarkMode = ['avgt']
+    warmupIterations = 5
+    iterations = 8
+    fork = 1
+    timeOnIteration = '500ms'
+    resultFormat = 'JSON'
+    resultsFile = resolveOptionalPath('jmhResultFile', "$buildDir/benchmarks/script-engines-jmh.json")
+    humanOutputFile = resolveOptionalPath('jmhHumanFile', "$buildDir/benchmarks/script-engines-jmh.txt")
+}
+
+tasks.register('jmhScriptComparison') {
+    group = 'verification'
+    description = 'Runs the script engine comparison JMH benchmarks (~15 min).'
+    dependsOn tasks.named('jmh')
+}
+
+tasks.register('jmhInterop') {
+    group = 'verification'
+    description = 'Runs the Java interop JMH benchmarks only (~12 min).'
+    doFirst {
+        jmh.includes = ['JavaInteropJmhBenchmark']
+    }
+    finalizedBy tasks.named('jmh')
+}
+
+tasks.register('jmhCompiledInterop') {
+    group = 'verification'
+    description = 'Runs compiled Nova Java interop business benchmarks (10000 calls per scenario).'
+    doFirst {
+        jmh.includes = ['CompiledJavaInteropJmhBenchmark']
+        jmh.resultsFile = resolveOptionalPath('compiledInteropJmhResultFile', "$buildDir/benchmarks/compiled-java-interop-jmh.json")
+        jmh.humanOutputFile = resolveOptionalPath('compiledInteropJmhHumanFile', "$buildDir/benchmarks/compiled-java-interop-jmh.txt")
+    }
+    finalizedBy tasks.named('jmh')
+}
+
+tasks.register('jmhScript') {
+    group = 'verification'
+    description = 'Runs the script computation JMH benchmarks only (~15 min).'
+    doFirst {
+        jmh.includes = ['ScriptEngineComparisonJmhBenchmark']
+    }
+    finalizedBy tasks.named('jmh')
+}
+
+tasks.register('compareScriptEngineJmh') {
+    group = 'verification'
+    description = 'Compares two script-engine JMH JSON reports. Use -Pbaseline=... -Pcandidate=...'
+
+    doLast {
+        def baselineProp = project.findProperty('baseline')
+        def candidateProp = project.findProperty('candidate')
+        if (!baselineProp || !candidateProp) {
+            throw new GradleException('Usage: gradlew :nova-benchmarks:compareScriptEngineJmh -Pbaseline=path -Pcandidate=path')
+        }
+
+        def resolveReport = { Object value ->
+            File report = new File(value.toString())
+            if (report.isAbsolute()) {
+                return report
+            }
+            File rootRelative = rootProject.file(value.toString())
+            return rootRelative.exists() ? rootRelative : project.file(value.toString())
+        }
+
+        File baselineFile = resolveReport(baselineProp)
+        File candidateFile = resolveReport(candidateProp)
+        if (!baselineFile.isFile()) {
+            throw new GradleException("Baseline report not found: ${baselineFile}")
+        }
+        if (!candidateFile.isFile()) {
+            throw new GradleException("Candidate report not found: ${candidateFile}")
+        }
+
+        def parseScores = { File report ->
+            new groovy.json.JsonSlurper().parse(report).collectEntries { entry ->
+                def name = entry.benchmark.tokenize('.').last() + '[' + entry.params.scenario + ']'
+                [(name): entry.primaryMetric.score as BigDecimal]
+            }
+        }
+
+        def baselineScores = parseScores(baselineFile)
+        def candidateScores = parseScores(candidateFile)
+        def benchmarkNames = (baselineScores.keySet() + candidateScores.keySet()).unique().sort()
+
+        println String.format('%-48s %14s %14s %12s', 'Benchmark', 'Baseline', 'Candidate', 'Delta')
+        benchmarkNames.each { name ->
+            BigDecimal baseline = baselineScores[name]
+            BigDecimal candidate = candidateScores[name]
+            if (baseline == null || candidate == null) {
+                println String.format('%-48s %14s %14s %12s', name, baseline ?: 'N/A', candidate ?: 'N/A', 'N/A')
+                return
+            }
+            BigDecimal delta = ((candidate - baseline) / baseline) * 100
+            println String.format('%-48s %14.3f %14.3f %11.2f%%', name, baseline, candidate, delta)
+        }
+    }
+}

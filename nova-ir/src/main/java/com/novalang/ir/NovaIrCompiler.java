@@ -1,0 +1,267 @@
+package com.novalang.ir;
+
+import com.novalang.compiler.ast.decl.Program;
+import com.novalang.compiler.lexer.Lexer;
+import com.novalang.compiler.parser.Parser;
+import com.novalang.ir.pass.PassPipeline;
+import com.novalang.runtime.host.JavaTypes;
+
+import org.objectweb.asm.ClassReader;
+import org.objectweb.asm.ClassWriter;
+import org.objectweb.asm.commons.ClassRemapper;
+import org.objectweb.asm.commons.Remapper;
+
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.PrintStream;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+import com.novalang.compiler.compiler.NovaCompilerApi;
+
+/**
+ * 基于 IR（HIR + MIR）的编译器门面。
+ * 管线：源码 → Lexer → Parser → AST → HIR → MIR → JVM 字节码。
+ */
+public class NovaIrCompiler implements NovaCompilerApi {
+
+    private PrintStream out = System.out;
+    private final PassPipeline pipeline;
+    private String relocatePrefix;
+
+    public NovaIrCompiler() {
+        this.pipeline = PassPipeline.createDefault();
+    }
+
+    public NovaIrCompiler(PassPipeline pipeline) {
+        this.pipeline = pipeline;
+    }
+
+    public void setOut(PrintStream out) {
+        this.out = out;
+    }
+
+    public PassPipeline getPipeline() {
+        return pipeline;
+    }
+
+    /**
+     * 启用脚本模式：未解析变量通过 NovaScriptContext 读取，main() 返回 Object。
+     */
+    public void setScriptMode(boolean scriptMode) {
+        pipeline.setScriptMode(scriptMode);
+    }
+
+    /**
+     * 启用语义分析（在 AST→HIR 之前运行 SemanticAnalyzer）。
+     */
+    public void setEnableSemanticAnalysis(boolean enable) {
+        pipeline.setEnableSemanticAnalysis(enable);
+    }
+
+    /**
+     * 设置语义分析严格模式（strict=true 时 ERROR 级诊断会中止编译）。
+     */
+    public void setStrictSemanticMode(boolean strict) {
+        pipeline.setStrictSemanticMode(strict);
+    }
+
+    /**
+     * 拒绝未声明的顶层函数调用，供封闭 Workspace 编译边界使用。
+     */
+    public void setRejectUnknownGlobalCalls(boolean rejectUnknownGlobalCalls) {
+        pipeline.setRejectUnknownGlobalCalls(rejectUnknownGlobalCalls);
+    }
+
+    public void setJavaTypes(JavaTypes javaTypes, String namespace) {
+        pipeline.setJavaTypes(javaTypes, namespace);
+    }
+
+    /**
+     * 设置 relocate 前缀。
+     * 当运行时包被 shadow relocate 时（如 {@code relocate("com.novalang.", "com.foo.novalang.")}），
+     * 传入前缀 {@code "com/foo/"}，生成的字节码会自动重映射对 {@code com/novalang/} 包的引用。
+     *
+     * @param prefix 内部名格式的前缀，如 {@code "com/foo/"}, 空串或 null 表示不重映射
+     */
+    public void setRelocatePrefix(String prefix) {
+        this.relocatePrefix = (prefix == null || prefix.isEmpty()) ? null : prefix;
+    }
+
+    /**
+     * 编译源代码。
+     *
+     * @param source   源代码
+     * @param fileName 文件名
+     * @return className → bytecode 映射
+     */
+    public Map<String, byte[]> compile(String source, String fileName) {
+        Lexer lexer = new Lexer(source, fileName);
+        Parser parser = new Parser(lexer, fileName);
+        Program program = parser.parse();
+        return pipeline.execute(program);
+    }
+
+    /**
+     * 编译可由其他 ClassLoader 独立加载的字节码产物。
+     *
+     * <p>该方法与 {@link #compileAndLoad(String, String, ClassLoader)} 使用同一套重定位
+     * 规则，但不会定义 Class，适用于跨 Workspace 缓存字节码。</p>
+     *
+     * @param source 源代码
+     * @param fileName 源文件名
+     * @return 已完成重定位的 className 到字节码映射
+     */
+    public Map<String, byte[]> compileArtifact(String source, String fileName) {
+        Map<String, byte[]> classes = compile(source, fileName);
+        if (relocatePrefix != null) {
+            return remapBytecode(classes);
+        }
+        return classes;
+    }
+
+    /** 编译已经完成模块组织的 AST，保留节点来源位置并应用重定位。 */
+    public Map<String, byte[]> compileArtifact(Program program) {
+        Map<String, byte[]> classes = pipeline.execute(program);
+        if (relocatePrefix != null) {
+            return remapBytecode(classes);
+        }
+        return classes;
+    }
+
+    /**
+     * 编译文件。
+     */
+    public Map<String, byte[]> compileFile(File file) throws IOException {
+        String source = new String(Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8);
+        return compile(source, file.getName());
+    }
+
+    /**
+     * 编译并保存到目录。
+     */
+    public void compileAndSave(String source, String fileName, File outDir) throws IOException {
+        Map<String, byte[]> classes = compile(source, fileName);
+
+        for (Map.Entry<String, byte[]> entry : classes.entrySet()) {
+            String className = entry.getKey();
+            byte[] bytecode = entry.getValue();
+
+            String path = className.replace('/', File.separatorChar) + ".class";
+            File classFile = new File(outDir, path);
+            classFile.getParentFile().mkdirs();
+
+            try (FileOutputStream fos = new FileOutputStream(classFile)) {
+                fos.write(bytecode);
+            }
+
+            out.println("Generated: " + classFile.getPath());
+        }
+    }
+
+    /**
+     * 编译并加载类。
+     *
+     * @param source   源代码
+     * @param fileName 文件名
+     * @return 加载的类（类名 → Class 对象）
+     */
+    public Map<String, Class<?>> compileAndLoad(String source, String fileName) {
+        return compileAndLoad(source, fileName, null);
+    }
+
+    /**
+     * 编译并加载类。
+     *
+     * @param source 源代码
+     * @param fileName 文件名
+     * @param scriptClassLoader 脚本级 ClassLoader，用于解析仅在脚本依赖中可见的 Java 类型
+     * @return 加载的类（类名 → Class 对象）
+     */
+    public Map<String, Class<?>> compileAndLoad(String source, String fileName, ClassLoader scriptClassLoader) {
+        ClassLoader previousContextLoader = Thread.currentThread().getContextClassLoader();
+        if (scriptClassLoader != null) {
+            Thread.currentThread().setContextClassLoader(scriptClassLoader);
+        }
+        Map<String, byte[]> classes;
+        try {
+            classes = compileArtifact(source, fileName);
+        } finally {
+            Thread.currentThread().setContextClassLoader(previousContextLoader);
+        }
+
+        // 先快照类名列表，因为 findClass() 中 remove() 会修改 classes map
+        List<String> classNames = new ArrayList<>(classes.keySet());
+        NovaClassLoader loader = new NovaClassLoader(classes, scriptClassLoader);
+
+        Map<String, Class<?>> loadedClasses = new HashMap<>();
+        for (String className : classNames) {
+            try {
+                loadedClasses.put(className, loader.loadClass(className));
+            } catch (ClassNotFoundException e) {
+                throw new RuntimeException("Failed to load class: " + className, e);
+            }
+        }
+        return loadedClasses;
+    }
+
+    /**
+     * 用 ASM ClassRemapper 重映射生成字节码中对 com/novalang/ 包的引用。
+     * relocatePrefix 由 Nova.configureRelocate 设置，格式为完整的替换前缀
+     * （如 "com/foo/novalang/"），将 "com/novalang/" 替换为该前缀。
+     */
+    private Map<String, byte[]> remapBytecode(Map<String, byte[]> classes) {
+        // 用 StringBuilder 构建标准前缀，避免字面量被 shadow relocate 匹配
+        final String standardBase = new StringBuilder("com/").append("novalang/").toString();
+        final String target = relocatePrefix;
+        Remapper remapper = new Remapper() {
+            @Override
+            public String map(String internalName) {
+                if (internalName.startsWith(standardBase)) {
+                    return target + internalName.substring(standardBase.length());
+                }
+                return internalName;
+            }
+        };
+
+        Map<String, byte[]> remapped = new HashMap<>();
+        for (Map.Entry<String, byte[]> entry : classes.entrySet()) {
+            ClassReader reader = new ClassReader(entry.getValue());
+            ClassWriter writer = new ClassWriter(0);
+            ClassRemapper cr = new ClassRemapper(writer, remapper);
+            reader.accept(cr, 0);
+            remapped.put(entry.getKey(), writer.toByteArray());
+        }
+        return remapped;
+    }
+
+    private static class NovaClassLoader extends ClassLoader {
+        private final Map<String, byte[]> classes;
+
+        private final ClassLoader scriptClassLoader;
+
+        public NovaClassLoader(Map<String, byte[]> classes, ClassLoader scriptClassLoader) {
+            super(NovaClassLoader.class.getClassLoader());
+            this.classes = classes;
+            this.scriptClassLoader = scriptClassLoader;
+        }
+
+        @Override
+        protected Class<?> findClass(String name) throws ClassNotFoundException {
+            // remove 而非 get：defineClass 后释放原始字节码，避免双份驻留
+            byte[] bytecode = classes.remove(name);
+            if (bytecode != null) {
+                return defineClass(name, bytecode, 0, bytecode.length);
+            }
+            if (scriptClassLoader != null) {
+                return scriptClassLoader.loadClass(name);
+            }
+            throw new ClassNotFoundException(name);
+        }
+    }
+}

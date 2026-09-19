@@ -1,0 +1,3 @@
+package com.novalang.bukkit.types.event;
+import com.novalang.bukkit.Requires; import com.novalang.bukkit.types.value.NovaTypeSupport; import com.novalang.runtime.host.JavaTypes; import org.bukkit.event.player.PlayerChangedMainHandEvent; import org.bukkit.inventory.MainHand;
+@Requires(classes = {"org.bukkit.event.player.PlayerChangedMainHandEvent"}) public final class NovaPlayerChangedMainHandEvent { private NovaPlayerChangedMainHandEvent() { } public static void register(JavaTypes.Builder b){b.extension(PlayerChangedMainHandEvent.class,"mainHand",f->f.returns(MainHand.class).invoke(a->NovaTypeSupport.argument(a,0,PlayerChangedMainHandEvent.class).getMainHand()));} }

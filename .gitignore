@@ -1,0 +1,48 @@
+# Gradle
+.gradle/
+.gradle-home/
+build/
+out/
+
+# IDE
+.idea/
+.vscode-nova/node_modules/
+.vscode-nova/*.vsix
+node_modules/
+*.vsix
+*.iml
+*.iws
+*.ipr
+.vscode/
+*.swp
+*.swo
+
+# Claude Code 本地工作区与配置
+.claude/
+
+# Codex 本地工作台计划
+.narrafork/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Java
+*.class
+*.jar
+*.war
+*.ear
+*.log
+
+# Exception: keep gradle wrapper
+!gradle/wrapper/gradle-wrapper.jar
+
+# Compiled files
+target/
+*.generated.kt
+
+# Test reports
+htmlReport/
+
+# Windows reserved names
+nul

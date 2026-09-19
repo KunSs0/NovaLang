@@ -1,0 +1,3 @@
+package com.novalang.bukkit.types.event;
+import com.novalang.bukkit.Requires; import com.novalang.bukkit.types.value.NovaTypeSupport; import com.novalang.runtime.host.JavaTypes; import org.bukkit.advancement.Advancement; import org.bukkit.event.player.PlayerAdvancementDoneEvent;
+@Requires(classes = {"org.bukkit.event.player.PlayerAdvancementDoneEvent"}) public final class NovaPlayerAdvancementDoneEvent { private NovaPlayerAdvancementDoneEvent() { } public static void register(JavaTypes.Builder b){b.extension(PlayerAdvancementDoneEvent.class,"advancement",f->f.returns(Advancement.class).invoke(a->NovaTypeSupport.argument(a,0,PlayerAdvancementDoneEvent.class).getAdvancement()));} }

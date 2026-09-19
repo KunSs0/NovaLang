@@ -1,0 +1,128 @@
+plugins {
+    id 'java-library'
+    id 'com.github.johnrengelman.shadow' version '7.1.2'
+    id 'me.champeau.jmh' version '0.7.2'
+}
+
+description = 'NovaLang Runtime Library'
+
+def resolveOptionalPath = { String propertyName, String defaultPath ->
+    def value = project.findProperty(propertyName)
+    if (!value) {
+        return file(defaultPath)
+    }
+    File explicit = new File(value.toString())
+    return explicit.isAbsolute() ? explicit : project.file(value.toString())
+}
+
+// ?????????? JDK 8
+// ????? JDK 9+ ? API
+
+dependencies {
+    api project(':nova-runtime-api')
+    api project(':nova-runtime-types')
+    implementation project(':nova-ir')
+    implementation 'com.github.ben-manes.caffeine:caffeine:2.9.3'
+    implementation 'org.nanohttpd:nanohttpd:2.3.1'
+
+    jmh 'org.openjdk.jmh:jmh-core:1.37'
+    jmhAnnotationProcessor 'org.openjdk.jmh:jmh-generator-annprocess:1.37'
+}
+
+jmh {
+    includes = ['InterpreterJmhBenchmark']
+    benchmarkMode = ['avgt']
+    warmupIterations = 5
+    iterations = 8
+    fork = 1
+    timeOnIteration = '500ms'
+    resultFormat = 'JSON'
+    resultsFile = resolveOptionalPath('jmhResultFile', "$buildDir/benchmarks/interpreter-jmh.json")
+    humanOutputFile = resolveOptionalPath('jmhHumanFile', "$buildDir/benchmarks/interpreter-jmh.txt")
+}
+
+tasks.register('jmhInterpreter') {
+    group = 'verification'
+    description = 'Runs the interpreter JMH benchmarks.'
+    dependsOn tasks.named('jmh')
+}
+
+tasks.register('compareInterpreterJmh') {
+    group = 'verification'
+    description = 'Compares two interpreter JMH JSON reports. Use -Pbaseline=... -Pcandidate=...'
+
+    doLast {
+        def baselineProp = project.findProperty('baseline')
+        def candidateProp = project.findProperty('candidate')
+        if (!baselineProp || !candidateProp) {
+            throw new GradleException('Usage: gradlew :nova-runtime:compareInterpreterJmh -Pbaseline=path -Pcandidate=path')
+        }
+
+        def resolveReport = { Object value ->
+            File report = new File(value.toString())
+            if (report.isAbsolute()) {
+                return report
+            }
+            File rootRelative = rootProject.file(value.toString())
+            return rootRelative.exists() ? rootRelative : project.file(value.toString())
+        }
+
+        File baselineFile = resolveReport(baselineProp)
+        File candidateFile = resolveReport(candidateProp)
+        if (!baselineFile.isFile()) {
+            throw new GradleException("Baseline report not found: ${baselineFile}")
+        }
+        if (!candidateFile.isFile()) {
+            throw new GradleException("Candidate report not found: ${candidateFile}")
+        }
+
+        def parseScores = { File report ->
+            new groovy.json.JsonSlurper().parse(report).collectEntries { entry ->
+                [(entry.benchmark.tokenize('.').last()): entry.primaryMetric.score as BigDecimal]
+            }
+        }
+
+        def baselineScores = parseScores(baselineFile)
+        def candidateScores = parseScores(candidateFile)
+        def benchmarkNames = (baselineScores.keySet() + candidateScores.keySet()).unique().sort()
+
+        println String.format('%-36s %14s %14s %12s', 'Benchmark', 'Baseline', 'Candidate', 'Delta')
+        benchmarkNames.each { name ->
+            BigDecimal baseline = baselineScores[name]
+            BigDecimal candidate = candidateScores[name]
+            if (baseline == null || candidate == null) {
+                println String.format('%-36s %14s %14s %12s', name, baseline ?: 'N/A', candidate ?: 'N/A', 'N/A')
+                return
+            }
+            BigDecimal delta = ((candidate - baseline) / baseline) * 100
+            println String.format('%-36s %14.3f %14.3f %11.2f%%', name, baseline, candidate, delta)
+        }
+    }
+}
+
+// Fat JAR ??
+shadowJar {
+    archiveClassifier.set('with-dependencies')
+    mergeServiceFiles()
+
+    // ??? Caffeine ??????????? Bukkit ClassLoader ????
+    relocate 'com.github.benmanes.caffeine', 'com.novalang.deps.caffeine'
+    relocate 'org.checkerframework', 'com.novalang.deps.checkerframework'
+    relocate 'fi.iki.elonen', 'com.novalang.deps.nanohttpd'
+}
+
+tasks.build.dependsOn shadowJar
+
+// 额外发布 shadow JAR 到 Maven（artifactId = nova-runtime-all，无 classifier）
+publishing {
+    publications {
+        shadow(MavenPublication) {
+            groupId = project.group
+            artifactId = 'nova-runtime-all'
+            version = project.version
+            artifact(shadowJar) {
+                classifier = null  // 去掉 with-dependencies classifier
+            }
+        }
+    }
+}
