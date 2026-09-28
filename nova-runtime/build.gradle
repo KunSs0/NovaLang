@@ -25,6 +25,10 @@ dependencies {
     implementation 'com.github.ben-manes.caffeine:caffeine:2.9.3'
     implementation 'org.nanohttpd:nanohttpd:2.3.1'
 
+    // Kotlin 互操作回归测试：测试期用 kotlin-compiler-embeddable 编译真实 .kt fixture
+    // （fixture 源码见 src/test/resources/kotlin-fixtures）。
+    testImplementation 'org.jetbrains.kotlin:kotlin-compiler-embeddable:2.2.0'
+
     jmh 'org.openjdk.jmh:jmh-core:1.37'
     jmhAnnotationProcessor 'org.openjdk.jmh:jmh-generator-annprocess:1.37'
 }
