@@ -3,7 +3,7 @@ package com.novalang.runtime.codegen;
 /**
  * 模拟由原生库注册表返回、再由业务组件强转的轮播库。
  */
-public final class CarouselLibFixture implements ZeusLibFixture {
+public final class CarouselLibFixture implements NativeLibFixture {
 
     private int controllerCreateCount;
     private UiHostFixture.TrackedDisposable lastController;
