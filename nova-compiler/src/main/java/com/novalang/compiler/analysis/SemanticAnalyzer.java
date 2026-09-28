@@ -1146,6 +1146,13 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
 
     private NovaType analyzedCallArgumentType(Expression expression) {
         NovaType type = getNovaType(expression);
+        if (expression instanceof MemberExpr && type instanceof JavaClassNovaType
+                && isJavaTypeExpression(expression)) {
+            JavaTypeDescriptor descriptor = ((JavaClassNovaType) type).getDescriptor();
+            if (descriptor != null) {
+                return new JavaClassLiteralNovaType(descriptor, false);
+            }
+        }
         if (!(expression instanceof Identifier)) {
             return type;
         }
@@ -1197,6 +1204,10 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
         }
         JavaTypeDescriptor descriptor = ((JavaClassNovaType) receiverType).getDescriptor();
         if (descriptor == null) {
+            return null;
+        }
+        if (descriptor.resolveStaticField(memberExpr.getMember(),
+                ((JavaClassNovaType) receiverType).getTypeArgs()) != null) {
             return null;
         }
         JavaTypeDescriptor nestedDescriptor = descriptor.resolveNestedType(memberExpr.getMember());
@@ -3905,6 +3916,8 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
                     }
                 } else if (typeCallee instanceof ClassNovaType) {
                     setNovaType(node, typeCallee.withNullable(false));
+                } else if (externalCallableNames.contains(funcName)) {
+                    setNovaType(node, NovaTypes.DYNAMIC);
                 } else if (strictJavaTypes) {
                     checker.addDiagnostic(SemanticDiagnostic.Severity.ERROR,
                             "未注册的 Java 函数: '" + funcName + "'",
@@ -3926,9 +3939,15 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
                 explicitCollectionTypeArgs.add(typeResolver.resolve(typeArg));
             }
             NovaType collType = inference.inferCollectionFactoryType(
-                    funcName, node.getArgs(), explicitCollectionTypeArgs);
+                    funcName, node.getArgs(), explicitCollectionTypeArgs, contextualExpectedType);
             if (collType != null) {
                 setNovaType(node, collType);
+            } else if (isCollectionFactoryFunction(funcName)) {
+                checker.addDiagnostic(SemanticDiagnostic.Severity.ERROR,
+                        "无法推断集合工厂函数 '" + funcName
+                                + "' 的元素类型，请显式指定类型参数或声明变量类型",
+                        node);
+                setNovaType(node, NovaTypes.ERROR);
             }
             // stdlib Supplier Lambda 函数类型推导
             StdlibRegistry.SupplierLambdaInfo slInfo = StdlibRegistry.getSupplierLambda(funcName);
@@ -4186,7 +4205,8 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
         }
         if (node.getTarget() instanceof Identifier) {
             Symbol targetSymbol = currentScope.resolve(((Identifier) node.getTarget()).getName());
-            if (targetSymbol != null && targetSymbol.getMembers() != null) {
+            if (targetSymbol != null && targetSymbol.getMembers() != null
+                    && !(receiverNovaType instanceof JavaClassNovaType)) {
                 Symbol member = targetSymbol.getMembers().get(node.getMember());
                 if (member != null) {
                     if (member.getKind() == SymbolKind.FUNCTION) {
@@ -4205,6 +4225,18 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
             if (NovaTypes.isDynamicType(receiverNovaType)) {
                 setNovaType(node, NovaTypes.DYNAMIC);
                 return null;
+            }
+            if (receiverNovaType instanceof JavaClassNovaType) {
+                JavaClassNovaType javaReceiverType = (JavaClassNovaType) receiverNovaType;
+                JavaTypeDescriptor descriptor = javaReceiverType.getDescriptor();
+                if (descriptor != null) {
+                    NovaType staticFieldType = descriptor.resolveStaticField(
+                            node.getMember(), javaReceiverType.getTypeArgs());
+                    if (staticFieldType != null) {
+                        setNovaType(node, staticFieldType);
+                        return null;
+                    }
+                }
             }
             NovaType nestedJavaType = resolveNestedJavaType(node);
             if (nestedJavaType != null) {
@@ -5194,6 +5226,14 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
         }
         setNovaType(node, NovaTypes.NOTHING);
         return null;
+    }
+
+    private boolean isCollectionFactoryFunction(String funcName) {
+        return "listOf".equals(funcName) || "mutableListOf".equals(funcName)
+                || "emptyList".equals(funcName) || "setOf".equals(funcName)
+                || "mutableSetOf".equals(funcName) || "emptySet".equals(funcName)
+                || "arrayOf".equals(funcName) || "mapOf".equals(funcName)
+                || "mutableMapOf".equals(funcName) || "emptyMap".equals(funcName);
     }
 
     // ============ 类型 visitor ============

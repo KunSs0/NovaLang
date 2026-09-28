@@ -28,6 +28,7 @@ public final class RuntimeWorkspace implements AutoCloseable {
     private final WorkspaceConfigLoader configLoader;
     private final WorkspaceModuleResolver moduleResolver;
     private final WorkspaceBytecodeArtifactCache bytecodeArtifactCache;
+    private final boolean loadConfiguredEntries;
     private final ReentrantLock lifecycleLock = new ReentrantLock(true);
     private final List<SourceUnit> virtualSources = new ArrayList<SourceUnit>();
     private final List<String> virtualEntries = new ArrayList<String>();
@@ -57,6 +58,41 @@ public final class RuntimeWorkspace implements AutoCloseable {
     public RuntimeWorkspace(Path configFile,
                             WorkspaceHost host,
                             WorkspaceBytecodeArtifactCache bytecodeArtifactCache) {
+        this(configFile, host, bytecodeArtifactCache,
+                host == null ? null : host.getClass().getClassLoader(), true);
+    }
+
+    /**
+     * 创建使用显式脚本类加载器的 Runtime Workspace。
+     * 测试启动器可用该入口加载测试配置声明的业务 JAR，而不要求业务宿主实现测试接口。
+     *
+     * @param configFile Workspace 配置文件
+     * @param host Host Binding 安装器
+     * @param bytecodeArtifactCache 字节码缓存
+     * @param scriptClassLoader 脚本和 JavaTypes 使用的类加载器
+     */
+    public RuntimeWorkspace(Path configFile,
+                            WorkspaceHost host,
+                            WorkspaceBytecodeArtifactCache bytecodeArtifactCache,
+                            ClassLoader scriptClassLoader) {
+        this(configFile, host, bytecodeArtifactCache, scriptClassLoader, true);
+    }
+
+    /**
+     * 创建可显式控制是否加载配置生产入口的 Runtime Workspace。
+     * 测试执行器可复用 Workspace 的 aliases、sources 和 runtime 配置，只加载虚拟测试入口。
+     *
+     * @param configFile Workspace 配置文件
+     * @param host Host Binding 安装器
+     * @param bytecodeArtifactCache 字节码缓存
+     * @param scriptClassLoader 脚本和 JavaTypes 使用的类加载器
+     * @param loadConfiguredEntries 是否加载配置中的生产 entries
+     */
+    public RuntimeWorkspace(Path configFile,
+                            WorkspaceHost host,
+                            WorkspaceBytecodeArtifactCache bytecodeArtifactCache,
+                            ClassLoader scriptClassLoader,
+                            boolean loadConfiguredEntries) {
         if (configFile == null) {
             throw new IllegalArgumentException("configFile must not be null");
         }
@@ -68,13 +104,14 @@ public final class RuntimeWorkspace implements AutoCloseable {
         }
         this.configFile = configFile.toAbsolutePath().normalize();
         this.host = host;
-        this.scriptClassLoader = host.getClass().getClassLoader();
+        this.scriptClassLoader = scriptClassLoader;
         if (scriptClassLoader == null) {
             throw new IllegalArgumentException("WorkspaceHost must be defined by a non-bootstrap ClassLoader");
         }
         this.configLoader = new WorkspaceConfigLoader();
         this.moduleResolver = new WorkspaceModuleResolver();
         this.bytecodeArtifactCache = bytecodeArtifactCache;
+        this.loadConfiguredEntries = loadConfiguredEntries;
     }
 
     /** @return 当前 Workspace 状态 */
@@ -190,7 +227,7 @@ public final class RuntimeWorkspace implements AutoCloseable {
 
                 // 第二步在任何脚本执行前构建完整依赖图并完成路径安全校验。
                 WorkspaceModuleGraph graph = moduleResolver.resolve(
-                        loadedConfig, virtualSources, virtualEntries);
+                        loadedConfig, virtualSources, virtualEntries, loadConfiguredEntries);
                 // 第三步创建本实例独占的编译环境，先安装插件脚本类加载器，再安装稳定 Host Binding。
                 nova = new Nova(loadedConfig.createSecurityPolicy());
                 nova.setScriptClassLoader(scriptClassLoader);

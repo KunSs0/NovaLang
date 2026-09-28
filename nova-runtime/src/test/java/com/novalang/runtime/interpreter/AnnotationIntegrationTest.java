@@ -85,7 +85,7 @@ class AnnotationIntegrationTest {
         @DisplayName("@log 注解记录类创建日志")
         void testLogAnnotation() {
             interpreter.evalRepl(
-                "var logs = mutableListOf()\n" +
+                "var logs = mutableListOf<String>()\n" +
                 "registerAnnotationProcessor(\"log\") { target, args ->\n" +
                 "    logs.add(\"Registered class: \" + target.name)\n" +
                 "}"
@@ -122,7 +122,7 @@ class AnnotationIntegrationTest {
         @Test
         @DisplayName("@component 注解自动注册到全局注册表")
         void testComponentRegistry() {
-            interpreter.evalRepl("val registry = mutableListOf()");
+            interpreter.evalRepl("val registry = mutableListOf<String>()");
             interpreter.evalRepl(
                 "registerAnnotationProcessor(\"component\") { target, args ->\n" +
                 "    registry.add(target.name)\n" +
@@ -141,7 +141,7 @@ class AnnotationIntegrationTest {
         @Test
         @DisplayName("@named 注解用自定义名称注册")
         void testNamedRegistry() {
-            interpreter.evalRepl("val namedRegistry = mapOf()");
+            interpreter.evalRepl("val namedRegistry = mapOf<String, String>()");
             interpreter.evalRepl(
                 "registerAnnotationProcessor(\"named\") { target, args ->\n" +
                 "    namedRegistry[args[\"value\"]] = target.name\n" +
@@ -242,7 +242,7 @@ class AnnotationIntegrationTest {
         @Test
         @DisplayName("多注解叠加在同一个类上")
         void testMultipleAnnotationsOnSameClass() {
-            interpreter.evalRepl("var tags = mutableListOf()");
+            interpreter.evalRepl("var tags = mutableListOf<String>()");
             interpreter.evalRepl(
                 "registerAnnotationProcessor(\"tagA\") { target, args -> tags.add(\"A:\" + target.name) }"
             );
@@ -335,7 +335,7 @@ class AnnotationIntegrationTest {
         @Test
         @DisplayName("处理器中读取方法列表")
         void testProcessorReadsMethods() {
-            interpreter.evalRepl("var methodNames = mutableListOf()");
+            interpreter.evalRepl("var methodNames = mutableListOf<String>()");
             interpreter.evalRepl(
                 "registerAnnotationProcessor(\"api\") { target, args ->\n" +
                 "    for (m in target.methods) {\n" +

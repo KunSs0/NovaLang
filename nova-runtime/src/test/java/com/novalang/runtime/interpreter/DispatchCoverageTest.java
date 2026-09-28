@@ -305,8 +305,8 @@ class DispatchCoverageTest {
         @Test void listOfCreation()        { assertEquals(3, eval("listOf(1, 2, 3).size").asInt()); }
         @Test void mapOfCreation()         { assertEquals(2, eval("mapOf(\"a\" to 1, \"b\" to 2).size").asInt()); }
         @Test void setOfCreation()         { assertEquals(3, eval("setOf(1, 2, 3, 2, 1).size()").asInt()); }
-        @Test void mutableListOfCreation() { assertEquals(0, eval("mutableListOf().size").asInt()); }
-        @Test void mutableMapOfCreation()  { assertEquals(0, eval("mutableMapOf().size").asInt()); }
+        @Test void mutableListOfCreation() { assertEquals(0, eval("mutableListOf<String>().size").asInt()); }
+        @Test void mutableMapOfCreation()  { assertEquals(0, eval("mutableMapOf<String, Int>().size").asInt()); }
     }
 
     @Nested

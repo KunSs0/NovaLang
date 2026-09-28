@@ -6,6 +6,10 @@ out/
 
 # IDE
 .idea/
+.vscode-nova/node_modules/
+.vscode-nova/*.vsix
+node_modules/
+*.vsix
 *.iml
 *.iws
 *.ipr
@@ -15,6 +19,9 @@ out/
 
 # Claude Code 本地工作区与配置
 .claude/
+
+# Codex 本地工作台计划
+.narrafork/
 
 # OS
 .DS_Store

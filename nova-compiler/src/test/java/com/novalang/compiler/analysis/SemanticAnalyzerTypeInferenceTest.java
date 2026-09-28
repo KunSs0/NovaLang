@@ -100,18 +100,64 @@ class SemanticAnalyzerTypeInferenceTest {
         }
 
         @Test
-        @DisplayName("listOf() 空列表 → List<Any>")
+        @DisplayName("listOf() 无上下文 → ERROR 无法推断元素类型")
         void listOfEmpty() {
             AnalysisResult r = analyze("val list = listOf()");
-            assertSymbolType(r, "list", "List<Any>");
+            assertHasError(r, "无法推断集合工厂函数");
         }
 
         @Test
-        @DisplayName("emptyList() → List<Any>")
+        @DisplayName("emptyList() 无上下文 → ERROR 无法推断元素类型")
         void emptyListFactory() {
             AnalysisResult r = analyze("val list = emptyList()");
+            assertHasError(r, "无法推断集合工厂函数");
+        }
+
+        @Test
+        @DisplayName("mutableListOf() 无上下文 → ERROR 无法推断元素类型")
+        void mutableListOfEmptyWithoutContext() {
+            AnalysisResult r = analyze("val list = mutableListOf()");
+            assertHasError(r, "无法推断集合工厂函数");
+        }
+
+        @Test
+        @DisplayName("声明类型反向推断 listOf() → List<Int>")
+        void listOfEmptyUsesDeclaredType() {
+            AnalysisResult r = analyze("val list: List<Int> = listOf()");
             assertNoDiagnostics(r);
-            assertSymbolType(r, "list", "List<Any>");
+            assertSymbolType(r, "list", "List<Int>");
+        }
+
+        @Test
+        @DisplayName("声明类型反向推断 emptyList() → List<String>")
+        void emptyListUsesDeclaredType() {
+            AnalysisResult r = analyze("val list: List<String> = emptyList()");
+            assertNoDiagnostics(r);
+            assertSymbolType(r, "list", "List<String>");
+        }
+
+        @Test
+        @DisplayName("声明类型反向推断 mutableListOf() → List<Int>")
+        void mutableListOfEmptyUsesDeclaredType() {
+            AnalysisResult r = analyze("val list: List<Int> = mutableListOf()");
+            assertNoDiagnostics(r);
+            assertSymbolType(r, "list", "List<Int>");
+        }
+
+        @Test
+        @DisplayName("mutableListOf<String>() 保留显式类型实参")
+        void explicitlyTypedEmptyMutableListFactory() {
+            AnalysisResult r = analyze("val list = mutableListOf<String>()");
+            assertNoDiagnostics(r);
+            assertSymbolType(r, "list", "List<String>");
+        }
+
+        @Test
+        @DisplayName("emptyList<Int>() 保留显式类型实参")
+        void explicitlyTypedEmptyListFactory() {
+            AnalysisResult r = analyze("val list = emptyList<Int>()");
+            assertNoDiagnostics(r);
+            assertSymbolType(r, "list", "List<Int>");
         }
 
         @Test
@@ -157,6 +203,21 @@ class SemanticAnalyzerTypeInferenceTest {
         }
 
         @Test
+        @DisplayName("emptySet() 无上下文 → ERROR 无法推断元素类型")
+        void emptySetFactory() {
+            AnalysisResult r = analyze("val s = emptySet()");
+            assertHasError(r, "无法推断集合工厂函数");
+        }
+
+        @Test
+        @DisplayName("声明类型反向推断 emptySet() → Set<String>")
+        void emptySetUsesDeclaredType() {
+            AnalysisResult r = analyze("val s: Set<String> = emptySet()");
+            assertNoDiagnostics(r);
+            assertSymbolType(r, "s", "Set<String>");
+        }
+
+        @Test
         @DisplayName("arrayOf(Int...) → Array<Int>")
         void arrayOfInts() {
             AnalysisResult r = analyze("val arr = arrayOf(1, 2, 3)");
@@ -185,18 +246,33 @@ class SemanticAnalyzerTypeInferenceTest {
         }
 
         @Test
-        @DisplayName("mapOf() 空 → Map<Any, Any>")
+        @DisplayName("mapOf() 无上下文 → ERROR 无法推断键值类型")
         void mapOfEmpty() {
             AnalysisResult r = analyze("val m = mapOf()");
-            assertSymbolType(r, "m", "Map<Any, Any>");
+            assertHasError(r, "无法推断集合工厂函数");
         }
 
         @Test
-        @DisplayName("emptyMap() → Map<Any, Any>")
+        @DisplayName("emptyMap() 无上下文 → ERROR 无法推断键值类型")
         void emptyMapFactory() {
             AnalysisResult r = analyze("val m = emptyMap()");
+            assertHasError(r, "无法推断集合工厂函数");
+        }
+
+        @Test
+        @DisplayName("声明类型反向推断 mapOf() → Map<String, Int>")
+        void mapOfEmptyUsesDeclaredType() {
+            AnalysisResult r = analyze("val m: Map<String, Int> = mapOf()");
             assertNoDiagnostics(r);
-            assertSymbolType(r, "m", "Map<Any, Any>");
+            assertSymbolType(r, "m", "Map<String, Int>");
+        }
+
+        @Test
+        @DisplayName("声明类型反向推断 emptyMap() → Map<String, Int>")
+        void emptyMapUsesDeclaredType() {
+            AnalysisResult r = analyze("val m: Map<String, Int> = emptyMap()");
+            assertNoDiagnostics(r);
+            assertSymbolType(r, "m", "Map<String, Int>");
         }
 
         @Test

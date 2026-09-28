@@ -624,9 +624,9 @@ class StdlibExpansionTest {
         @Test
         @DisplayName("emptyList / emptyMap / emptySet")
         void testEmptyCollections() {
-            assertEquals(0, interpreter.evalRepl("emptyList().size()").asInt());
-            assertEquals(0, interpreter.evalRepl("emptyMap().size()").asInt());
-            assertEquals(0, interpreter.evalRepl("emptySet().size()").asInt());
+            assertEquals(0, interpreter.evalRepl("emptyList<Int>().size()").asInt());
+            assertEquals(0, interpreter.evalRepl("emptyMap<String, Int>().size()").asInt());
+            assertEquals(0, interpreter.evalRepl("emptySet<String>().size()").asInt());
         }
 
         @Test

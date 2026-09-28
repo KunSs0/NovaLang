@@ -456,11 +456,11 @@ class CoreSyntaxIntegrationTest {
         }
 
         @Test void testShortCircuitSkipsNullNumberComparison() throws Exception {
-            String code = "val values = mutableMapOf()\n" +
+            String code = "val values = mutableMapOf<String, Int>()\n" +
                     "val deadline = values.get(\"missing\")\n" +
                     "val now = 42\n" +
                     "deadline != null && now >= deadline";
-            String body = "val values = mutableMapOf()\n" +
+            String body = "val values = mutableMapOf<String, Int>()\n" +
                     "    val deadline = values.get(\"missing\")\n" +
                     "    val now = 42\n" +
                     "    return deadline != null && now >= deadline";

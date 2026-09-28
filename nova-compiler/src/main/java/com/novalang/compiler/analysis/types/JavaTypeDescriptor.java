@@ -120,6 +120,46 @@ public final class JavaTypeDescriptor {
         return null;
     }
 
+    /**
+     * 按名称解析当前 Java 类型声明的公开静态字段。
+     *
+     * <p>该方法只检查字段本身，不把 JavaBean getter 当作属性。这样语义分析可以
+     * 在嵌套类型解析之前识别 Kotlin 编译器生成的 {@code Companion} 静态字段。</p>
+     *
+     * @param memberName 静态字段名称
+     * @param receiverTypeArguments 接收者类型参数，用于解析泛型字段类型
+     * @return 静态字段类型；不存在或不可公开访问时返回 {@code null}
+     */
+    public NovaType resolveStaticField(String memberName,
+                                       List<NovaTypeArgument> receiverTypeArguments) {
+        if (memberName == null || memberName.isEmpty()) {
+            return null;
+        }
+        Class<?> javaClass = loadJavaClass();
+        if (javaClass == null) {
+            return null;
+        }
+        try {
+            Field field = javaClass.getField(memberName);
+            if (!Modifier.isStatic(field.getModifiers())) {
+                return null;
+            }
+            Map<TypeVariable<?>, NovaType> typeBindings = receiverTypeBindings(
+                    javaClass, receiverTypeArguments);
+            NovaPropertySignature signature = field.getAnnotation(NovaPropertySignature.class);
+            if (signature != null) {
+                return novaTypeFromDescriptor(signature.type(), signature.nullable());
+            }
+            return toNovaType(field.getGenericType(), typeBindings);
+        } catch (NoSuchFieldException ignored) {
+            return null;
+        }
+    }
+
+    public NovaType resolveStaticField(String memberName) {
+        return resolveStaticField(memberName, Collections.<NovaTypeArgument>emptyList());
+    }
+
     public Kind getKind() {
         return kind;
     }

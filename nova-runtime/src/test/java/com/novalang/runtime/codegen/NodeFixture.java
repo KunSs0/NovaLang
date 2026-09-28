@@ -4,7 +4,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * 模拟 Zeus 节点基类以及按路径查询和移除节点的稳定 API。
+ * 模拟宿主节点基类以及按路径查询和移除节点的稳定 API。
  */
 public class NodeFixture {
 

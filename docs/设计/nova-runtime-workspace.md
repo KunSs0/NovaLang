@@ -138,24 +138,24 @@ SourceUnit
 宿主通过 `SourceUnit.inline` 明确登记行内动作，配置中直接编写导入、局部变量和业务语句，不需要声明入口函数：
 
 ```nova
-import "creator.dungeon"
+import "domain.action"
 
 val ctx = currentContext()
 val player = currentPlayer()
 if (player == null) {
     return false
 }
-return CreatorDungeon.isPlayerInDungeon(ctx, player)
+return ActionCatalog.isAllowed(ctx, player)
 ```
 
-示例中的类型和函数必须由宿主登记的模块显式导出；Nova 不添加 Creator 专属导入。
+示例中的类型和函数必须由宿主登记的模块显式导出；Nova 不添加业务专属导入。
 
 ```java
 SourceUnit action = SourceUnit.inline(
-        "creator/action/longsword",
+        "domain/action/example",
         sourceText,
         templatePath,
-        "stage.opening.npc.training-weapon-rack.conversation.actions.longsword",
+        "stage.opening.example.action",
         firstSourceLine,
         "execute",
         "Boolean");

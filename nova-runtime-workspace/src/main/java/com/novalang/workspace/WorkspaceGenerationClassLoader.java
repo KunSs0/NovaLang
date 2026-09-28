@@ -1,5 +1,7 @@
 package com.novalang.workspace;
 
+import com.novalang.ir.JavaClassLookup;
+
 import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -7,12 +9,17 @@ import java.util.Map;
 /**
  * 一个 Workspace Generation 独占的可增量字节码 ClassLoader。
  */
-final class WorkspaceGenerationClassLoader extends ClassLoader {
+final class WorkspaceGenerationClassLoader extends ClassLoader implements JavaClassLookup {
 
     private final Map<String, byte[]> pendingBytecode = new LinkedHashMap<String, byte[]>();
 
     WorkspaceGenerationClassLoader(ClassLoader parent) {
         super(parent);
+    }
+
+    @Override
+    public synchronized boolean hasLocalClass(String name) {
+        return findLoadedClass(name) != null || pendingBytecode.containsKey(name);
     }
 
     synchronized Map<String, Class<?>> install(Map<String, byte[]> bytecode) {

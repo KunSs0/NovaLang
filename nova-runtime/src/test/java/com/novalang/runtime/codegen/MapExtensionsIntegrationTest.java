@@ -72,7 +72,7 @@ class MapExtensionsIntegrationTest {
         }
 
         @Test void isNotEmpty_false() throws Exception {
-            dual("emptyMap().isNotEmpty()", wrap("return emptyMap().isNotEmpty()"), false);
+            dual("emptyMap<String, Int>().isNotEmpty()", wrap("return emptyMap<String, Int>().isNotEmpty()"), false);
         }
     }
 
@@ -88,7 +88,7 @@ class MapExtensionsIntegrationTest {
         }
 
         @Test void keys_empty() throws Exception {
-            dualStr("emptyMap().keys()", wrap("return emptyMap().keys()"), "[]");
+            dualStr("emptyMap<String, Int>().keys()", wrap("return emptyMap<String, Int>().keys()"), "[]");
         }
 
         @Test void values_normal() throws Exception {
@@ -97,7 +97,7 @@ class MapExtensionsIntegrationTest {
         }
 
         @Test void values_empty() throws Exception {
-            dualStr("emptyMap().values()", wrap("return emptyMap().values()"), "[]");
+            dualStr("emptyMap<String, Int>().values()", wrap("return emptyMap<String, Int>().values()"), "[]");
         }
 
         @Test void entries_normal() throws Exception {
@@ -140,8 +140,8 @@ class MapExtensionsIntegrationTest {
         }
 
         @Test void merge_empty() throws Exception {
-            dual("mapOf(\"a\" to 1).merge(emptyMap()).size()",
-                    wrap("return mapOf(\"a\" to 1).merge(emptyMap()).size()"), 1);
+            dual("mapOf(\"a\" to 1).merge(emptyMap<String, Int>()).size()",
+                    wrap("return mapOf(\"a\" to 1).merge(emptyMap<String, Int>()).size()"), 1);
         }
     }
 
@@ -162,13 +162,13 @@ class MapExtensionsIntegrationTest {
         }
 
         @Test void mapKeys_empty() throws Exception {
-            dual("emptyMap().mapKeys { it }.size()",
-                    wrap("return emptyMap().mapKeys { it }.size()"), 0);
+            dual("emptyMap<String, Int>().mapKeys { it }.size()",
+                    wrap("return emptyMap<String, Int>().mapKeys { it }.size()"), 0);
         }
 
         @Test void mapValues_empty() throws Exception {
-            dual("emptyMap().mapValues { it }.size()",
-                    wrap("return emptyMap().mapValues { it }.size()"), 0);
+            dual("emptyMap<String, Int>().mapValues { it }.size()",
+                    wrap("return emptyMap<String, Int>().mapValues { it }.size()"), 0);
         }
     }
 
@@ -211,8 +211,8 @@ class MapExtensionsIntegrationTest {
         }
 
         @Test void filter_empty() throws Exception {
-            dual("emptyMap().filter { k, v -> true }.size()",
-                    wrap("return emptyMap().filter { k, v -> true }.size()"), 0);
+            dual("emptyMap<String, Int>().filter { k, v -> true }.size()",
+                    wrap("return emptyMap<String, Int>().filter { k, v -> true }.size()"), 0);
         }
     }
 
@@ -241,8 +241,8 @@ class MapExtensionsIntegrationTest {
         }
 
         @Test void map_empty() throws Exception {
-            dualStr("emptyMap().map { k, v -> k }",
-                    wrap("return emptyMap().map { k, v -> k }"), "[]");
+            dualStr("emptyMap<String, Int>().map { k, v -> k }",
+                    wrap("return emptyMap<String, Int>().map { k, v -> k }"), "[]");
         }
     }
 
@@ -258,8 +258,8 @@ class MapExtensionsIntegrationTest {
         }
 
         @Test void flatMap_empty() throws Exception {
-            dualStr("emptyMap().flatMap { k, v -> [k] }",
-                    wrap("return emptyMap().flatMap { k, v -> [k] }"), "[]");
+            dualStr("emptyMap<String, Int>().flatMap { k, v -> [k] }",
+                    wrap("return emptyMap<String, Int>().flatMap { k, v -> [k] }"), "[]");
         }
     }
 
@@ -280,8 +280,8 @@ class MapExtensionsIntegrationTest {
         }
 
         @Test void any_empty() throws Exception {
-            dual("emptyMap().any { k, v -> true }",
-                    wrap("return emptyMap().any { k, v -> true }"), false);
+            dual("emptyMap<String, Int>().any { k, v -> true }",
+                    wrap("return emptyMap<String, Int>().any { k, v -> true }"), false);
         }
 
         @Test void all_true() throws Exception {
@@ -295,8 +295,8 @@ class MapExtensionsIntegrationTest {
         }
 
         @Test void all_empty() throws Exception {
-            dual("emptyMap().all { k, v -> false }",
-                    wrap("return emptyMap().all { k, v -> false }"), true);
+            dual("emptyMap<String, Int>().all { k, v -> false }",
+                    wrap("return emptyMap<String, Int>().all { k, v -> false }"), true);
         }
 
         @Test void none_true() throws Exception {
@@ -310,8 +310,8 @@ class MapExtensionsIntegrationTest {
         }
 
         @Test void none_empty() throws Exception {
-            dual("emptyMap().none { k, v -> true }",
-                    wrap("return emptyMap().none { k, v -> true }"), true);
+            dual("emptyMap<String, Int>().none { k, v -> true }",
+                    wrap("return emptyMap<String, Int>().none { k, v -> true }"), true);
         }
 
         @Test void count_normal() throws Exception {
@@ -320,8 +320,8 @@ class MapExtensionsIntegrationTest {
         }
 
         @Test void count_empty() throws Exception {
-            dual("emptyMap().count { k, v -> true }",
-                    wrap("return emptyMap().count { k, v -> true }"), 0);
+            dual("emptyMap<String, Int>().count { k, v -> true }",
+                    wrap("return emptyMap<String, Int>().count { k, v -> true }"), 0);
         }
 
         @Test void count_all_match() throws Exception {

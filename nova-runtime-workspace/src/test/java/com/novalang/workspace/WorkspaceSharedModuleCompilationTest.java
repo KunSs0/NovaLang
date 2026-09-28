@@ -257,7 +257,7 @@ class WorkspaceSharedModuleCompilationTest {
 
     @AfterEach
     void clearScheduler() {
-        ModuleLoader.unregisterSharedModule("creator.core");
+        ModuleLoader.unregisterSharedModule("sample.core");
         Interpreter.resetGlobalSchedulerState();
     }
 
@@ -286,12 +286,12 @@ class WorkspaceSharedModuleCompilationTest {
     @DisplayName("Workspace 应解析 ModuleLoader 注册的共享逻辑模块")
     void shouldResolveSharedModuleRegisteredByModuleLoader() throws Exception {
         WorkspaceTestSupport.write(tempDirectory, "entry.nova",
-                "import \"creator.core\"\n"
-                        + "fun execute(): Int { return creatorValue() }\n");
+                "import \"sample.core\"\n"
+                        + "fun execute(): Int { return sampleValue() }\n");
         Path configFile = WorkspaceTestSupport.writeConfig(
                 tempDirectory, "caller", "  - \"entry.nova\"\n");
-        ModuleLoader.registerSharedModule("creator.core",
-                "fun creatorValue(): Int { return 42 }\n");
+        ModuleLoader.registerSharedModule("sample.core",
+                "fun sampleValue(): Int { return 42 }\n");
         RuntimeWorkspace workspace = new RuntimeWorkspace(configFile, nova -> { });
 
         try {
@@ -652,7 +652,7 @@ class WorkspaceSharedModuleCompilationTest {
 
     private String entryWithPrivateRecord(int offset) {
         return "import \"@/main\"\n"
-                + "val records = mutableListOf()\n"
+                + "val records = mutableListOf<Int>()\n"
                 + "class CaptionRecord(val value: Int) {\n"
                 + "    fun total(): Int { return value + records.size }\n"
                 + "}\n"

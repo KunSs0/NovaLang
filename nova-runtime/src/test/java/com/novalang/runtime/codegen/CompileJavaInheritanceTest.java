@@ -533,7 +533,7 @@ class CompileJavaInheritanceTest {
             String code =
                 "class MessageFactory {\n" +
                 "    fun createMessage(): Map {\n" +
-                "        val message = mutableMapOf()\n" +
+                "        val message = mutableMapOf<String, String>()\n" +
                 "        message.put(\"text\", \"hello\")\n" +
                 "        return message\n" +
                 "    }\n" +
@@ -558,12 +558,12 @@ class CompileJavaInheritanceTest {
             String code =
                 "object ObjectMessageFactory {\n" +
                 "    fun createMap(): Map {\n" +
-                "        val message = mutableMapOf()\n" +
+                "        val message = mutableMapOf<String, String>()\n" +
                 "        message.put(\"text\", \"map\")\n" +
                 "        return message\n" +
                 "    }\n" +
                 "    fun createAny(): Any {\n" +
-                "        val message = mutableMapOf()\n" +
+                "        val message = mutableMapOf<String, String>()\n" +
                 "        message.put(\"text\", \"any\")\n" +
                 "        return message\n" +
                 "    }\n" +
@@ -588,7 +588,7 @@ class CompileJavaInheritanceTest {
                 "interface MessageSource { fun create(): Map }\n" +
                 "class BaseMessageSource : MessageSource {\n" +
                 "    fun create(): Map {\n" +
-                "        val message = mutableMapOf()\n" +
+                "        val message = mutableMapOf<String, String>()\n" +
                 "        message.put(\"text\", \"base\")\n" +
                 "        return message\n" +
                 "    }\n" +

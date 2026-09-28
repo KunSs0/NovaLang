@@ -34,24 +34,6 @@ final class WorkspaceBundle {
         this.inheritedExtensions = new LinkedHashSet<String>(inheritedExtensions);
     }
 
-    /** 保longsword: |-
-  import "creator.dungeon"
-
-  val ctx = currentContext()
-  val player = currentPlayer()
-
-  if (player == null) {
-      return false
-  }
-
-  if (!CreatorDungeon.isPlayerInDungeon(ctx, player)) {
-      player.sendMessage("§c你当前不在这个训练副本中。")
-      return false
-  }
-
-  // 后续发放武器、推进目标的逻辑……
-
-  return true */
     Program parse(String fileName) {
         String[] lines = source.split("\\n", -1);
         String[] ordinary = lines.clone();

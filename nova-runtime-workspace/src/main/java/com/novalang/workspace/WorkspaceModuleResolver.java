@@ -53,6 +53,22 @@ public final class WorkspaceModuleResolver {
     public WorkspaceModuleGraph resolve(WorkspaceConfig config,
                                         Collection<SourceUnit> virtualSources,
                                         Collection<String> virtualEntries) {
+        return resolve(config, virtualSources, virtualEntries, true);
+    }
+
+    /**
+     * 根据配置入口及虚拟入口构建模块图，并可选择跳过配置文件中的生产入口。
+     *
+     * @param config Workspace 配置
+     * @param virtualSources 业务生成的虚拟源码
+     * @param virtualEntries 需要作为入口编译的虚拟模块标识
+     * @param loadConfiguredEntries 是否加载配置中的 entries
+     * @return 完整不可变模块图
+     */
+    public WorkspaceModuleGraph resolve(WorkspaceConfig config,
+                                        Collection<SourceUnit> virtualSources,
+                                        Collection<String> virtualEntries,
+                                        boolean loadConfiguredEntries) {
         if (config == null) {
             throw new WorkspaceException("WorkspaceConfig must not be null");
         }
@@ -64,10 +80,12 @@ public final class WorkspaceModuleResolver {
         context.validatePaths();
 
         Map<String, String> entries = new LinkedHashMap<String, String>();
-        for (String entry : config.getEntries()) {
-            SourceUnit source = context.resolveEntry(entry);
-            context.visit(source);
-            entries.put(entry, source.getModuleId());
+        if (loadConfiguredEntries) {
+            for (String entry : config.getEntries()) {
+                SourceUnit source = context.resolveEntry(entry);
+                context.visit(source);
+                entries.put(entry, source.getModuleId());
+            }
         }
         for (String virtualEntry : virtualEntries) {
             SourceUnit source = context.virtualSources.get(virtualEntry);

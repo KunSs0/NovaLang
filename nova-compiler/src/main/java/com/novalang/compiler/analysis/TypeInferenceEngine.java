@@ -142,11 +142,12 @@ public final class TypeInferenceEngine {
 
     /**
      * 集合工厂函数泛型推断：listOf(1,2,3) → List&lt;Int&gt;。
-     * 空集合调用优先使用显式类型实参，非空调用继续按值实参推断。
+     * 推断顺序为显式类型实参、实际元素类型、调用上下文；无法推断时返回 null。
      */
     public NovaType inferCollectionFactoryType(String funcName, List<CallExpr.Argument> args,
-                                               List<NovaType> explicitTypeArgs) {
-        if (args.isEmpty() && explicitTypeArgs != null && !explicitTypeArgs.isEmpty()) {
+                                               List<NovaType> explicitTypeArgs,
+                                               NovaType expectedType) {
+        if (explicitTypeArgs != null && !explicitTypeArgs.isEmpty()) {
             switch (funcName) {
                 case "listOf":
                 case "mutableListOf":
@@ -183,27 +184,47 @@ public final class TypeInferenceEngine {
             case "listOf":
             case "mutableListOf": {
                 NovaType elem = inferCommonArgType(args);
-                return NovaTypes.listOf(elem != null ? elem : NovaTypes.ANY);
+                if (elem != null) {
+                    return NovaTypes.listOf(elem);
+                }
+                NovaType expectedElem = inferExpectedCollectionElementType(funcName, expectedType);
+                return expectedElem != null ? NovaTypes.listOf(expectedElem) : null;
             }
             case "emptyList": {
-                return NovaTypes.listOf(NovaTypes.ANY);
+                NovaType expectedElem = inferExpectedCollectionElementType(funcName, expectedType);
+                return expectedElem != null ? NovaTypes.listOf(expectedElem) : null;
             }
             case "arrayOf": {
                 NovaType elem = inferCommonArgType(args);
-                NovaType e = elem != null ? elem : NovaTypes.ANY;
+                if (elem == null) {
+                    elem = inferExpectedCollectionElementType(funcName, expectedType);
+                }
+                if (elem == null) {
+                    return null;
+                }
                 return new ClassNovaType("Array",
-                        Collections.singletonList(NovaTypeArgument.invariant(e)), false);
+                        Collections.singletonList(NovaTypeArgument.invariant(elem)), false);
             }
             case "setOf":
             case "mutableSetOf": {
                 NovaType elem = inferCommonArgType(args);
-                return NovaTypes.setOf(elem != null ? elem : NovaTypes.ANY);
+                if (elem != null) {
+                    return NovaTypes.setOf(elem);
+                }
+                NovaType expectedElem = inferExpectedCollectionElementType(funcName, expectedType);
+                return expectedElem != null ? NovaTypes.setOf(expectedElem) : null;
+            }
+            case "emptySet": {
+                NovaType expectedElem = inferExpectedCollectionElementType(funcName, expectedType);
+                return expectedElem != null ? NovaTypes.setOf(expectedElem) : null;
             }
             case "mapOf":
             case "mutableMapOf":
-                return inferMapFactoryType(args);
-            case "emptyMap":
-                return NovaTypes.mapOf(NovaTypes.ANY, NovaTypes.ANY);
+                return inferMapFactoryType(args, expectedType);
+            case "emptyMap": {
+                NovaType[] expectedEntries = inferExpectedMapTypes(expectedType);
+                return expectedEntries != null ? NovaTypes.mapOf(expectedEntries[0], expectedEntries[1]) : null;
+            }
             case "Pair": {
                 if (args.size() == 2) {
                     NovaType k = exprNovaTypeMap.get(args.get(0).getValue());
@@ -234,8 +255,11 @@ public final class TypeInferenceEngine {
     }
 
     /** mapOf("a" to 1, "b" to 2) → Map&lt;String, Int&gt; */
-    private NovaType inferMapFactoryType(List<CallExpr.Argument> args) {
-        if (args.isEmpty()) return NovaTypes.mapOf(NovaTypes.ANY, NovaTypes.ANY);
+    private NovaType inferMapFactoryType(List<CallExpr.Argument> args, NovaType expectedType) {
+        if (args.isEmpty()) {
+            NovaType[] expectedEntries = inferExpectedMapTypes(expectedType);
+            return expectedEntries != null ? NovaTypes.mapOf(expectedEntries[0], expectedEntries[1]) : null;
+        }
         NovaType keyType = null;
         NovaType valueType = null;
         for (CallExpr.Argument arg : args) {
@@ -247,11 +271,50 @@ public final class TypeInferenceEngine {
                 if (k != null) keyType = (keyType == null) ? k : typeUnifier.commonSuperType(keyType, k);
                 if (v != null) valueType = (valueType == null) ? v : typeUnifier.commonSuperType(valueType, v);
             } else {
-                return NovaTypes.mapOf(NovaTypes.ANY, NovaTypes.ANY);
+                return null;
             }
         }
-        return NovaTypes.mapOf(
-                keyType != null ? keyType : NovaTypes.ANY,
-                valueType != null ? valueType : NovaTypes.ANY);
+        if (keyType == null || valueType == null) {
+            return null;
+        }
+        return NovaTypes.mapOf(keyType, valueType);
+    }
+
+    private NovaType inferExpectedCollectionElementType(String funcName, NovaType expectedType) {
+        if (expectedType == null || !(expectedType instanceof ClassNovaType)) {
+            return null;
+        }
+        ClassNovaType expectedClass = (ClassNovaType) expectedType;
+        String expectedName = expectedClass.getName();
+        boolean listLike = "listOf".equals(funcName) || "mutableListOf".equals(funcName)
+                || "emptyList".equals(funcName);
+        boolean setLike = "setOf".equals(funcName) || "mutableSetOf".equals(funcName)
+                || "emptySet".equals(funcName);
+        boolean arrayLike = "arrayOf".equals(funcName);
+        if ((listLike && !"List".equals(expectedName))
+                || (setLike && !"Set".equals(expectedName))
+                || (arrayLike && !"Array".equals(expectedName))) {
+            return null;
+        }
+        if (!expectedClass.hasTypeArgs() || expectedClass.getTypeArgs().isEmpty()) {
+            return null;
+        }
+        return expectedClass.getTypeArgs().get(0).getType();
+    }
+
+    private NovaType[] inferExpectedMapTypes(NovaType expectedType) {
+        if (!(expectedType instanceof ClassNovaType)) {
+            return null;
+        }
+        ClassNovaType expectedClass = (ClassNovaType) expectedType;
+        if (!"Map".equals(expectedClass.getName()) || expectedClass.getTypeArgs().size() < 2) {
+            return null;
+        }
+        NovaType keyType = expectedClass.getTypeArgs().get(0).getType();
+        NovaType valueType = expectedClass.getTypeArgs().get(1).getType();
+        if (keyType == null || valueType == null) {
+            return null;
+        }
+        return new NovaType[] {keyType, valueType};
     }
 }

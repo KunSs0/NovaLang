@@ -20,7 +20,7 @@ import java.util.List;
  */
 @Command(name = "nova", version = "NovaLang v0.1.0",
          mixinStandardHelpOptions = true,
-         subcommands = {FmtCommand.class, BuildCommand.class})
+         subcommands = {FmtCommand.class, BuildCommand.class, TestCommand.class})
 public class Main implements Runnable {
 
     @Option(names = "--sandbox", description = "安全沙箱级别（strict, standard, unrestricted）")

@@ -28,7 +28,7 @@ class WorkspaceBytecodeArtifactCacheMockTest {
         String source = "mock-counter-module";
 
         WorkspaceBytecodeArtifactCache.CacheKey key =
-                new WorkspaceBytecodeArtifactCache.CacheKey("creator-test", "stage.start", source);
+                new WorkspaceBytecodeArtifactCache.CacheKey("sample-test", "stage.start", source);
         WorkspaceBytecodeArtifactCache.BytecodeArtifact artifact = cache.getOrCompile(key, () -> {
             compilationCount.incrementAndGet();
             Map<String, byte[]> classes = new LinkedHashMap<String, byte[]>();

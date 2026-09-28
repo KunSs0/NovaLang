@@ -153,6 +153,30 @@ class CompiledStaticImportTest {
     }
 
     @Test
+    @DisplayName("compiled nested Java class passed to Class parameter uses class literal")
+    void compiledNestedJavaClassShouldUseClassLiteralForClassParameter() throws Exception {
+        try (URLClassLoader loader = compileFixture()) {
+            Nova nova = new Nova().setScriptClassLoader(loader);
+            assertEquals("dynamic.StaticFixture$Nested", nova.compileToBytecode(
+                    "import java dynamic.StaticFixture\n" +
+                            "StaticFixture.className(StaticFixture.Nested)",
+                    "java-nested-class-literal.nova").run());
+        }
+    }
+
+    @Test
+    @DisplayName("compiled direct nested Java import resolves enum static field")
+    void compiledDirectNestedJavaImportShouldResolveStaticField() throws Exception {
+        try (URLClassLoader loader = compileFixture()) {
+            Nova nova = new Nova().setScriptClassLoader(loader);
+            assertEquals("FLOW", nova.compileToBytecode(
+                    "import java dynamic.StaticFixture.Kind\n" +
+                            "Kind.FLOW.name()",
+                    "java-direct-nested-import.nova").run());
+        }
+    }
+
+    @Test
     @DisplayName("interpreter Kotlin companion field resolves instance methods")
     void interpreterKotlinCompanionFieldShouldResolveInstanceMethods() throws Exception {
         try (URLClassLoader loader = compileFixture()) {
@@ -386,6 +410,7 @@ class CompiledStaticImportTest {
                         "    public static String handle(String first, String second, String third) {\n" +
                         "        return first + second + third;\n" +
                         "    }\n" +
+                        "    public static String className(Class<?> type) { return type.getName(); }\n" +
                         "}\n").getBytes(StandardCharsets.UTF_8));
         Path covariantJavaFile = srcDir.resolve("CovariantFactory.java");
         Files.write(covariantJavaFile,

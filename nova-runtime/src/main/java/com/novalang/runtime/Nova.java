@@ -59,6 +59,7 @@ public final class Nova {
      * 命名空间中的定义优先于全局同名定义（覆盖语义）。
      */
     private final Map<String, Map<String, Object>> namespaceBindings = new HashMap<>();
+    private final Map<String, Integer> externalCallableArities = new LinkedHashMap<>();
     private final List<PreludeSource> preludeSources = new ArrayList<>();
     private int evaluatedPreludeCount = 0;
     private JavaTypes javaTypes;
@@ -138,6 +139,19 @@ public final class Nova {
      */
     public Nova setRejectUnknownGlobalCalls(boolean rejectUnknownGlobalCalls) {
         this.rejectUnknownGlobalCalls = rejectUnknownGlobalCalls;
+        clearCompilationCache();
+        return this;
+    }
+
+    /** 注册由宿主动态注入、但没有 JavaTypes 描述的顶层函数签名。 */
+    public Nova registerExternalCallable(String name, int arity) {
+        if (name == null || name.trim().isEmpty()) {
+            throw new IllegalArgumentException("name must not be blank");
+        }
+        if (arity < 0) {
+            throw new IllegalArgumentException("arity must not be negative");
+        }
+        externalCallableArities.put(name, Integer.valueOf(arity));
         clearCompilationCache();
         return this;
     }
@@ -1339,6 +1353,8 @@ public final class Nova {
      * 包名变为 "com.foo.novalang.runtime"，提取重映射前缀。
      */
     private void configureJavaTypes(NovaIrCompiler compiler, String namespace) {
+        compiler.getPipeline().setExternalValueNames(valRegistry.keySet());
+        compiler.getPipeline().setExternalCallableArities(externalCallableArities);
         if (javaTypes == null) {
             return;
         }

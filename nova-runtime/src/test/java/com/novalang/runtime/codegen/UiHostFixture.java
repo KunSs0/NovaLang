@@ -6,7 +6,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 模拟 hotbar 迁移涉及的 Zeus 宿主边界。
+ * 模拟 UI 组件迁移涉及的宿主边界。
  */
 public final class UiHostFixture {
 
@@ -96,14 +96,14 @@ public final class UiHostFixture {
     /** 原生库注册表。 */
     public static final class LibRegistry {
 
-        private final Map<String, ZeusLibFixture> libraries = new LinkedHashMap<>();
+        private final Map<String, NativeLibFixture> libraries = new LinkedHashMap<>();
         private String lastRequestedId;
 
-        public void register(ZeusLibFixture library) {
+        public void register(NativeLibFixture library) {
             libraries.put(library.id(), library);
         }
 
-        public ZeusLibFixture get(String id) {
+        public NativeLibFixture get(String id) {
             lastRequestedId = id;
             return libraries.get(id);
         }
