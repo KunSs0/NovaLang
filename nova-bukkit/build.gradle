@@ -39,6 +39,7 @@ dependencies {
     api project(':nova-bukkit:paper-1_21')
     api project(':nova-bukkit:bukkit-1_12')
     api project(':nova-runtime-workspace')
+    api project(':nova-mock')
     implementation project(':nova-cli')
     compileOnly("${bukkitApiGroup}:${bukkitApiArtifact}:${bukkitApiVersion}")
     testImplementation("${bukkitApiGroup}:${bukkitApiArtifact}:${bukkitApiVersion}")
