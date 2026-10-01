@@ -1826,6 +1826,31 @@ public final class NovaDynamic {
                 return null;
             }
         }
+        Field companion = getFieldIndex(cls).get("Companion");
+        if (companion != null && java.lang.reflect.Modifier.isStatic(companion.getModifiers())) {
+            String capitalized = memberName.isEmpty()
+                    ? memberName
+                    : Character.toUpperCase(memberName.charAt(0)) + memberName.substring(1);
+            String[] getterNames = {"get" + capitalized, "is" + capitalized};
+            for (String getterName : getterNames) {
+                try {
+                    Method getter = companion.getType().getMethod(getterName);
+                    if (java.lang.reflect.Modifier.isStatic(getter.getModifiers())
+                            || getter.getParameterCount() != 0) {
+                        continue;
+                    }
+                    if (getterName.startsWith("is")
+                            && getter.getReturnType() != boolean.class
+                            && getter.getReturnType() != Boolean.class) {
+                        continue;
+                    }
+                    Object companionValue = companion.get(null);
+                    MethodHandle getterHandle = MethodHandles.publicLookup().unreflect(getter);
+                    return getterHandle.bindTo(companionValue).asType(STATIC0_TYPE);
+                } catch (Exception ignored) {
+                }
+            }
+        }
         return null;
     }
 
@@ -1949,8 +1974,35 @@ public final class NovaDynamic {
             MethodHandle boxed = getter.asType(MethodType.methodType(Object.class));
             return MethodHandles.dropArguments(boxed, 0, Object.class);
         } catch (Exception e) {
-            return null;
+            try {
+                java.lang.reflect.Field companion = javaClass.getField("Companion");
+                if (!java.lang.reflect.Modifier.isStatic(companion.getModifiers())) return null;
+                String capitalized = memberName.isEmpty()
+                        ? memberName
+                        : Character.toUpperCase(memberName.charAt(0)) + memberName.substring(1);
+                String[] getterNames = {"get" + capitalized, "is" + capitalized};
+                for (String getterName : getterNames) {
+                    Method getter = companion.getType().getMethod(getterName);
+                    if (java.lang.reflect.Modifier.isStatic(getter.getModifiers())
+                            || getter.getParameterCount() != 0) {
+                        continue;
+                    }
+                    if (getterName.startsWith("is")
+                            && getter.getReturnType() != boolean.class
+                            && getter.getReturnType() != Boolean.class) {
+                        continue;
+                    }
+                    Object companionValue = companion.get(null);
+                    MethodHandle bound = MethodHandles.publicLookup().unreflect(getter)
+                            .bindTo(companionValue)
+                            .asType(MethodType.methodType(Object.class));
+                    return MethodHandles.dropArguments(bound, 0, Object.class);
+                }
+            } catch (Exception ignored) {
+                return null;
+            }
         }
+        return null;
     }
 
     /**

@@ -4808,6 +4808,12 @@ public class HirToMirLowering {
                 }
                 return invocation;
             }
+            java.lang.reflect.Method companionMethod = findJavaCompanionMethod(
+                    cls, methodName, args, builder);
+            if (companionMethod != null && !companionMethod.isVarArgs()) {
+                return lowerJavaCompanionMethodCall(javaClass, cls, companionMethod,
+                        args, builder, loc);
+            }
         }
         // 编译期不可见或只能匹配到 varargs 时，交由运行时按真实类加载器和参数重载分派。
         String className = javaClass.replace('/', '.');
@@ -5528,6 +5534,25 @@ public class HirToMirLowering {
             // 使用与 import static 相同的运行时桥接，以支持脚本 ClassLoader、内部类和安全策略。
             String importedJavaClass = javaImports.get(targetName);
             if (importedJavaClass != null) {
+                Class<?> importedClass = resolveJavaClass(importedJavaClass);
+                if (importedClass != null) {
+                    java.lang.reflect.Field companion = findJavaCompanionField(importedClass);
+                    java.lang.reflect.Method getter = findJavaCompanionGetter(
+                            importedClass, expr.getMember());
+                    if (companion != null && getter != null) {
+                        String ownerInternalName = importedJavaClass.replace('.', '/');
+                        String companionInternalName = companion.getType().getName().replace('.', '/');
+                        int companionValue = builder.emitGetStatic(ownerInternalName, "Companion",
+                                "L" + companionInternalName + ";",
+                                MirType.ofObject(companionInternalName), expr.getLocation());
+                        String descriptor = buildJavaMethodDescriptor(getter);
+                        String returnDescriptor = descriptor.substring(descriptor.indexOf(')') + 1);
+                        MirType returnType = descriptorToMirType(returnDescriptor);
+                        return builder.emitInvokeVirtualDesc(companionValue, getter.getName(),
+                                new int[0], companionInternalName, descriptor, returnType,
+                                expr.getLocation());
+                    }
+                }
                 String extra = "$JavaStaticField|" + importedJavaClass + "|" + expr.getMember();
                 return builder.emitInvokeStatic(extra, new int[0],
                         MirType.ofObject("java/lang/Object"), expr.getLocation());
@@ -5661,6 +5686,76 @@ public class HirToMirLowering {
                 "(Ljava/lang/Object;)Ljava/lang/Object;");
         return builder.emitInvokeDynamic(getInfo, new int[]{target},
                 MirType.ofObject("java/lang/Object"), expr.getLocation());
+    }
+
+    private java.lang.reflect.Method findJavaCompanionMethod(Class<?> owner, String name,
+                                                              int[] args, MirBuilder builder) {
+        java.lang.reflect.Field companion = findJavaCompanionField(owner);
+        if (companion == null) {
+            return null;
+        }
+        return findJavaInstanceMethod(companion.getType(), name, args, builder);
+    }
+
+    private int lowerJavaCompanionMethodCall(String javaClass, Class<?> owner,
+                                             java.lang.reflect.Method method, int[] args,
+                                             MirBuilder builder, SourceLocation loc) {
+        java.lang.reflect.Field companion = findJavaCompanionField(owner);
+        if (companion == null) {
+            return -1;
+        }
+        String ownerInternalName = javaClass.replace('.', '/');
+        String companionInternalName = companion.getType().getName().replace('.', '/');
+        int companionValue = builder.emitGetStatic(ownerInternalName, "Companion",
+                "L" + companionInternalName + ";",
+                MirType.ofObject(companionInternalName), loc);
+        String descriptor = buildJavaMethodDescriptor(method);
+        String returnDescriptor = descriptor.substring(descriptor.indexOf(')') + 1);
+        MirType returnType = descriptorToMirType(returnDescriptor);
+        int invocation = builder.emitInvokeVirtualDesc(companionValue, method.getName(), args,
+                companionInternalName, descriptor, returnType, loc);
+        if (returnType.getKind() == MirType.Kind.VOID) {
+            return builder.emitConstNull(loc);
+        }
+        return invocation;
+    }
+
+    private java.lang.reflect.Method findJavaCompanionGetter(Class<?> owner, String propertyName) {
+        java.lang.reflect.Field companion = findJavaCompanionField(owner);
+        if (companion == null) {
+            return null;
+        }
+        String capitalized = Character.toUpperCase(propertyName.charAt(0)) + propertyName.substring(1);
+        String[] getterNames = {"get" + capitalized, "is" + capitalized};
+        for (String getterName : getterNames) {
+            try {
+                java.lang.reflect.Method getter = companion.getType().getMethod(getterName);
+                if (java.lang.reflect.Modifier.isStatic(getter.getModifiers())
+                        || getter.getParameterCount() != 0) {
+                    continue;
+                }
+                if (getterName.startsWith("is")
+                        && getter.getReturnType() != boolean.class
+                        && getter.getReturnType() != Boolean.class) {
+                    continue;
+                }
+                return getter;
+            } catch (NoSuchMethodException ignored) {
+            }
+        }
+        return null;
+    }
+
+    private java.lang.reflect.Field findJavaCompanionField(Class<?> owner) {
+        try {
+            java.lang.reflect.Field companion = owner.getField("Companion");
+            if (!java.lang.reflect.Modifier.isStatic(companion.getModifiers())) {
+                return null;
+            }
+            return companion;
+        } catch (NoSuchFieldException ignored) {
+            return null;
+        }
     }
 
     /**

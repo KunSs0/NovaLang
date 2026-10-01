@@ -39,7 +39,9 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 @DisplayName("Kotlin interop with real kotlinc fixtures")
 class KotlinInteropTest {
 
-    private static final String[] FIXTURES = {"StaticFixture.kt", "KotlinShapes.kt"};
+    private static final String[] FIXTURES = {
+            "StaticFixture.kt", "KotlinShapes.kt", "KotlinInterfaceFixture.kt"
+    };
 
     private static final String IMPORT_STATIC_FIXTURE =
             "import java dynamic.StaticFixture\n";
@@ -48,7 +50,8 @@ class KotlinInteropTest {
             "import java dynamic.Singleton\n" +
                     "import java dynamic.Holder\n" +
                     "import java dynamic.Point\n" +
-                    "import java dynamic.KotlinShapesKt\n";
+                    "import java dynamic.KotlinShapesKt\n" +
+                    "import java dynamic.KotlinInterfaceFixture\n";
 
     @TempDir
     static Path tempDir;
@@ -123,6 +126,56 @@ class KotlinInteropTest {
                 IMPORT_STATIC_FIXTURE +
                         "StaticFixture.Companion.getINSTANCE()",
                 "kotlin-companion-getter.nova").run());
+    }
+
+    @Test
+    @DisplayName("Kotlin companion members can be accessed through the outer type")
+    void compiledKotlinCompanionMembersAreForwarded() {
+        assertEquals("mapping:x", nova().compileToBytecode(
+                IMPORT_STATIC_FIXTURE +
+                        "StaticFixture.getMapping(\"x\")",
+                "kotlin-companion-forwarded-method.nova").run());
+        assertEquals("instance", nova().compileToBytecode(
+                IMPORT_STATIC_FIXTURE +
+                        "StaticFixture.INSTANCE",
+                "kotlin-companion-forwarded-property.nova").run());
+        assertEquals("holder-plain", nova().compileToBytecode(
+                IMPORTS_SHAPES +
+                        "Holder.plain()",
+                "kotlin-companion-forwarded-plain.nova").run());
+        assertEquals("interface-instance", nova().compileToBytecode(
+                IMPORTS_SHAPES +
+                        "KotlinInterfaceFixture.INSTANCE",
+                "kotlin-interface-companion-forwarded-property.nova").run());
+        assertEquals("interface-plain", nova().compileToBytecode(
+                IMPORTS_SHAPES +
+                        "KotlinInterfaceFixture.plain()",
+                "kotlin-interface-companion-forwarded-method.nova").run());
+    }
+
+    @Test
+    @DisplayName("Interpreter forwards Kotlin companion members through the outer type")
+    void interpreterKotlinCompanionMembersAreForwarded() {
+        assertEquals("mapping:x", nova().eval(
+                IMPORT_STATIC_FIXTURE +
+                        "StaticFixture.getMapping(\"x\")",
+                "kotlin-companion-forwarded-interpreter-method.nova"));
+        assertEquals("instance", nova().eval(
+                IMPORT_STATIC_FIXTURE +
+                        "StaticFixture.INSTANCE",
+                "kotlin-companion-forwarded-interpreter-property.nova"));
+        assertEquals("holder-plain", nova().eval(
+                IMPORTS_SHAPES +
+                        "Holder.plain()",
+                "kotlin-companion-forwarded-interpreter-plain.nova"));
+        assertEquals("interface-instance", nova().eval(
+                IMPORTS_SHAPES +
+                        "KotlinInterfaceFixture.INSTANCE",
+                "kotlin-interface-companion-forwarded-interpreter-property.nova"));
+        assertEquals("interface-plain", nova().eval(
+                IMPORTS_SHAPES +
+                        "KotlinInterfaceFixture.plain()",
+                "kotlin-interface-companion-forwarded-interpreter-method.nova"));
     }
 
     @Test

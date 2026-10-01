@@ -152,6 +152,54 @@ public final class JavaTypeDescriptor {
             }
             return toNovaType(field.getGenericType(), typeBindings);
         } catch (NoSuchFieldException ignored) {
+            return resolveCompanionProperty(memberName);
+        }
+    }
+
+    /**
+     * 解析 Kotlin companion object 中暴露给 Java 的属性。
+     *
+     * <p>Kotlin 的 {@code companion object { val INSTANCE = ... }} 默认不会
+     * 在外层类型生成 INSTANCE 字段，而是生成 {@code Companion.getINSTANCE()}。
+     * 对 Nova 来说，这个 getter 应该表现为外层类型的静态属性。</p>
+     */
+    private NovaType resolveCompanionProperty(String memberName) {
+        Class<?> companionClass = resolveCompanionClass();
+        if (companionClass == null) {
+            return null;
+        }
+        String capitalized = Character.toUpperCase(memberName.charAt(0)) + memberName.substring(1);
+        String[] getterNames = {"get" + capitalized, "is" + capitalized};
+        for (String getterName : getterNames) {
+            try {
+                Method getter = companionClass.getMethod(getterName);
+                if (Modifier.isStatic(getter.getModifiers()) || getter.getParameterCount() != 0) {
+                    continue;
+                }
+                if (getterName.startsWith("is")
+                        && getter.getReturnType() != Boolean.TYPE
+                        && getter.getReturnType() != Boolean.class) {
+                    continue;
+                }
+                return toNovaType(getter.getGenericReturnType(), Collections.<TypeVariable<?>, NovaType>emptyMap());
+            } catch (NoSuchMethodException ignored) {
+            }
+        }
+        return null;
+    }
+
+    private Class<?> resolveCompanionClass() {
+        Class<?> javaClass = loadJavaClass();
+        if (javaClass == null) {
+            return null;
+        }
+        try {
+            Field companion = javaClass.getField("Companion");
+            if (!Modifier.isStatic(companion.getModifiers())) {
+                return null;
+            }
+            return companion.getType();
+        } catch (NoSuchFieldException ignored) {
             return null;
         }
     }
@@ -260,9 +308,31 @@ public final class JavaTypeDescriptor {
         }
         Method bestMethod = JavaOverloadResolver.selectBestMethod(
                 candidates, staticOnly, JavaTypeOracle.get().toJavaArgumentTypes(argTypes));
-        return bestMethod != null
-                ? toExecutableDescriptor(bestMethod, receiverTypeArguments)
-                : null;
+        if (bestMethod != null) {
+            return toExecutableDescriptor(bestMethod, receiverTypeArguments);
+        }
+        if (staticOnly) {
+            Method companionMethod = resolveCompanionMethod(methodName, argTypes);
+            if (companionMethod != null) {
+                return toExecutableDescriptor(companionMethod, receiverTypeArguments);
+            }
+        }
+        return null;
+    }
+
+    private Method resolveCompanionMethod(String methodName, List<NovaType> argTypes) {
+        Class<?> companionClass = resolveCompanionClass();
+        if (companionClass == null) {
+            return null;
+        }
+        List<Method> candidates = new ArrayList<Method>();
+        for (Method method : companionClass.getMethods()) {
+            if (methodName.equals(method.getName()) && !Modifier.isStatic(method.getModifiers())) {
+                candidates.add(method);
+            }
+        }
+        return JavaOverloadResolver.selectBestMethod(
+                candidates, false, JavaTypeOracle.get().toJavaArgumentTypes(argTypes));
     }
 
     /**
@@ -345,6 +415,17 @@ public final class JavaTypeDescriptor {
             if (!methodName.equals(method.getName())) continue;
             if (Modifier.isStatic(method.getModifiers()) != staticOnly) continue;
             overloads.add(toExecutableDescriptor(method, receiverTypeArguments));
+        }
+        if (overloads.isEmpty() && staticOnly) {
+            Class<?> companionClass = resolveCompanionClass();
+            if (companionClass != null) {
+                for (Method method : companionClass.getMethods()) {
+                    if (!methodName.equals(method.getName()) || Modifier.isStatic(method.getModifiers())) {
+                        continue;
+                    }
+                    overloads.add(toExecutableDescriptor(method, receiverTypeArguments));
+                }
+            }
         }
         return overloads;
     }
@@ -515,6 +596,9 @@ public final class JavaTypeDescriptor {
                 return toNovaType(getter.getGenericReturnType(), typeBindings);
             } catch (NoSuchMethodException ignored) {
             }
+        }
+        if (staticOnly) {
+            return resolveCompanionProperty(memberName);
         }
         return null;
     }

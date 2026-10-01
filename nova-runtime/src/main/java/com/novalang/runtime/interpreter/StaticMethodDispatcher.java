@@ -201,13 +201,18 @@ final class StaticMethodDispatcher {
             }
             try {
                 if (field) {
-                    java.lang.reflect.Field javaField = javaClass.getField(memberName);
-                    if (!java.lang.reflect.Modifier.isStatic(javaField.getModifiers())) {
+                    try {
+                        Object value = NovaDynamic.getStaticFieldByClasses(
+                                new Class<?>[]{javaClass}, memberName);
+                        setResult(frame, inst, AbstractNovaValue.fromJava(value));
+                        return;
+                    } catch (NovaException exception) {
+                        String message = exception.getMessage();
+                        if (message == null || !message.startsWith("Cannot find Java static field:")) {
+                            throw exception;
+                        }
                         continue;
                     }
-                    Object value = javaField.get(null);
-                    setResult(frame, inst, AbstractNovaValue.fromJava(value));
-                    return;
                 }
                 List<NovaValue> args = new ArrayList<>();
                 for (int operand : inst.getOperands()) {

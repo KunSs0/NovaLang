@@ -17,7 +17,7 @@ class StaticFixture {
     companion object {
         fun getMapping(id: String): String = "mapping:$id"
 
-        fun getINSTANCE(): String = "instance"
+        val INSTANCE: String = "instance"
     }
 
     fun currentTick(): Long = 42L
