@@ -3860,6 +3860,16 @@ public class HirToMirLowering {
                     return builder.emitInvokeDynamic(getInfo, new int[]{local.getIndex()},
                             MirType.ofObject("java/lang/Object"), ref.getLocation());
                 }
+                String outerOwner = anonymousOuterOwners.get(thisType.getClassName());
+                if (outerOwner != null) {
+                    Set<String> outerFields = classFieldNames.get(outerOwner);
+                    if (outerFields != null && outerFields.contains(ref.getName())) {
+                        int outerValue = builder.emitGetField(local.getIndex(), "$outer",
+                                MirType.ofObject(outerOwner), ref.getLocation());
+                        return builder.emitGetField(outerValue, ref.getName(),
+                                MirType.ofObject("java/lang/Object"), ref.getLocation());
+                    }
+                }
                 int fieldVal = builder.emitGetField(local.getIndex(), ref.getName(),
                         MirType.ofObject("java/lang/Object"), ref.getLocation());
                 // 装箱可变捕获：lambda 内部通过 this.field 访问 Object[] → 解包 field[0]
