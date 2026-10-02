@@ -71,6 +71,7 @@ public class HirToMirLowering {
     // 匿名对象支持
     private String currentEnclosingClassName;
     private int anonymousClassCounter;
+    private final Map<String, String> anonymousOuterOwners = new HashMap<>();
 
     /** 设置匿名类计数器初始值（用于跨 evalRepl 避免类名冲突） */
     public void setAnonymousClassCounterBase(int base) { this.anonymousClassCounter = base; }
@@ -2982,6 +2983,13 @@ public class HirToMirLowering {
 
     private int lowerObjectLiteral(HirObjectLiteral expr, MirBuilder builder) {
         String anonName = currentEnclosingClassName + "$" + (++anonymousClassCounter);
+        String outerOwner = currentEnclosingClassName;
+        if (outerOwner != null && findThisLocal(builder) == null) {
+            outerOwner = null;
+        }
+        if (outerOwner != null) {
+            anonymousOuterOwners.put(anonName, outerOwner);
+        }
 
         // 解析 superClass 和 interfaces
         String superClass = "java/lang/Object";
@@ -3026,6 +3034,9 @@ public class HirToMirLowering {
                 methods.add(method);
             }
         }
+        if (outerOwner != null) {
+            fields.add(new MirField("$outer", MirType.ofObject(outerOwner), EnumSet.of(Modifier.PRIVATE, Modifier.FINAL)));
+        }
 
         // 生成构造器以初始化字段默认值
         if (!hirFields.isEmpty()) {
@@ -3041,6 +3052,17 @@ public class HirToMirLowering {
             }
             ctorBuilder.emitReturnVoid(expr.getLocation());
             methods.add(ctor);
+        }
+        if (outerOwner != null) {
+            MirFunction outerCtor = new MirFunction("<init>", MirType.ofVoid(),
+                    Collections.singletonList(new MirParam("$outer", MirType.ofObject(outerOwner))),
+                    EnumSet.of(Modifier.PUBLIC));
+            MirBuilder outerCtorBuilder = new MirBuilder(outerCtor);
+            outerCtorBuilder.newLocal("this", MirType.ofObject(anonName));
+            outerCtorBuilder.newLocal("$outer", MirType.ofObject(outerOwner));
+            outerCtorBuilder.emitSetField(0, "$outer", 1, expr.getLocation());
+            outerCtorBuilder.emitReturnVoid(expr.getLocation());
+            methods.add(outerCtor);
         }
 
         // 解析超类构造器描述符
@@ -3062,9 +3084,17 @@ public class HirToMirLowering {
         addGeneratedClass(anonClass);
 
         // 降级构造参数并发射 NEW_OBJECT
-        int[] argLocals = new int[ctorArgs.size()];
+        int outerArgCount = outerOwner == null ? 0 : 1;
+        int[] argLocals = new int[ctorArgs.size() + outerArgCount];
+        if (outerOwner != null) {
+            MirLocal outerThis = findThisLocal(builder);
+            if (outerThis == null) {
+                throw new IllegalStateException("匿名对象缺少外部实例: " + anonName);
+            }
+            argLocals[0] = outerThis.getIndex();
+        }
         for (int i = 0; i < ctorArgs.size(); i++) {
-            argLocals[i] = lowerExpr(ctorArgs.get(i), builder);
+            argLocals[i + outerArgCount] = lowerExpr(ctorArgs.get(i), builder);
         }
         return builder.emitNewObject(anonName, argLocals, expr.getLocation());
     }
@@ -4394,6 +4424,22 @@ public class HirToMirLowering {
             }
             String owner = thisLocal.getType().getClassName();
             if (owner == null) owner = "java/lang/Object";
+            String outerOwner = anonymousOuterOwners.get(owner);
+            if (outerOwner != null
+                    && lookupNovaMethodDescInherited(owner, name) == null
+                    && lookupNovaMethodDescInherited(outerOwner, name) != null) {
+                int outerTarget = builder.emitGetField(thisLocal.getIndex(), "$outer",
+                        MirType.ofObject(outerOwner), expr.getLocation());
+                int[] args = lowerArgs(expr.getArgs(), builder);
+                String desc = lookupNovaMethodDesc(outerOwner, name, args.length);
+                MirType retType = inferNovaMethodReturnType(outerOwner, name, desc);
+                int result = builder.emitInvokeVirtualDesc(outerTarget, name, args,
+                        outerOwner, desc, retType, expr.getLocation());
+                if (result >= 0) {
+                    return result;
+                }
+                return builder.emitConstNull(expr.getLocation());
+            }
             // 字段调用（如 lambda 字段 f(x)）: 先 GETFIELD 再 INVOKEINTERFACE
             Set<String> fields = classFieldNames.get(owner);
             Map<String, String> methodDescs = novaMethodDescs.get(owner);

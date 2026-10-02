@@ -25,4 +25,21 @@ class AnonymousVoidEventListenerTest {
 
         assertDoesNotThrow(() -> listener.onEvent("click", "payload"));
     }
+
+    @Test
+    void anonymousEventListenerCanCallEnclosingMethod() {
+        String source =
+                "import java com.novalang.runtime.codegen.EventListenerFixture\n" +
+                "class Owner {\n" +
+                "    fun sendAction(action: String) { }\n" +
+                "    fun listener(): EventListenerFixture = object : EventListenerFixture {\n" +
+                "        override fun onEvent(key: String, event: Any?) { sendAction(\"click\") }\n" +
+                "    }\n" +
+                "}\n" +
+                "fun create(): EventListenerFixture = Owner().listener()\n";
+
+        CompiledNova compiled = new Nova().compileToBytecode(source, "anonymous-event-listener-owner.nova");
+        EventListenerFixture listener = (EventListenerFixture) compiled.call("create");
+        assertDoesNotThrow(() -> listener.onEvent("click", "payload"));
+    }
 }
