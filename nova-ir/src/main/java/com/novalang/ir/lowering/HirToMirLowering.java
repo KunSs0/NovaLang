@@ -1013,7 +1013,10 @@ public class HirToMirLowering {
                 if (!m.getName().startsWith("<")) {
                     Map<String, String> classDescs = novaMethodDescs.get(className);
                     if (classDescs != null && classDescs.containsKey(m.getName())) {
-                        func.setOverrideDescriptor(classDescs.get(m.getName()));
+                        String overrideDescriptor = classDescs.get(m.getName());
+                        if (descriptorParameterCount(overrideDescriptor) == m.getParams().size()) {
+                            func.setOverrideDescriptor(overrideDescriptor);
+                        }
                     }
                 }
                 methods.add(func);
@@ -1162,6 +1165,18 @@ public class HirToMirLowering {
             }
         }
         return mirClass;
+    }
+
+    private int descriptorParameterCount(String descriptor) {
+        if (descriptor == null || descriptor.isEmpty()) {
+            return -1;
+        }
+        int start = descriptor.indexOf('(');
+        int end = descriptor.indexOf(')');
+        if (start < 0 || end <= start) {
+            return -1;
+        }
+        return org.objectweb.asm.Type.getArgumentTypes(descriptor).length;
     }
 
     private MirFunction generateEnumClinit(HirClass hirClass, String className) {
@@ -3002,7 +3017,13 @@ public class HirToMirLowering {
         List<MirFunction> methods = new ArrayList<>();
         for (HirDecl member : expr.getMembers()) {
             if (member instanceof HirFunction) {
-                methods.add(lowerFunction((HirFunction) member, anonName));
+                MirFunction method = lowerFunction((HirFunction) member, anonName);
+                String interfaceDescriptor = findInterfaceMethodDescriptor(
+                        interfaces, method.getName(), method.getParams().size());
+                if (interfaceDescriptor != null) {
+                    method.setOverrideDescriptor(interfaceDescriptor);
+                }
+                methods.add(method);
             }
         }
 
@@ -3046,6 +3067,34 @@ public class HirToMirLowering {
             argLocals[i] = lowerExpr(ctorArgs.get(i), builder);
         }
         return builder.emitNewObject(anonName, argLocals, expr.getLocation());
+    }
+
+    private String findInterfaceMethodDescriptor(List<String> interfaces, String methodName, int parameterCount) {
+        for (String interfaceName : interfaces) {
+            Class<?> javaInterface = resolveJavaClass(interfaceName);
+            if (javaInterface != null && javaInterface.isInterface()) {
+                for (java.lang.reflect.Method method : javaInterface.getMethods()) {
+                    if (method.getName().equals(methodName)
+                            && method.getParameterTypes().length == parameterCount
+                            && method.getReturnType() == Void.TYPE) {
+                        return org.objectweb.asm.Type.getMethodDescriptor(method);
+                    }
+                }
+            }
+            Map<String, String> descriptors = novaMethodDescs.get(interfaceName);
+            if (descriptors == null) {
+                continue;
+            }
+            String descriptor = descriptors.get(methodName);
+            if (descriptor == null) {
+                continue;
+            }
+            if (descriptorParameterCount(descriptor) == parameterCount
+                    && descriptor.endsWith(")V")) {
+                return descriptor;
+            }
+        }
+        return null;
     }
 
     /**

@@ -333,12 +333,15 @@ public final class JavaSubclassFactory {
         return (type == long.class || type == double.class) ? 2 : 1;
     }
 
-    private static String buildCacheKey(Class<?> superClass, List<Class<?>> interfaces,
-                                         Set<String> methodNames, Class<?>[] ctorArgTypes) {
+    static String buildCacheKey(Class<?> superClass, List<Class<?>> interfaces,
+                                Set<String> methodNames, Class<?>[] ctorArgTypes) {
         StringBuilder sb = new StringBuilder();
-        sb.append(superClass.getName());
+        appendTypeIdentity(sb, superClass);
+        appendMethodDescriptors(sb, superClass);
         for (Class<?> iface : interfaces) {
-            sb.append('+').append(iface.getName());
+            sb.append('+');
+            appendTypeIdentity(sb, iface);
+            appendMethodDescriptors(sb, iface);
         }
         sb.append('|');
         List<String> sorted = new ArrayList<>(methodNames);
@@ -351,6 +354,26 @@ public final class JavaSubclassFactory {
             sb.append(t.getName()).append(',');
         }
         return sb.toString();
+    }
+
+    private static void appendTypeIdentity(StringBuilder builder, Class<?> type) {
+        builder.append(type.getName())
+                .append('@')
+                .append(System.identityHashCode(type.getClassLoader()));
+    }
+
+    private static void appendMethodDescriptors(StringBuilder builder, Class<?> type) {
+        Method[] methods = type.getMethods();
+        List<String> descriptors = new ArrayList<>(methods.length);
+        for (Method method : methods) {
+            descriptors.add(method.getName() + Type.getMethodDescriptor(method));
+        }
+        Collections.sort(descriptors);
+        builder.append('{');
+        for (String descriptor : descriptors) {
+            builder.append(descriptor).append(';');
+        }
+        builder.append('}');
     }
 
     /**
