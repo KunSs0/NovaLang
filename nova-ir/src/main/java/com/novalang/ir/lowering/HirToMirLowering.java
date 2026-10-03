@@ -3038,12 +3038,44 @@ public class HirToMirLowering {
             fields.add(new MirField("$outer", MirType.ofObject(outerOwner), EnumSet.of(Modifier.PRIVATE, Modifier.FINAL)));
         }
 
-        // 生成构造器以初始化字段默认值
-        if (!hirFields.isEmpty()) {
+        // 解析超类构造器描述符
+        List<Expression> ctorArgs = expr.getSuperConstructorArgs();
+        String superCtorDesc = null;
+        if (!ctorArgs.isEmpty()) {
+            Class<?> superJavaClass = resolveJavaClass(superClass);
+            superCtorDesc = resolveConstructorDesc(superJavaClass, ctorArgs);
+        }
+
+        // 生成统一构造器：外部实例参数在前，父类构造参数随后，最后初始化匿名对象字段。
+        boolean needsConstructor = !hirFields.isEmpty() || outerOwner != null || !ctorArgs.isEmpty();
+        if (needsConstructor) {
+            List<MirParam> ctorParams = new ArrayList<>();
+            if (outerOwner != null) {
+                ctorParams.add(new MirParam("$outer", MirType.ofObject(outerOwner)));
+            }
+            for (int i = 0; i < ctorArgs.size(); i++) {
+                ctorParams.add(new MirParam("$super" + i, MirType.ofObject("java/lang/Object")));
+            }
+
             MirFunction ctor = new MirFunction("<init>", MirType.ofVoid(),
-                    Collections.emptyList(), EnumSet.of(Modifier.PUBLIC));
+                    ctorParams, EnumSet.of(Modifier.PUBLIC));
             MirBuilder ctorBuilder = new MirBuilder(ctor);
             ctorBuilder.newLocal("this", MirType.ofObject(anonName));
+
+            int nextParamLocal = 1;
+            if (outerOwner != null) {
+                ctorBuilder.newLocal("$outer", MirType.ofObject(outerOwner));
+                ctorBuilder.emitSetField(0, "$outer", nextParamLocal, expr.getLocation());
+                nextParamLocal++;
+            }
+
+            int[] superArgLocals = new int[ctorArgs.size()];
+            for (int i = 0; i < ctorArgs.size(); i++) {
+                superArgLocals[i] = ctorBuilder.newLocal("$super" + i,
+                        MirType.ofObject("java/lang/Object"));
+                nextParamLocal++;
+            }
+
             for (HirField hf : hirFields) {
                 if (hf.getInitializer() != null) {
                     int initVal = lowerExpr(hf.getInitializer(), ctorBuilder);
@@ -3051,26 +3083,13 @@ public class HirToMirLowering {
                 }
             }
             ctorBuilder.emitReturnVoid(expr.getLocation());
-            methods.add(ctor);
-        }
-        if (outerOwner != null) {
-            MirFunction outerCtor = new MirFunction("<init>", MirType.ofVoid(),
-                    Collections.singletonList(new MirParam("$outer", MirType.ofObject(outerOwner))),
-                    EnumSet.of(Modifier.PUBLIC));
-            MirBuilder outerCtorBuilder = new MirBuilder(outerCtor);
-            outerCtorBuilder.newLocal("this", MirType.ofObject(anonName));
-            outerCtorBuilder.newLocal("$outer", MirType.ofObject(outerOwner));
-            outerCtorBuilder.emitSetField(0, "$outer", 1, expr.getLocation());
-            outerCtorBuilder.emitReturnVoid(expr.getLocation());
-            methods.add(outerCtor);
-        }
 
-        // 解析超类构造器描述符
-        List<Expression> ctorArgs = expr.getSuperConstructorArgs();
-        String superCtorDesc = null;
-        if (!ctorArgs.isEmpty()) {
-            Class<?> superJavaClass = resolveJavaClass(superClass);
-            superCtorDesc = resolveConstructorDesc(superJavaClass, ctorArgs);
+            if (!ctorArgs.isEmpty()) {
+                ctor.setSuperInitArgLocals(superArgLocals);
+                ctor.setSuperClassName(superClass);
+                ctor.setSuperInitDescriptor(superCtorDesc);
+            }
+            methods.add(ctor);
         }
 
         // 创建匿名 MirClass
@@ -3795,6 +3814,7 @@ public class HirToMirLowering {
             if (local.getName().equals("this") || local.getName().equals("$this")) {
                 // 自定义 getter → 调用 get$fieldName()
                 MirType thisType = local.getType();
+                String outerOwner = anonymousOuterOwners.get(thisType.getClassName());
                 if (thisType.getKind() == MirType.Kind.OBJECT && thisType.getClassName() != null
                         && customGetters.contains(thisType.getClassName() + ":" + ref.getName())) {
                     return builder.emitInvokeVirtualDesc(local.getIndex(), "get$" + ref.getName(),
@@ -3838,7 +3858,15 @@ public class HirToMirLowering {
                         cur = parent;
                     }
                     boolean hasMethod = hasNovaMethod(className, ref.getName());
-                    if (!hasField && !hasMethod && chainComplete) {
+                    boolean hasOuterMember = false;
+                    if (outerOwner != null) {
+                        Set<String> outerFields = classFieldNames.get(outerOwner);
+                        hasOuterMember = outerFields != null && outerFields.contains(ref.getName());
+                        if (!hasOuterMember) {
+                            hasOuterMember = hasNovaMethod(outerOwner, ref.getName());
+                        }
+                    }
+                    if (!hasField && !hasMethod && !hasOuterMember && chainComplete) {
                         break; // 继续查找 StdlibRegistry 常量和环境变量
                     }
                     // chainComplete=false 时，可能是继承的字段 → fall through 到 GET_FIELD
@@ -3860,7 +3888,6 @@ public class HirToMirLowering {
                     return builder.emitInvokeDynamic(getInfo, new int[]{local.getIndex()},
                             MirType.ofObject("java/lang/Object"), ref.getLocation());
                 }
-                String outerOwner = anonymousOuterOwners.get(thisType.getClassName());
                 if (outerOwner != null) {
                     Set<String> outerFields = classFieldNames.get(outerOwner);
                     if (outerFields != null && outerFields.contains(ref.getName())) {

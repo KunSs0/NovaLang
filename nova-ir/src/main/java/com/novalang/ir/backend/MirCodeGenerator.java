@@ -572,9 +572,12 @@ public class MirCodeGenerator {
                 }
                 mv.visitVarInsn(ALOAD, 0);
                 for (int local : superArgs) {
-                    loadObject(mv, local);
+                    loadObjectForDescriptor(mv, local, getSuperArgumentType(func, superArgs, local));
                 }
-                String superDesc = MethodDescriptor.allObjectVoidDesc(superArgs.length);
+                String superDesc = func.getSuperInitDescriptor();
+                if (superDesc == null) {
+                    superDesc = MethodDescriptor.allObjectVoidDesc(superArgs.length);
+                }
                 mv.visitMethodInsn(INVOKESPECIAL, superClass, "<init>", superDesc, false);
             } else {
                 // 主构造器: super.<init>()
@@ -2606,6 +2609,34 @@ public class MirCodeGenerator {
             boxInt(mv);
         } else {
             mv.visitVarInsn(ALOAD, local);
+        }
+    }
+
+    private Type getSuperArgumentType(MirFunction function, int[] superArgs, int local) {
+        String descriptor = function.getSuperInitDescriptor();
+        if (descriptor == null) {
+            return Type.getType("Ljava/lang/Object;");
+        }
+        Type[] parameterTypes = Type.getArgumentTypes(descriptor);
+        for (int i = 0; i < superArgs.length; i++) {
+            if (superArgs[i] == local && i < parameterTypes.length) {
+                return parameterTypes[i];
+            }
+        }
+        return Type.getType("Ljava/lang/Object;");
+    }
+
+    private void loadObjectForDescriptor(MethodVisitor mv, int local, Type type) {
+        loadObject(mv, local);
+        if (type.getSort() >= Type.BOOLEAN && type.getSort() <= Type.DOUBLE) {
+            unboxForType(mv, type);
+            return;
+        }
+        if (type.getSort() == Type.ARRAY || type.getSort() == Type.OBJECT) {
+            String internalName = type.getInternalName();
+            if (!"java/lang/Object".equals(internalName)) {
+                mv.visitTypeInsn(CHECKCAST, internalName);
+            }
         }
     }
 

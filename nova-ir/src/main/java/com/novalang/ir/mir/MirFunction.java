@@ -28,6 +28,8 @@ public class MirFunction {
     private int[] superInitArgLocals;
     /** 超类名称（用于 MirInterpreter 正确查找超类构造器，避免依赖运行时对象的 getClass） */
     private String superClassName;
+    /** 超类构造器的 JVM 描述符，供字节码后端生成原生参数调用。 */
+    private String superInitDescriptor;
     /** 覆盖方法描述符（扩展函数等静态方法使用原始类型描述符） */
     private String overrideDescriptor;
     /** 同名重载对外暴露的 JVM 描述符；方法体仍使用 Nova 的 Object 局部变量描述符。 */
@@ -100,6 +102,9 @@ public class MirFunction {
 
     public String getSuperClassName() { return superClassName; }
     public void setSuperClassName(String name) { this.superClassName = name; }
+
+    public String getSuperInitDescriptor() { return superInitDescriptor; }
+    public void setSuperInitDescriptor(String descriptor) { this.superInitDescriptor = descriptor; }
 
     public String getOverrideDescriptor() { return overrideDescriptor; }
     public void setOverrideDescriptor(String desc) { this.overrideDescriptor = desc; }
