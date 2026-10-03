@@ -519,6 +519,84 @@ class ParserTest {
     // ============ 一元表达式测试 ============
 
     @Nested
+    @DisplayName("Multiline expressions")
+    class MultilineExpressionTests {
+
+        private Expression parseInitializer(String source) {
+            Program program = parse(source);
+            assertEquals(1, program.getDeclarations().size());
+            PropertyDecl property = (PropertyDecl) program.getDeclarations().get(0);
+            return property.getInitializer();
+        }
+
+        @Test
+        @DisplayName("chained member access supports explicit continuation")
+        void testChainedMemberAccessWithExplicitContinuation() {
+            Expression expression = parseInitializer(
+                    "val result = value \\\n"
+                            + "    .trim() \\\n"
+                            + "    .toString()\n");
+
+            assertTrue(expression instanceof CallExpr);
+            CallExpr call = (CallExpr) expression;
+            assertTrue(call.getCallee() instanceof MemberExpr);
+            assertEquals("toString", ((MemberExpr) call.getCallee()).getMember());
+        }
+
+        @Test
+        @DisplayName("string concatenation supports operator at line end")
+        void testStringConcatenationWithOperatorAtLineEnd() {
+            Expression expression = parseInitializer(
+                    "val result = \"hello\" +\n"
+                            + "    \"world\"\n");
+
+            assertTrue(expression instanceof BinaryExpr);
+            assertEquals(BinaryExpr.BinaryOp.ADD, ((BinaryExpr) expression).getOperator());
+        }
+
+        @Test
+        @DisplayName("string concatenation supports operator at line start")
+        void testStringConcatenationWithOperatorAtLineStart() {
+            Expression expression = parseInitializer(
+                    "val result = \"hello\"\n"
+                            + "    + \"world\"\n");
+
+            assertTrue(expression instanceof BinaryExpr);
+            assertEquals(BinaryExpr.BinaryOp.ADD, ((BinaryExpr) expression).getOperator());
+        }
+
+        @Test
+        @DisplayName("call parentheses continue an expression at line start")
+        void testCallContinuationAtLineStart() {
+            Expression expression = parseInitializer(
+                    "val result = factory\n"
+                            + "    (1)\n");
+
+            assertTrue(expression instanceof CallExpr);
+        }
+
+
+        @Test
+        @DisplayName("trailing lambda continues an expression at line start")
+        void testTrailingLambdaContinuationAtLineStart() {
+            Expression expression = parseInitializer(
+                    "val result = factory\n"
+                            + "    { x -> x }\n");
+
+            assertTrue(expression instanceof CallExpr);
+            assertTrue(((CallExpr) expression).hasTrailingLambda());
+        }
+        @Test
+        @DisplayName("index brackets continue an expression at line start")
+        void testIndexContinuationAtLineStart() {
+            Expression expression = parseInitializer(
+                    "val result = values\n"
+                            + "    [0]\n");
+
+            assertTrue(expression instanceof IndexExpr);
+        }
+    }
+    @Nested
     @DisplayName("一元表达式")
     class UnaryExpressionTests {
 

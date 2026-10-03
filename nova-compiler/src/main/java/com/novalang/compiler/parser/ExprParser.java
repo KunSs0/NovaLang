@@ -39,6 +39,7 @@ class ExprParser {
                      BAND_ASSIGN, BOR_ASSIGN, BXOR_ASSIGN, SHL_ASSIGN, SHR_ASSIGN, USHR_ASSIGN)) {
             Token op = parser.advance();
             SourceLocation loc = parser.previousLocation();
+            parser.skipNewlines();
             Expression right = parseAssignExpr();  // 右结合
 
             AssignExpr.AssignOp assignOp;
@@ -72,8 +73,10 @@ class ExprParser {
 
         if (parser.match(QUESTION)) {
             SourceLocation loc = parser.previousLocation();
+            parser.skipNewlines();
             Expression thenExpr = parseTernaryExpr();  // 右结合
             parser.expect(COLON, "Expected ':' in ternary expression");
+            parser.skipNewlines();
             Expression elseExpr = parseTernaryExpr();  // 右结合
             return new ConditionalExpr(loc, condition, thenExpr, elseExpr);
         }
@@ -91,6 +94,7 @@ class ExprParser {
             if (parser.match(PIPELINE)) {
                 parser.commitMark(); // 提交（不回溯）
                 SourceLocation loc = parser.previousLocation();
+                parser.skipNewlines();
                 Expression right = parseDisjunctionExpr();
                 left = new PipelineExpr(loc, left, right);
             } else {
@@ -106,7 +110,7 @@ class ExprParser {
     private Expression parseDisjunctionExpr() {
         Expression left = parseConjunctionExpr();
 
-        while (parser.match(OR)) {
+        while (parser.matchWithLineContinuation(OR)) {
             SourceLocation loc = parser.previousLocation();
             Expression right = parseConjunctionExpr();
             left = new BinaryExpr(loc, left, BinaryExpr.BinaryOp.OR, right);
@@ -119,7 +123,7 @@ class ExprParser {
     private Expression parseConjunctionExpr() {
         Expression left = parseBitwiseOrExpr();
 
-        while (parser.match(AND)) {
+        while (parser.matchWithLineContinuation(AND)) {
             SourceLocation loc = parser.previousLocation();
             Expression right = parseBitwiseOrExpr();
             left = new BinaryExpr(loc, left, BinaryExpr.BinaryOp.AND, right);
@@ -132,7 +136,7 @@ class ExprParser {
     private Expression parseBitwiseOrExpr() {
         Expression left = parseBitwiseXorExpr();
 
-        while (parser.match(BOR)) {
+        while (parser.matchWithLineContinuation(BOR)) {
             SourceLocation loc = parser.previousLocation();
             Expression right = parseBitwiseXorExpr();
             left = new BinaryExpr(loc, left, BinaryExpr.BinaryOp.BOR, right);
@@ -145,7 +149,7 @@ class ExprParser {
     private Expression parseBitwiseXorExpr() {
         Expression left = parseBitwiseAndExpr();
 
-        while (parser.match(BXOR)) {
+        while (parser.matchWithLineContinuation(BXOR)) {
             SourceLocation loc = parser.previousLocation();
             Expression right = parseBitwiseAndExpr();
             left = new BinaryExpr(loc, left, BinaryExpr.BinaryOp.BXOR, right);
@@ -158,7 +162,7 @@ class ExprParser {
     private Expression parseBitwiseAndExpr() {
         Expression left = parseEqualityExpr();
 
-        while (parser.match(BAND)) {
+        while (parser.matchWithLineContinuation(BAND)) {
             SourceLocation loc = parser.previousLocation();
             Expression right = parseEqualityExpr();
             left = new BinaryExpr(loc, left, BinaryExpr.BinaryOp.BAND, right);
@@ -171,7 +175,7 @@ class ExprParser {
     private Expression parseEqualityExpr() {
         Expression left = parseComparisonExpr();
 
-        if (!parser.checkAny(EQ, NE, REF_EQ, REF_NE, MATCH_REGEX, NOT_MATCH_REGEX)) {
+        if (!parser.checkAnyWithLineContinuation(EQ, NE, REF_EQ, REF_NE, MATCH_REGEX, NOT_MATCH_REGEX)) {
             return left;
         }
 
@@ -179,9 +183,10 @@ class ExprParser {
         Expression result = null;
         Expression prevRight = left;
 
-        while (parser.checkAny(EQ, NE, REF_EQ, REF_NE, MATCH_REGEX, NOT_MATCH_REGEX)) {
+        while (parser.checkAnyWithLineContinuation(EQ, NE, REF_EQ, REF_NE, MATCH_REGEX, NOT_MATCH_REGEX)) {
             Token op = parser.advance();
             SourceLocation loc = parser.previousLocation();
+            parser.skipNewlines();
             Expression right = parseComparisonExpr();
             BinaryExpr.BinaryOp binOp;
             switch (op.getType()) {
@@ -213,7 +218,7 @@ class ExprParser {
     private Expression parseComparisonExpr() {
         Expression left = parseTypeCheckExpr();
 
-        if (!parser.checkAny(LT, GT, LE, GE)) {
+        if (!parser.checkAnyWithLineContinuation(LT, GT, LE, GE)) {
             return left;
         }
 
@@ -221,9 +226,10 @@ class ExprParser {
         Expression result = null;
         Expression prevRight = left;
 
-        while (parser.checkAny(LT, GT, LE, GE)) {
+        while (parser.checkAnyWithLineContinuation(LT, GT, LE, GE)) {
             Token op = parser.advance();
             SourceLocation loc = parser.previousLocation();
+            parser.skipNewlines();
             Expression right = parseTypeCheckExpr();
             BinaryExpr.BinaryOp binOp;
             switch (op.getType()) {
@@ -288,7 +294,7 @@ class ExprParser {
     private Expression parseElvisExpr() {
         Expression left = parseInfixToExpr();
 
-        if (parser.match(ELVIS)) {
+        if (parser.matchWithLineContinuation(ELVIS)) {
             SourceLocation loc = parser.previousLocation();
             Expression right = parseElvisExpr();  // 右结合
             left = new ElvisExpr(loc, left, right);
@@ -304,6 +310,7 @@ class ExprParser {
         if (parser.check(IDENTIFIER) && "to".equals(parser.current.getLexeme())) {
             SourceLocation loc = parser.location();
             parser.advance(); // consume "to"
+            parser.skipNewlines();
             Expression right = parseRangeExpr();
             left = new BinaryExpr(loc, left, BinaryExpr.BinaryOp.TO, right);
         }
@@ -390,7 +397,7 @@ class ExprParser {
     private Expression parseRangeExpr() {
         Expression left = parseShiftExpr();
 
-        if (parser.matchAny(RANGE, RANGE_EXCLUSIVE)) {
+        if (parser.matchWithLineContinuation(RANGE, RANGE_EXCLUSIVE)) {
             SourceLocation loc = parser.previousLocation();
             boolean isExclusive = parser.previous.getType() == RANGE_EXCLUSIVE;
             Expression right = parseShiftExpr();
@@ -411,9 +418,10 @@ class ExprParser {
     private Expression parseShiftExpr() {
         Expression left = parseAdditiveExpr();
 
-        while (parser.checkAny(SHL, SHR, USHR)) {
+        while (parser.checkAnyWithLineContinuation(SHL, SHR, USHR)) {
             Token op = parser.advance();
             SourceLocation loc = parser.previousLocation();
+            parser.skipNewlines();
             Expression right = parseAdditiveExpr();
             BinaryExpr.BinaryOp binOp;
             switch (op.getType()) {
@@ -432,9 +440,10 @@ class ExprParser {
     Expression parseAdditiveExpr() {
         Expression left = parseMultiplicativeExpr();
 
-        while (parser.checkAny(PLUS, MINUS)) {
+        while (parser.checkAnyWithLineContinuation(PLUS, MINUS)) {
             Token op = parser.advance();
             SourceLocation loc = parser.previousLocation();
+            parser.skipNewlines();
             Expression right = parseMultiplicativeExpr();
             BinaryExpr.BinaryOp binOp = op.getType() == PLUS ?
                     BinaryExpr.BinaryOp.ADD : BinaryExpr.BinaryOp.SUB;
@@ -448,9 +457,10 @@ class ExprParser {
     private Expression parseMultiplicativeExpr() {
         Expression left = parsePrefixExpr();
 
-        while (parser.checkAny(MUL, DIV, MOD)) {
+        while (parser.checkAnyWithLineContinuation(MUL, DIV, MOD)) {
             Token op = parser.advance();
             SourceLocation loc = parser.previousLocation();
+            parser.skipNewlines();
             Expression right = parsePrefixExpr();
             BinaryExpr.BinaryOp binOp;
             switch (op.getType()) {
@@ -471,6 +481,7 @@ class ExprParser {
         if (parser.check(NOT_NULL)) {
             SourceLocation loc = parser.location();
             parser.advance(); // consume !!
+            parser.skipNewlines();
             Expression operand = parsePrefixExpr(); // 右结合
             Expression inner = new UnaryExpr(loc, UnaryExpr.UnaryOp.NOT, operand, true);
             return new UnaryExpr(loc, UnaryExpr.UnaryOp.NOT, inner, true);
@@ -478,6 +489,7 @@ class ExprParser {
         if (parser.checkAny(MINUS, PLUS, NOT, BNOT, INC, DEC)) {
             Token op = parser.advance();
             SourceLocation loc = parser.previousLocation();
+            parser.skipNewlines();
 
             // 对于 ++ 和 -- 后面跟字面量的情况，解析为两个单独的运算
             // 例如: --5 -> -(-5), ++5 -> +(+5)
@@ -531,15 +543,7 @@ class ExprParser {
 
         while (true) {
             // 前瞻：换行后紧跟 . 或 ?. ，视为表达式延续（方法链换行）
-            if (parser.check(NEWLINE)) {
-                parser.mark();
-                parser.skipNewlines();
-                if (parser.checkAny(DOT, SAFE_DOT)) {
-                    parser.commitMark();
-                } else {
-                    parser.reset();
-                }
-            }
+            parser.skipNewlinesBeforeAny(DOT, SAFE_DOT, LPAREN, LBRACKET, SAFE_LBRACKET, DOUBLE_COLON, LBRACE);
 
             SourceLocation loc = parser.location();
 
@@ -668,6 +672,7 @@ class ExprParser {
         // IDENTIFIER: run { }, RPAREN: func() { }, NOT_NULL: obj!! { }, RBRACKET: list[i] { }
         // isKeyword: s.launch { }（关键字作为成员名后的尾随 Lambda）
         if (parser.previous == null) return false;
+        if (parser.previous.getType() == NEWLINE) return true;
         switch (parser.previous.getType()) {
             case IDENTIFIER:
             case RPAREN:
@@ -785,7 +790,7 @@ class ExprParser {
             start = parseIndexInnerExpr();
         }
 
-        if (parser.matchAny(RANGE, RANGE_EXCLUSIVE)) {
+        if (parser.matchWithLineContinuation(RANGE, RANGE_EXCLUSIVE)) {
             isSlice = true;
             isExclusive = parser.previous.getType() == RANGE_EXCLUSIVE;
 

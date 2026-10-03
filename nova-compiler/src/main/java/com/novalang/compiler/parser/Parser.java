@@ -321,10 +321,42 @@ public class Parser {
         }
     }
 
+    boolean skipNewlinesBeforeAny(TokenType... types) {
+        if (!check(NEWLINE)) {
+            return false;
+        }
+
+        mark();
+        skipNewlines();
+        if (checkAny(types)) {
+            commitMark();
+            return true;
+        }
+
+        reset();
+        return false;
+    }
+
+    boolean checkAnyWithLineContinuation(TokenType... types) {
+        if (checkAny(types)) {
+            return true;
+        }
+        return skipNewlinesBeforeAny(types);
+    }
+
     void skipSeparators() {
         while (matchAny(NEWLINE, SEMICOLON)) {
             // 跳过换行符和分号
         }
+    }
+
+    boolean matchWithLineContinuation(TokenType... types) {
+        if (!checkAnyWithLineContinuation(types)) {
+            return false;
+        }
+        advance();
+        skipNewlines();
+        return true;
     }
 
     // ============ 程序解析 ============

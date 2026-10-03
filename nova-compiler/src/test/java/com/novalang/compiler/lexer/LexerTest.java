@@ -1765,4 +1765,14 @@ class LexerTest {
             assertTrue(value.endsWith("end"));
         }
     }
+
+    @Test
+    @DisplayName("backslash continuation suppresses CRLF newline token")
+    void testBackslashContinuationSuppressesCrLfNewlineToken() {
+        List<Token> scanned = scan("value \\\r\n    .trim()");
+
+        assertEquals(TokenType.IDENTIFIER, scanned.get(0).getType());
+        assertEquals(TokenType.DOT, scanned.get(1).getType());
+        assertFalse(scanned.stream().anyMatch(token -> token.getType() == TokenType.NEWLINE));
+    }
 }

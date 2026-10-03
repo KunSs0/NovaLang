@@ -357,6 +357,9 @@ public class Lexer {
                 }
                 break;
 
+            case '\\':
+                lineContinuation();
+                break;
             case '$':
                 addToken(TokenType.DOLLAR);
                 break;
@@ -773,6 +776,22 @@ public class Lexer {
         addToken(type);
     }
 
+    private void lineContinuation() {
+        if (peek() == '\r') {
+            advance();
+            if (peek() == '\n') {
+                advance();
+            }
+            newLine();
+            return;
+        }
+        if (peek() == '\n') {
+            advance();
+            newLine();
+            return;
+        }
+        error("Unexpected character '\\\\'");
+    }
     private void blockComment() {
         int depth = 1;
         while (depth > 0 && !isAtEnd()) {
