@@ -543,7 +543,10 @@ class ExprParser {
 
         while (true) {
             // 前瞻：换行后紧跟 . 或 ?. ，视为表达式延续（方法链换行）
-            parser.skipNewlinesBeforeAny(DOT, SAFE_DOT, LPAREN, LBRACKET, SAFE_LBRACKET, DOUBLE_COLON, LBRACE);
+            parser.skipNewlinesBeforeAny(DOT, SAFE_DOT);
+            if (canContinueAmbiguousPostfix(expr)) {
+                parser.skipIndentedNewlinesBeforeAny(LPAREN, LBRACKET, SAFE_LBRACKET, DOUBLE_COLON, LBRACE);
+            }
 
             SourceLocation loc = parser.location();
 
@@ -665,6 +668,10 @@ class ExprParser {
         }
         return new CallExpr(loc, target, Collections.<TypeRef>emptyList(),
                 Collections.<CallExpr.Argument>emptyList(), lambda);
+    }
+
+    private boolean canContinueAmbiguousPostfix(Expression expression) {
+        return !(expression instanceof Literal) && !(expression instanceof CollectionLiteral);
     }
 
     private boolean canBeTrailingLambda() {

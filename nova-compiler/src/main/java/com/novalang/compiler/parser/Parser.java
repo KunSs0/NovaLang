@@ -337,11 +337,27 @@ public class Parser {
         return false;
     }
 
+    boolean skipIndentedNewlinesBeforeAny(TokenType... types) {
+        if (!check(NEWLINE)) {
+            return false;
+        }
+
+        mark();
+        skipNewlines();
+        if (checkAny(types) && current.getColumn() > 1) {
+            commitMark();
+            return true;
+        }
+
+        reset();
+        return false;
+    }
+
     boolean checkAnyWithLineContinuation(TokenType... types) {
         if (checkAny(types)) {
             return true;
         }
-        return skipNewlinesBeforeAny(types);
+        return skipIndentedNewlinesBeforeAny(types);
     }
 
     void skipSeparators() {
