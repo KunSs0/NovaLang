@@ -23,6 +23,10 @@ public class CallbackModelTest {
             return callback.handle(value);
         }
 
+        public String decorate() {
+            return "member";
+        }
+
         public void registerEvent(EventCallback callback) {
             this.eventCallback = callback;
         }
@@ -112,5 +116,24 @@ public class CallbackModelTest {
                 "callback-event-lambda.nova").run();
         assertNotNull(host.eventCallback);
         assertEquals("rpc:ready=data", host.fireEvent("ready", "data"));
+    }
+
+    @Test
+    void lambdaKeepsEnclosingNovaReceiverForMemberCalls() {
+        Host host = new Host();
+        Nova nova = new Nova();
+        nova.set("host", host);
+        nova.compileToBytecode(
+                "import java com.novalang.runtime.CallbackModelTest.Callback\n"
+                        + "import java com.novalang.runtime.CallbackModelTest.Host\n"
+                        + "class Component {\n"
+                        + "fun install() {\n"
+                        + "host.register({ value: String -> decorate() + \"-callback\" })\n"
+                        + "}\n"
+                        + "fun decorate(): String { return \"member\" }\n"
+                        + "}\n"
+                        + "Component().install()",
+                "callback-enclosing-receiver.nova").run();
+        assertEquals("member-callback", host.fire("ignored"));
     }
 }

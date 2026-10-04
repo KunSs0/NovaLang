@@ -3208,6 +3208,19 @@ public class HirToMirLowering {
             if (existsOuter) captures.add(name);
         }
 
+        // 普通 lambda 的 this 必须保持词法作用域，不能把未限定成员调用解析到
+        // 生成的 $Lambda$ 实例自身。为 lambda 保存外层 receiver，后续成员/方法
+        // 解析通过 anonymousOuterOwners 回到外层 class。
+        MirLocal enclosingThis = findThisLocal(builder);
+        String enclosingOwner = null;
+        if (enclosingThis != null && enclosingThis.getType() != null) {
+            enclosingOwner = enclosingThis.getType().getClassName();
+        }
+        if (enclosingOwner != null && !captures.contains("$outer")) {
+            captures.add("$outer");
+            anonymousOuterOwners.put(lambdaName, enclosingOwner);
+        }
+
         // 可变捕获检测: 在 lambda body 中被赋值的捕获变量需要 Object[1] boxing
         Set<String> assignedInBody = new HashSet<>();
         collectAssignedVarNames(expr.getBody(), assignedInBody);
@@ -3237,7 +3250,11 @@ public class HirToMirLowering {
         // 1. 创建捕获变量字段
         List<MirField> fields = new ArrayList<>();
         for (String cap : captures) {
-            fields.add(new MirField(cap, MirType.ofObject("java/lang/Object"),
+            MirType captureType = MirType.ofObject("java/lang/Object");
+            if ("$outer".equals(cap) && enclosingOwner != null) {
+                captureType = MirType.ofObject(enclosingOwner);
+            }
+            fields.add(new MirField(cap, captureType,
                     EnumSet.of(Modifier.PUBLIC)));
         }
 
@@ -3245,7 +3262,11 @@ public class HirToMirLowering {
         // 注意: generateMethod 会自动插入 super() 调用
         List<MirParam> ctorParams = new ArrayList<>();
         for (String cap : captures) {
-            ctorParams.add(new MirParam(cap, MirType.ofObject("java/lang/Object")));
+            MirType captureType = MirType.ofObject("java/lang/Object");
+            if ("$outer".equals(cap) && enclosingOwner != null) {
+                captureType = MirType.ofObject(enclosingOwner);
+            }
+            ctorParams.add(new MirParam(cap, captureType));
         }
         MirFunction ctorFunc = new MirFunction("<init>", MirType.ofVoid(),
                 ctorParams, EnumSet.of(Modifier.PUBLIC));
@@ -3324,6 +3345,10 @@ public class HirToMirLowering {
         int[] captureLocals = new int[captures.size()];
         for (int i = 0; i < captures.size(); i++) {
             String capName = captures.get(i);
+            if ("$outer".equals(capName) && enclosingThis != null) {
+                captureLocals[i] = enclosingThis.getIndex();
+                continue;
+            }
             // 装箱的可变捕获：使用 Object[] box 引用
             if (boxedMutableCaptures.containsKey(capName)) {
                 int bLocal = boxedMutableCaptures.get(capName);

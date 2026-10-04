@@ -3017,6 +3017,14 @@ public class MirCodeGenerator {
             case Type.ARRAY: {
                 String internalName = type.getInternalName();
                 if (!"java/lang/Object".equals(internalName)) {
+                    // Java/SAM 参数必须允许 Nova FunctionN/NovaCallable 适配为目标接口。
+                    // 先交给 SamAdapter，再做最终类型校验；直接 CHECKCAST 会把
+                    // 生成的 $Lambda$ 类错误地当成 ScriptKeyListener 等宿主接口。
+                    mv.visitLdcInsn(type);
+                    mv.visitInsn(SWAP);
+                    mv.visitMethodInsn(INVOKESTATIC, "com/novalang/runtime/SamAdapter",
+                            "adaptSingleArg",
+                            "(Ljava/lang/Class;Ljava/lang/Object;)Ljava/lang/Object;", false);
                     mv.visitTypeInsn(CHECKCAST, internalName);
                 }
                 break;
