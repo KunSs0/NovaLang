@@ -529,7 +529,7 @@ public class HirToMirLowering {
                 if (classNames.contains(superName) || externalTypeNames.contains(superName)) {
                     classSuperClass.put(hc.getName(), superName);
                 }
-                if (resolveJavaClass(superName) != null) {
+                if (!isKnownNovaType(superName) && resolveJavaClass(superName) != null) {
                     javaSuperClassNames.put(hc.getName(), superName);
                 }
             }
@@ -772,7 +772,7 @@ public class HirToMirLowering {
                     if (classNames.contains(superName) || externalTypeNames.contains(superName)) {
                         classSuperClass.put(className, superName);
                     }
-                    if (resolveJavaClass(superName) != null) {
+                    if (!isKnownNovaType(superName) && resolveJavaClass(superName) != null) {
                         javaSuperClassNames.put(className, superName);
                     }
                 }
