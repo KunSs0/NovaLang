@@ -2,6 +2,7 @@ package com.novalang.cli;
 
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
+import picocli.CommandLine.ParentCommand;
 import picocli.CommandLine.Parameters;
 
 /**
@@ -9,6 +10,9 @@ import picocli.CommandLine.Parameters;
  */
 @Command(name = "build", description = "编译项目（支持增量编译）")
 public class BuildCommand implements Runnable {
+
+    @ParentCommand
+    Main parent;
 
     @Parameters(index = "0", defaultValue = ".", description = "源码目录")
     String sourceDir;
@@ -21,6 +25,7 @@ public class BuildCommand implements Runnable {
 
     @Override
     public void run() {
-        new CompileRunner(false).buildProject(sourceDir, outputDir, jarFile);
+        boolean strict = parent != null && parent.strict;
+        new CompileRunner(strict).buildProject(sourceDir, outputDir, jarFile);
     }
 }

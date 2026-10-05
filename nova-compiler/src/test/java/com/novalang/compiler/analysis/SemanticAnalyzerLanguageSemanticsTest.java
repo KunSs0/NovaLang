@@ -2104,4 +2104,19 @@ class SemanticAnalyzerLanguageSemanticsTest {
         assertSymbolType(result, "f", "Int");
         assertSymbolType(result, "g", "Unit");
     }
+
+    @Test
+    @DisplayName("member classes should be visible to enclosing class methods")
+    void memberClassTypeShouldBeVisibleToEnclosingClassMethods() {
+        AnalysisResult result = analyze(
+                "class Outer {\n" +
+                "    class Entry(val value: Int)\n" +
+                "    fun create(): Entry {\n" +
+                "        return Entry(1)\n" +
+                "    }\n" +
+                "}");
+
+        assertNoDiagnostics(result,
+                "Member class declarations should be available in enclosing class method signatures and bodies");
+    }
 }

@@ -27,6 +27,7 @@ public class AstToHirLowering implements AstVisitor<AstNode, LoweringContext> {
     // sealed class → 子类名列表（用于 when 穷举性检查）
     private final Map<String, Set<String>> sealedSubclasses = new HashMap<>();
     private final Set<String> sealedClassNames = new HashSet<>();
+    private final List<HirClass> nestedClasses = new ArrayList<>();
 
     public void setScriptMode(boolean scriptMode) {
         this.scriptMode = scriptMode;
@@ -38,6 +39,7 @@ public class AstToHirLowering implements AstVisitor<AstNode, LoweringContext> {
      * 将 AST 程序降级为 HIR 模块。
      */
     public HirModule lower(Program program) {
+        nestedClasses.clear();
         LoweringContext ctx = new LoweringContext();
         return (HirModule) program.accept(this, ctx);
     }
@@ -208,6 +210,9 @@ public class AstToHirLowering implements AstVisitor<AstNode, LoweringContext> {
                     }
                 }
             }
+        }
+        if (!nestedClasses.isEmpty()) {
+            decls.addAll(nestedClasses);
         }
 
         // 收集 sealed class 子类关系（用于 when 穷举检查）
@@ -408,6 +413,8 @@ public class AstToHirLowering implements AstVisitor<AstNode, LoweringContext> {
                 } else {
                     methods.add(fn);
                 }
+            } else if (lowered instanceof HirClass) {
+                nestedClasses.add((HirClass) lowered);
             }
         }
 
@@ -449,6 +456,7 @@ public class AstToHirLowering implements AstVisitor<AstNode, LoweringContext> {
             HirDecl lowered = lowerDecl(member, ctx);
             if (lowered instanceof HirField) fields.add((HirField) lowered);
             else if (lowered instanceof HirFunction) methods.add((HirFunction) lowered);
+            else if (lowered instanceof HirClass) nestedClasses.add((HirClass) lowered);
         }
         return new HirClass(node.getLocation(), node.getName(),
                 toModifierSet(node.getModifiers()),
@@ -466,6 +474,7 @@ public class AstToHirLowering implements AstVisitor<AstNode, LoweringContext> {
             HirDecl lowered = lowerDecl(member, ctx);
             if (lowered instanceof HirField) fields.add((HirField) lowered);
             else if (lowered instanceof HirFunction) methods.add((HirFunction) lowered);
+            else if (lowered instanceof HirClass) nestedClasses.add((HirClass) lowered);
         }
         return new HirClass(node.getLocation(), node.getName(),
                 toModifierSet(node.getModifiers()),

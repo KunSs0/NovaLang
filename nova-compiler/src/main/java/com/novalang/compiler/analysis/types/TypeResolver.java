@@ -12,6 +12,7 @@ public final class TypeResolver implements TypeRefVisitor<NovaType> {
 
     // 类型参数作用域栈
     private final Deque<Map<String, TypeParameterType>> typeParamStack = new ArrayDeque<Map<String, TypeParameterType>>();
+    private final Deque<Set<String>> scopedKnownTypeStack = new ArrayDeque<Set<String>>();
 
     // 类型声明注册：className → List<NovaTypeParam>
     private final Map<String, List<NovaTypeParam>> typeDeclarations = new LinkedHashMap<String, List<NovaTypeParam>>();
@@ -286,6 +287,26 @@ public final class TypeResolver implements TypeRefVisitor<NovaType> {
         }
     }
 
+    /** 注册当前 Nova 类作用域内可见的成员类型。 */
+    public void registerScopedType(String name) {
+        if (name == null || name.isEmpty() || scopedKnownTypeStack.isEmpty()) {
+            return;
+        }
+        scopedKnownTypeStack.peek().add(name);
+    }
+
+    /** 进入一个成员类型作用域，退出时不会污染外层或全局类型集合。 */
+    public void enterScopedTypes() {
+        scopedKnownTypeStack.push(new LinkedHashSet<String>());
+    }
+
+    /** 离开当前成员类型作用域。 */
+    public void exitScopedTypes() {
+        if (!scopedKnownTypeStack.isEmpty()) {
+            scopedKnownTypeStack.pop();
+        }
+    }
+
     public void setCurrentPackageName(String packageName) {
         this.currentPackageName = packageName != null ? packageName : "";
     }
@@ -338,7 +359,8 @@ public final class TypeResolver implements TypeRefVisitor<NovaType> {
 
     private String resolveVisibleNovaTypeName(String name) {
         if (name == null) return null;
-        if (knownTypeNames.contains(name) || typeDeclarations.containsKey(name) || typeAliases.containsKey(name)) {
+        if (isScopedKnownType(name)
+                || knownTypeNames.contains(name) || typeDeclarations.containsKey(name) || typeAliases.containsKey(name)) {
             return name;
         }
         if (name.indexOf('.') < 0) {
@@ -364,6 +386,15 @@ public final class TypeResolver implements TypeRefVisitor<NovaType> {
             }
         }
         return null;
+    }
+
+    private boolean isScopedKnownType(String name) {
+        for (Set<String> scopedNames : scopedKnownTypeStack) {
+            if (scopedNames.contains(name)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private JavaTypeDescriptor resolveImportedJavaType(String name) {

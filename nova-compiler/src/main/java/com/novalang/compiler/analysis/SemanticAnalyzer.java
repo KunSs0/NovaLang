@@ -3116,6 +3116,7 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
 
         Scope classScope = enterScope(Scope.ScopeType.CLASS, node);
         classScope.setOwnerTypeName(node.getName());
+        typeResolver.enterScopedTypes();
 
         Symbol thisSym = new Symbol("this", SymbolKind.VARIABLE, node.getName(),
                 false, node.getLocation(), node, Modifier.PUBLIC);
@@ -3151,6 +3152,7 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
             diagnostics.addAll(varianceDiags);
         }
 
+        predeclareMemberTypes(node.getMembers(), classScope, classSym);
         predeclareFunctions(node.getMembers(), classScope, classSym);
         for (Declaration member : node.getMembers()) {
             member.accept(this, ctx);
@@ -3163,12 +3165,45 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
             }
         }
         exitScope(node);
+        typeResolver.exitScopedTypes();
 
         if (node.getTypeParams() != null && !node.getTypeParams().isEmpty()) {
             typeResolver.exitTypeParams();
         }
 
         return null;
+    }
+
+    /** 预声明类体中的成员类型，使成员方法可以按源码顺序引用它们。 */
+    private void predeclareMemberTypes(List<Declaration> declarations, Scope scope, Symbol ownerSymbol) {
+        if (declarations == null || declarations.isEmpty()) {
+            return;
+        }
+        String ownerName = scope.getOwnerTypeName();
+        for (Declaration declaration : declarations) {
+            if (!(declaration instanceof ClassDecl)) {
+                continue;
+            }
+            String name = declaration.getName();
+            if (name == null || name.isEmpty()) {
+                continue;
+            }
+            Symbol memberSymbol = scope.resolveLocalType(name);
+            if (memberSymbol == null) {
+                memberSymbol = new Symbol(name, SymbolKind.CLASS, name, false,
+                        declaration.getLocation(), declaration,
+                        extractVisibility(declaration.getModifiers()));
+                memberSymbol.setResolvedNovaType(new ClassNovaType(name, false));
+                scope.defineType(memberSymbol);
+            }
+            typeResolver.registerScopedType(name);
+            if (ownerName != null && !ownerName.isEmpty()) {
+                typeResolver.registerScopedType(ownerName + "." + name);
+            }
+            if (ownerSymbol != null) {
+                ownerSymbol.addMember(memberSymbol);
+            }
+        }
     }
 
     private String resolvedSuperTypeName(TypeRef typeRef, NovaType resolvedType) {

@@ -170,8 +170,11 @@ public class CompileRunner {
      */
     public void buildProject(String sourceDir, String outputDir, String jarFile) {
         try {
+            NovaIrCompiler irCompiler = new NovaIrCompiler();
+            irCompiler.setEnableSemanticAnalysis(strict);
+            irCompiler.setStrictSemanticMode(strict);
             com.novalang.compiler.compiler.IncrementalCompiler incrementalCompiler =
-                    new com.novalang.compiler.compiler.IncrementalCompiler(new NovaIrCompiler());
+                    new com.novalang.compiler.compiler.IncrementalCompiler(irCompiler);
 
             Map<String, byte[]> results = incrementalCompiler.compileProject(
                     new File(sourceDir), new File(outputDir));
