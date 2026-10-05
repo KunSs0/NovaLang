@@ -26,6 +26,7 @@ import com.novalang.runtime.host.JavaVariableDescriptor;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -313,7 +314,8 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
     }
 
     private Symbol resolveJavaExtensionRoot(NovaType receiverType, String functionName) {
-        if (!(receiverType instanceof JavaClassNovaType) || functionName == null) {
+        NovaType javaReceiverType = resolveJavaExtensionReceiverType(receiverType);
+        if (!(javaReceiverType instanceof JavaClassNovaType) || functionName == null) {
             return null;
         }
         Symbol scriptRoot = null;
@@ -324,7 +326,7 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
                 continue;
             }
             NovaType target = typeResolver.resolve(function.getReceiverType());
-            if (target == null || !TypeCompatibility.isAssignable(target, receiverType, superTypeRegistry)) {
+            if (target == null || !TypeCompatibility.isAssignable(target, javaReceiverType, superTypeRegistry)) {
                 continue;
             }
             if (bestReceiver == null || !bestReceiver.equals(target)
@@ -346,7 +348,7 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
         if (scriptRoot != null) {
             return scriptRoot;
         }
-        Class<?> receiverClass = JavaTypeOracle.get().toJavaArgumentType(receiverType.withNullable(false));
+        Class<?> receiverClass = JavaTypeOracle.get().toJavaArgumentType(javaReceiverType.withNullable(false));
         if (receiverClass == null || receiverClass == Object.class) {
             return null;
         }
@@ -383,6 +385,99 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
             }
         }
         return root;
+    }
+
+    /**
+     * 将 Nova 类继承链中的 Java 父类作为扩展函数的接收者类型。
+     *
+     * <p>直接写 {@code this as JavaType} 时，接收者类型本身就是
+     * {@link JavaClassNovaType}。但在 Java 类上声明的 Nova 子类内部直接调用
+     * 扩展函数时，{@code this} 的语义类型是 {@link ClassNovaType}，需要沿着
+     * Nova 类的父类和接口关系找到对应的 Java 类型。</p>
+     */
+    private NovaType resolveJavaExtensionReceiverType(NovaType receiverType) {
+        if (receiverType instanceof JavaClassNovaType) {
+            return receiverType;
+        }
+        if (!(receiverType instanceof ClassNovaType)) {
+            return null;
+        }
+
+        String typeName = baseType(receiverType.getTypeName());
+        Symbol typeSymbol = currentScope.resolveType(typeName);
+        if (typeSymbol == null) {
+            typeSymbol = resolveGlobalTypeSymbol(typeName);
+        }
+        if (typeSymbol == null) {
+            return null;
+        }
+
+        Set<String> visited = new HashSet<String>();
+        return resolveJavaExtensionReceiverType(typeSymbol, visited);
+    }
+
+    private NovaType resolveJavaExtensionReceiverType(Symbol typeSymbol, Set<String> visited) {
+        if (typeSymbol == null || !visited.add(typeSymbol.getName())) {
+            return null;
+        }
+
+        String superClass = typeSymbol.getSuperClass();
+        NovaType javaType = resolveJavaTypeName(superClass);
+        if (javaType instanceof JavaClassNovaType) {
+            return javaType;
+        }
+        if (superClass != null) {
+            Symbol superSymbol = currentScope.resolveType(baseType(superClass));
+            if (superSymbol == null) {
+                superSymbol = resolveGlobalTypeSymbol(baseType(superClass));
+            }
+            javaType = resolveJavaExtensionReceiverType(superSymbol, visited);
+            if (javaType != null) {
+                return javaType;
+            }
+        }
+
+        List<String> interfaces = typeSymbol.getInterfaces();
+        if (interfaces != null) {
+            for (String interfaceName : interfaces) {
+                javaType = resolveJavaTypeName(interfaceName);
+                if (javaType instanceof JavaClassNovaType) {
+                    return javaType;
+                }
+                Symbol interfaceSymbol = currentScope.resolveType(baseType(interfaceName));
+                if (interfaceSymbol == null) {
+                    interfaceSymbol = resolveGlobalTypeSymbol(baseType(interfaceName));
+                }
+                javaType = resolveJavaExtensionReceiverType(interfaceSymbol, visited);
+                if (javaType != null) {
+                    return javaType;
+                }
+            }
+        }
+        return null;
+    }
+
+    private NovaType resolveJavaTypeName(String typeName) {
+        if (typeName == null || typeName.isEmpty()) {
+            return null;
+        }
+        NovaType resolved = typeResolver.resolveTypeNameReference(typeName);
+        if (resolved instanceof JavaClassNovaType) {
+            return resolved;
+        }
+        return null;
+    }
+
+    private Symbol resolveImplicitJavaExtensionRoot(String functionName) {
+        if (functionName == null || currentScope.getEnclosingTypeName() == null) {
+            return null;
+        }
+        Symbol thisSymbol = currentScope.resolve("this");
+        NovaType receiverType = resolvedSymbolType(thisSymbol);
+        if (receiverType == null) {
+            receiverType = new ClassNovaType(currentScope.getEnclosingTypeName(), false);
+        }
+        return resolveJavaExtensionRoot(receiverType, functionName);
     }
 
     private JavaExtensionPropertyDescriptor resolveJavaExtensionProperty(
@@ -3901,31 +3996,39 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
                     setNovaType(node, NovaTypes.DYNAMIC);
                 }
             } else {
-                NovaType typeCallee = typeResolver.resolveTypeNameReference(funcName);
-                if (typeCallee instanceof JavaClassNovaType) {
-                    JavaTypeDescriptor descriptor = ((JavaClassNovaType) typeCallee).getDescriptor();
-                    JavaTypeDescriptor.JavaExecutableDescriptor ctor = descriptor != null
-                            ? descriptor.resolveConstructor(analyzedCallArgumentTypes(node))
-                            : null;
-                    if (ctor != null) {
+                Symbol implicitExtensionRoot = resolveImplicitJavaExtensionRoot(funcName);
+                if (implicitExtensionRoot != null) {
+                    Symbol extension = resolveJavaFunctionOverload(implicitExtensionRoot, node);
+                    checker.checkCallArgCount(node, extension);
+                    checker.checkCallArgTypes(node, extension);
+                    setNovaType(node, extension.getResolvedNovaType());
+                } else {
+                    NovaType typeCallee = typeResolver.resolveTypeNameReference(funcName);
+                    if (typeCallee instanceof JavaClassNovaType) {
+                        JavaTypeDescriptor descriptor = ((JavaClassNovaType) typeCallee).getDescriptor();
+                        JavaTypeDescriptor.JavaExecutableDescriptor ctor = descriptor != null
+                                ? descriptor.resolveConstructor(analyzedCallArgumentTypes(node))
+                                : null;
+                        if (ctor != null) {
+                            setNovaType(node, typeCallee.withNullable(false));
+                        } else {
+                            checker.addDiagnostic(SemanticDiagnostic.Severity.ERROR,
+                                    "No matching Java constructor found for '" + funcName + "'",
+                                    node);
+                        }
+                    } else if (typeCallee instanceof ClassNovaType) {
                         setNovaType(node, typeCallee.withNullable(false));
-                    } else {
+                    } else if (externalCallableNames.contains(funcName)) {
+                        setNovaType(node, NovaTypes.DYNAMIC);
+                    } else if (strictJavaTypes) {
                         checker.addDiagnostic(SemanticDiagnostic.Severity.ERROR,
-                                "No matching Java constructor found for '" + funcName + "'",
+                                "未注册的 Java 函数: '" + funcName + "'",
+                                node);
+                    } else if (rejectUnknownGlobalCalls) {
+                        checker.addDiagnostic(SemanticDiagnostic.Severity.ERROR,
+                                "未声明的全局函数: '" + funcName + "'",
                                 node);
                     }
-                } else if (typeCallee instanceof ClassNovaType) {
-                    setNovaType(node, typeCallee.withNullable(false));
-                } else if (externalCallableNames.contains(funcName)) {
-                    setNovaType(node, NovaTypes.DYNAMIC);
-                } else if (strictJavaTypes) {
-                    checker.addDiagnostic(SemanticDiagnostic.Severity.ERROR,
-                            "未注册的 Java 函数: '" + funcName + "'",
-                            node);
-                } else if (rejectUnknownGlobalCalls) {
-                    checker.addDiagnostic(SemanticDiagnostic.Severity.ERROR,
-                            "未声明的全局函数: '" + funcName + "'",
-                            node);
                 }
             }
             // 集合工厂函数泛型推断

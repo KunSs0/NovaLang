@@ -22,6 +22,7 @@ import com.novalang.runtime.resolution.MethodSemantics;
 import com.novalang.runtime.resolution.JavaOverloadResolver;
 import com.novalang.runtime.resolution.StdlibMethodResolver;
 import com.novalang.runtime.host.JavaExtensionDescriptor;
+import com.novalang.runtime.host.JavaFunctionDescriptor;
 import com.novalang.runtime.host.JavaTypes;
 import com.novalang.runtime.stdlib.BuiltinModuleExports;
 import com.novalang.runtime.stdlib.StdlibRegistry;
@@ -97,6 +98,7 @@ public class HirToMirLowering {
     private final Map<String, String> inheritedDescCache = new HashMap<>();
     // Nova 类继承关系: className → superClassName（仅 Nova 类，非 java/lang/Object）
     private final Map<String, String> classSuperClass = new HashMap<>();
+    private final Map<String, String> javaSuperClassNames = new HashMap<>();
     // 顶层函数描述符: funcName → typed JVM descriptor
     private final Map<String, String> topLevelFuncDescs = new HashMap<>();
     // 顶层函数声明: funcName → HirFunction（用于默认参数填充）
@@ -527,6 +529,9 @@ public class HirToMirLowering {
                 if (classNames.contains(superName) || externalTypeNames.contains(superName)) {
                     classSuperClass.put(hc.getName(), superName);
                 }
+                if (resolveJavaClass(superName) != null) {
+                    javaSuperClassNames.put(hc.getName(), superName);
+                }
             }
             List<String> ifaces = new ArrayList<>();
             if (hc.getSuperClass() != null) {
@@ -766,6 +771,9 @@ public class HirToMirLowering {
                     String superName = typeToInternalName(hc.getSuperClass());
                     if (classNames.contains(superName) || externalTypeNames.contains(superName)) {
                         classSuperClass.put(className, superName);
+                    }
+                    if (resolveJavaClass(superName) != null) {
+                        javaSuperClassNames.put(className, superName);
                     }
                 }
             }
@@ -4530,6 +4538,10 @@ public class HirToMirLowering {
                         funcInterface, funcDesc,
                         MirType.ofObject("java/lang/Object"), expr.getLocation());
             }
+            if (hasJavaTypesExtensionForReceiver(owner, name, expr.getArgs().size())) {
+                int[] args = lowerArgs(expr.getArgs(), builder);
+                return emitDynamicInvoke(thisLocal.getIndex(), name, args, builder, expr.getLocation());
+            }
             // 真实类中，仅对已知类方法生成自调用，未知函数回退到 invokedynamic
             // Lambda 类保留自调用：scopeReceiver 在运行时重定向 this（apply/run/with 依赖此机制）
             // 继承链不完整时保留自调用：父类方法可能在之前的 evalRepl 中注册
@@ -5256,6 +5268,39 @@ public class HirToMirLowering {
             }
         }
         return false;
+    }
+
+    private boolean hasJavaTypesExtensionForReceiver(String owner, String methodName, int argumentCount) {
+        Class<?> receiverClass = resolveJavaReceiverClass(owner);
+        if (receiverClass == null) {
+            return false;
+        }
+        for (JavaExtensionDescriptor extension : javaExtensions) {
+            JavaFunctionDescriptor function = extension.getFunction();
+            if (methodName.equals(function.getName())
+                    && function.getParameters().size() == argumentCount
+                    && extension.getTargetType().isAssignableFrom(receiverClass)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private Class<?> resolveJavaReceiverClass(String owner) {
+        String current = owner;
+        Set<String> visited = new HashSet<String>();
+        while (current != null && visited.add(current)) {
+            Class<?> receiverClass = resolveJavaClass(current);
+            if (receiverClass != null) {
+                return receiverClass;
+            }
+            String superName = classSuperClass.get(current);
+            if (superName == null) {
+                superName = javaSuperClassNames.get(current);
+            }
+            current = superName;
+        }
+        return null;
     }
 
     /** 标记能以 receiver.block() 形式调用的局部函数或函数类型参数。 */
