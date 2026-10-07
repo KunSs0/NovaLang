@@ -1,5 +1,20 @@
 # Kotlin Companion Java 互操作问题记录
 
+## 当前调用方式
+
+Nova 已支持通过外层类型直接调用默认 `companion object` 的方法和读取属性，无需为 Kotlin 方法添加 `@JvmStatic`：
+
+```nova
+import java com.gitee.creator.core.common.PositionMapping
+PositionMapping.getMapping(id)
+```
+
+编译路径在 `HirToMirLowering.lowerJavaStaticCall` 中解析伴生实例方法，再由 `lowerJavaCompanionMethodCall` 生成外层 `Companion` 静态字段读取和实例方法调用。真实静态方法优先于伴生实例方法。原有显式 `Type.Companion.method(...)` 也按字段读取和实例调用解析。
+
+`KotlinInteropTest` 使用真实 Kotlin 编译产物验证 `StaticFixture.getMapping("x")`、伴生属性和接口伴生方法，分别覆盖字节码编译与解释器执行。2026-10-07 重新执行该测试类，全部 12 项通过。服务端 `core.nova` 的位置映射调用已改为 `PositionMapping.getMapping(id)`。
+
+以下内容保留 2026-09-12 的问题现象与修复分析。
+
 ## 现象
 
 2026-09-12 服务端启动时，NovaLang 编译服务端脚本仍然出现以下错误：
@@ -51,7 +66,7 @@ public static final class Companion {
 
 ## 根因判断
 
-NovaLang 当前同时把 `Outer.Companion` 识别为：
+问题发生时，NovaLang 同时把 `Outer.Companion` 识别为：
 
 - 外层 Java 类的公开嵌套类型路径；
 - Kotlin 生成的静态 `Companion` 字段。
@@ -95,7 +110,7 @@ import java dynamic.StaticFixture
 StaticFixture.Companion.getINSTANCE()
 ```
 
-当前版本在语义分析阶段复现 `No matching Java method overload found`。该单测是待修复的回归用例，当前预期失败。
+修复前在语义分析阶段复现 `No matching Java method overload found`。当前回归用例已通过，真实 Kotlin fixture 的验证见上方当前调用方式。
 
 ## 影响范围
 
@@ -112,9 +127,9 @@ StaticFixture.Companion.getINSTANCE()
 4. 保留普通嵌套类的构造器、静态字段和静态方法行为。
 5. 增加编译路径和解释器路径的回归测试，并覆盖 `Companion` 实例方法重载。
 
-## 当前版本状态
+## 当时版本状态
 
 - NovaLang 嵌套类型修复已推送：`c24a6e6`。
 - 服务端脚本迁移及远端锤盾音效提交已合并并推送：`e703b745`。
-- 本次 `Companion` 复现单测和本文档尚未修复实现；本文档提交后会一并推送。
-- 本次没有完成 NovaLang 全量测试；目标单测在修复前应当失败。
+- 当时 `Companion` 复现单测已建立，实现尚待修复。
+- 当时没有完成 NovaLang 全量测试；目标单测在修复前失败。
