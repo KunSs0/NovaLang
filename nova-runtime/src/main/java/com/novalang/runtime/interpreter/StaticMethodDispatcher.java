@@ -300,10 +300,53 @@ final class StaticMethodDispatcher {
         if (inst.getDest() >= 0) frame.locals[inst.getDest()] = result;
     }
 
+    /** 解释器脚本接收者直接访问语言的全局绑定环境。 */
+    private static final class ScriptReceiver implements NovaDynamicObject {
+        private final com.novalang.runtime.types.Environment bindings;
+
+        private ScriptReceiver(com.novalang.runtime.types.Environment bindings) {
+            this.bindings = bindings;
+        }
+
+        @Override
+        public Object getMember(String name) {
+            NovaValue value = bindings.tryGet(name);
+            if (value == null || value.isNull()) {
+                return null;
+            }
+            return value.toJavaValue();
+        }
+
+        @Override
+        public void setMember(String name, Object value) {
+            NovaValue binding = AbstractNovaValue.fromJava(value);
+            if (bindings.contains(name)) {
+                bindings.assign(name, binding);
+            } else {
+                bindings.defineVar(name, binding);
+            }
+        }
+
+        @Override
+        public boolean hasMember(String name) {
+            return bindings.contains(name);
+        }
+    }
+
     /** $ENV|op 或 com/novalang/runtime/NovaScriptContext|op — 环境变量访问 */
     void executeEnvAccess(MirFrame frame, MirInst inst) {
         String extra = inst.extraAs();
         int[] ops = inst.getOperands();
+        if (extra.contains("|requireReceiver|") || extra.contains("|requireLambdaReceiver|")) {
+            NovaValue receiver;
+            if (extra.contains("|requireLambdaReceiver|") && dispatcher.scopeReceiver != null) {
+                receiver = dispatcher.scopeReceiver;
+            } else {
+                receiver = AbstractNovaValue.fromJava(new ScriptReceiver(interp.getGlobals()));
+            }
+            frame.locals[inst.getDest()] = receiver;
+            return;
+        }
         if (extra.contains("|get|") && ops != null && ops.length > 0) {
             // NovaScriptContext.get(name) → Environment.tryGet(name)
             NovaValue nameVal = frame.locals[ops[0]];

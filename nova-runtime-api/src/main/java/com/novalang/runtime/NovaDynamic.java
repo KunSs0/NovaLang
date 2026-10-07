@@ -2043,6 +2043,10 @@ public final class NovaDynamic {
      * 返回 getter MethodHandle，签名 (Object) → Object。
      */
     public static MethodHandle resolveGetterForCallSite(Class<?> clazz, String memberName) {
+        // 动态对象的属性由对象决定，不能用同名 Java getter 替代。
+        if (NovaDynamicObject.class.isAssignableFrom(clazz)) {
+            return null;
+        }
         // Map 的键集合随实例和时间变化，不能按接收者类型缓存 Java 属性 getter。
         // 保持 getMember 的键优先语义，尤其是与属性同名的 null 值键。
         if (java.util.Map.class.isAssignableFrom(clazz)) {
@@ -2059,6 +2063,9 @@ public final class NovaDynamic {
      * 返回 setter MethodHandle，签名 (Object, Object) → void。
      */
     public static MethodHandle resolveSetterForCallSite(Class<?> clazz, String memberName) {
+        if (NovaDynamicObject.class.isAssignableFrom(clazz)) {
+            return null;
+        }
         try {
             return resolveSetter(clazz, memberName);
         } catch (RuntimeException e) {

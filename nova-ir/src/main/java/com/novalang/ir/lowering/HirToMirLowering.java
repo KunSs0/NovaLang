@@ -73,6 +73,7 @@ public class HirToMirLowering {
     private String currentEnclosingClassName;
     private int anonymousClassCounter;
     private final Map<String, String> anonymousOuterOwners = new HashMap<>();
+    private final Set<String> generatedLambdaNames = new HashSet<>();
 
     /** 设置匿名类计数器初始值（用于跨 evalRepl 避免类名冲突） */
     public void setAnonymousClassCounterBase(int base) { this.anonymousClassCounter = base; }
@@ -2923,14 +2924,7 @@ public class HirToMirLowering {
         if (expr instanceof TypeCastExpr) return lowerTypeCast((TypeCastExpr) expr, builder);
         if (expr instanceof HirNew) return lowerNew((HirNew) expr, builder);
         if (expr instanceof ThisExpr) {
-            // 查找 "this" 或 "$this"（扩展函数中接收者命名为 $this）
-            for (MirLocal local : builder.getFunction().getLocals()) {
-                String n = local.getName();
-                if ("this".equals(n) || "$this".equals(n)) {
-                    return local.getIndex();
-                }
-            }
-            return 0; // 回退
+            return lowerThisReceiver(expr.getLocation(), builder);
         }
         if (expr instanceof NotNullExpr) {
             int operand = lowerExpr(((NotNullExpr) expr).getOperand(), builder);
@@ -3166,6 +3160,7 @@ public class HirToMirLowering {
      */
     private int lowerLambda(HirLambda expr, MirBuilder builder) {
         String lambdaName = currentEnclosingClassName + "$Lambda$" + (++anonymousClassCounter);
+        generatedLambdaNames.add(lambdaName);
         SourceLocation loc = expr.getLocation();
 
         // 隐式 it 参数检测: 无显式参数但 body 引用了 "it" → 添加隐式参数
@@ -5858,7 +5853,8 @@ public class HirToMirLowering {
             if (!classNames.contains(owner)) {
                 cls = resolveJavaClass(owner);
             }
-            if (cls != null) {
+            if (cls != null && !"java/lang/Object".equals(owner)) {
+                // 擦除为 Object 的接收者必须按实际对象分派，不能静态绑定 Object 的 getter。
                 // 1) 同名无参方法（如 size()）
                 java.lang.reflect.Method m = findJavaMethod(cls, fieldName, 0);
                 // 2) JavaBean getter: value → getValue(), error → getError()
@@ -6886,6 +6882,42 @@ public class HirToMirLowering {
             if ("this".equals(local.getName()) || "$this".equals(local.getName())) return local;
         }
         return null;
+    }
+
+    /** 区分词法实例接收者、接收者 lambda 与脚本调用上下文。 */
+    private int lowerThisReceiver(SourceLocation location, MirBuilder builder) {
+        if (currentReceiverLambda != null) {
+            return receiverLocalIndex;
+        }
+        MirLocal local = findThisLocal(builder);
+        if (local != null) {
+            int receiver = local.getIndex();
+            String owner = local.getType().getClassName();
+            // 生成的普通 lambda 对象不是源代码中的 this；沿捕获链找到词法接收者。
+            while (generatedLambdaNames.contains(owner)) {
+                String outerOwner = anonymousOuterOwners.get(owner);
+                if (outerOwner == null) {
+                    break;
+                }
+                receiver = builder.emitGetField(receiver, "$outer",
+                        MirType.ofObject(outerOwner), location);
+                owner = outerOwner;
+            }
+            if (!generatedLambdaNames.contains(owner)) {
+                return receiver;
+            }
+        }
+        if (scriptMode) {
+            String call;
+            if (local != null) {
+                call = scriptContextOwner() + "|requireLambdaReceiver|()Ljava/lang/Object;";
+            } else {
+                call = scriptContextOwner() + "|requireReceiver|()Lcom/novalang/runtime/NovaScriptContext;";
+            }
+            return builder.emitInvokeStatic(call, new int[0],
+                    MirType.ofObject("java/lang/Object"), location);
+        }
+        throw new IllegalStateException("this requires an enclosing receiver at " + location);
     }
 
     // ========== 集合高阶函数路由 ==========

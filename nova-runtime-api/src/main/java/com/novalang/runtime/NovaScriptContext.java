@@ -19,7 +19,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * <p>使用 ThreadLocal 保证线程安全，由 {@code NovaCompiledScript.eval()} 管理生命周期。
  * 并发函数（launch/parallel）通过 {@link #current()} 捕获后手动传播到 worker 线程。</p>
  */
-public class NovaScriptContext {
+public class NovaScriptContext implements NovaDynamicObject {
 
     private static final ThreadLocal<NovaScriptContext> CURRENT = new ThreadLocal<>();
 
@@ -29,6 +29,45 @@ public class NovaScriptContext {
     /** 获取当前线程的上下文（用于并发传播） */
     public static NovaScriptContext current() {
         return CURRENT.get();
+    }
+
+    /** 脚本顶层 this 的接收者；绑定直接由语言上下文持有。 */
+    public static NovaScriptContext requireReceiver() {
+        NovaScriptContext context = CURRENT.get();
+        if (context == null) {
+            throw new IllegalStateException("Script receiver requires an active script context");
+        }
+        return context;
+    }
+
+    /** 普通脚本 lambda 在显式作用域调用期间使用该调用绑定的接收者。 */
+    public static Object requireLambdaReceiver() {
+        Object receiver = NovaScopeFunctions.getScopeReceiver();
+        if (receiver != null) {
+            return receiver;
+        }
+        return requireReceiver();
+    }
+
+    /** 只读取当前调用绑定，不借用其他接收者或全局注册表。 */
+    @Override
+    public Object getMember(String name) {
+        Object value = bindings.get(name);
+        if (value == NULL_SENTINEL) {
+            return null;
+        }
+        return value;
+    }
+
+    /** 成员写入与裸变量访问共享同一个调用绑定集合。 */
+    @Override
+    public void setMember(String name, Object value) {
+        bindings.put(name, value == null ? NULL_SENTINEL : value);
+    }
+
+    @Override
+    public boolean hasMember(String name) {
+        return bindings.containsKey(name);
     }
 
     /** 设置当前线程的上下文（用于 worker 线程继承父线程的上下文） */
