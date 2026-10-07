@@ -7,8 +7,8 @@ import java.util.Map;
 /**
  * 可由监听器、任务、RPC 或 Provider 稳定持有的 Nova 函数回调。
  *
- * <p>回调只保存入口标识、捕获绑定、资源作用域和所属 Generation，不直接持有编译器
- * 内部函数对象。旧 Workspace 销毁后，调用会在进入脚本前明确失败。</p>
+ * <p>宿主主动调用保存入口和函数名称，并捕获绑定、资源作用域和所属 Generation。
+ * 旧 Workspace 销毁后，调用会在进入脚本前明确失败。</p>
  */
 public final class NovaCallback {
 

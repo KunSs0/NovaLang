@@ -40,6 +40,19 @@ public class NovaScriptContext {
         }
     }
 
+    /** 克隆语言绑定并叠加本次事件绑定，保留扩展注册表。 */
+    public NovaScriptContext withBindings(Map<String, Object> additional) {
+        NovaScriptContext copy = new NovaScriptContext();
+        for (Map.Entry<String, Object> entry : bindings.entrySet()) {
+            copy.bindings.put(entry.getKey(), entry.getValue() == null ? NULL_SENTINEL : entry.getValue());
+        }
+        copy.extensionRegistry = extensionRegistry;
+        for (Map.Entry<String, Object> entry : additional.entrySet()) {
+            copy.bindings.put(entry.getKey(), entry.getValue() == null ? NULL_SENTINEL : entry.getValue());
+        }
+        return copy;
+    }
+
     /**
      * 初始化当前线程的脚本上下文（拷贝模式）
      */

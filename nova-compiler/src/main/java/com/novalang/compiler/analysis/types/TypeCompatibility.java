@@ -76,7 +76,11 @@ public final class TypeCompatibility {
         }
         if (target instanceof ClassNovaType && source instanceof FunctionNovaType) {
             if (target instanceof JavaClassNovaType) {
-                FunctionNovaType samType = ((JavaClassNovaType) target).getDescriptor().toSamFunctionType(target.isNullable());
+                JavaTypeDescriptor descriptor = ((JavaClassNovaType) target).getDescriptor();
+                if (!descriptor.isFunctionalInterface() && descriptor.acceptsNativeFunction((FunctionNovaType) source)) {
+                    return true;
+                }
+                FunctionNovaType samType = descriptor.toSamFunctionType(target.isNullable());
                 return samType != null && isFunctionAssignable(samType, (FunctionNovaType) source, registry);
             }
             return isSamAssignable((ClassNovaType) target, (FunctionNovaType) source, registry);

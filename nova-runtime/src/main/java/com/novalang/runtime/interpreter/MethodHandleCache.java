@@ -214,6 +214,7 @@ public final class MethodHandleCache {
                     }
                 }
                 if (mh != null) {
+                    mh = adaptScriptFunctionArguments(mh, method.getParameterTypes(), 1);
                     if (method.isVarArgs()) {
                         Class<?>[] paramTypes = method.getParameterTypes();
                         mh = mh.asVarargsCollector(paramTypes[paramTypes.length - 1]);
@@ -234,6 +235,7 @@ public final class MethodHandleCache {
                 trySetAccessible(method);
                 MethodHandle mh = unreflectWithFallback(method);
                 if (mh != null) {
+                    mh = adaptScriptFunctionArguments(mh, method.getParameterTypes(), 0);
                     if (method.isVarArgs()) {
                         Class<?>[] paramTypes = method.getParameterTypes();
                         mh = mh.asVarargsCollector(paramTypes[paramTypes.length - 1]);
@@ -611,6 +613,21 @@ public final class MethodHandleCache {
         }
     }
 
+    /** 解释器函数值在宿主调用边界适配到底层函数协议。 */
+    private MethodHandle adaptScriptFunctionArguments(MethodHandle handle, Class<?>[] parameterTypes,
+                                                       int receiverOffset) throws ReflectiveOperationException {
+        for (int index = 0; index < parameterTypes.length; index++) {
+            if (parameterTypes[index] == com.novalang.runtime.ScriptFunction.class) {
+                MethodHandle adapter = lookup.findStatic(com.novalang.runtime.SamAdapter.class,
+                        "adaptSingleArg", MethodType.methodType(Object.class, Class.class, Object.class));
+                adapter = MethodHandles.insertArguments(adapter, 0, parameterTypes[index]);
+                adapter = adapter.asType(MethodType.methodType(parameterTypes[index], Object.class));
+                handle = MethodHandles.filterArguments(handle, receiverOffset + index, adapter);
+            }
+        }
+        return handle;
+    }
+
     private MethodHandle lookupConstructor(Class<?> clazz, Class<?>[] argTypes) {
         try {
             java.lang.reflect.Constructor<?> ctor =
@@ -618,6 +635,7 @@ public final class MethodHandleCache {
             if (ctor == null) return NOT_FOUND;
             trySetAccessible(ctor);
             MethodHandle mh = lookup.unreflectConstructor(ctor);
+            mh = adaptScriptFunctionArguments(mh, ctor.getParameterTypes(), 0);
             if (ctor.isVarArgs()) {
                 Class<?>[] paramTypes = ctor.getParameterTypes();
                 mh = mh.asVarargsCollector(paramTypes[paramTypes.length - 1]);

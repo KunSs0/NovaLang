@@ -1,6 +1,7 @@
 package com.novalang.workspace;
 
 import com.novalang.runtime.NovaScheduleContexts;
+import com.novalang.runtime.ScriptCallbackContexts;
 
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -88,7 +89,9 @@ public final class WorkspaceExecutionContext {
         CURRENT.set(new Frame(generation, scope, snapshot));
         NovaScheduleContexts.ContextHandle scheduleContext = NovaScheduleContexts.install(
                 new WorkspaceScheduleContext(generation, scope, snapshot));
-        return new ContextHandle(previous, Thread.currentThread(), scheduleContext);
+        ScriptCallbackContexts.ContextHandle callbackContext = ScriptCallbackContexts.install(
+                new WorkspaceCallbackContext(generation, scope, snapshot));
+        return new ContextHandle(previous, Thread.currentThread(), scheduleContext, callbackContext);
     }
 
     /**
@@ -113,14 +116,17 @@ public final class WorkspaceExecutionContext {
         private final Frame previous;
         private final Thread ownerThread;
         private final NovaScheduleContexts.ContextHandle scheduleContext;
+        private final ScriptCallbackContexts.ContextHandle callbackContext;
         private boolean closed;
 
         ContextHandle(Frame previous,
                       Thread ownerThread,
-                      NovaScheduleContexts.ContextHandle scheduleContext) {
+                      NovaScheduleContexts.ContextHandle scheduleContext,
+                      ScriptCallbackContexts.ContextHandle callbackContext) {
             this.previous = previous;
             this.ownerThread = ownerThread;
             this.scheduleContext = scheduleContext;
+            this.callbackContext = callbackContext;
         }
 
         /**
@@ -135,6 +141,7 @@ public final class WorkspaceExecutionContext {
                 throw new WorkspaceException("WorkspaceExecutionContext must be closed on its installing thread");
             }
             closed = true;
+            callbackContext.close();
             scheduleContext.close();
             if (previous == null) {
                 CURRENT.remove();

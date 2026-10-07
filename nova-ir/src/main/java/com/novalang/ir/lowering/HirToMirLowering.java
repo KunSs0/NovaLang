@@ -536,7 +536,9 @@ public class HirToMirLowering {
             List<String> ifaces = new ArrayList<>();
             if (hc.getSuperClass() != null) {
                 String superName = typeToInternalName(hc.getSuperClass());
-                if (interfaceNames.contains(superName)) {
+                Class<?> javaSuperType = isKnownNovaType(superName) ? null : resolveJavaClass(superName);
+                if (interfaceNames.contains(superName)
+                        || (javaSuperType != null && javaSuperType.isInterface())) {
                     ifaces.add(superName);
                 }
             }
@@ -715,7 +717,11 @@ public class HirToMirLowering {
                     List<String> ifaces = new ArrayList<>();
                     if (hc.getSuperClass() != null) {
                         String sn = typeToInternalName(hc.getSuperClass());
-                        if (interfaceNames.contains(sn)) ifaces.add(sn);
+                        Class<?> javaSuperType = isKnownNovaType(sn) ? null : resolveJavaClass(sn);
+                        if (interfaceNames.contains(sn)
+                                || (javaSuperType != null && javaSuperType.isInterface())) {
+                            ifaces.add(sn);
+                        }
                     }
                     for (HirType it : hc.getInterfaces()) {
                         ifaces.add(typeToInternalName(it));
@@ -5038,6 +5044,32 @@ public class HirToMirLowering {
             case OBJECT:
                 if (type.getClassName() != null) {
                     if (unemittedNovaTypeNames.contains(type.getClassName())) {
+                        List<String> declaredInterfaces = classInterfaceMap.get(type.getClassName());
+                        if (declaredInterfaces != null) {
+                            for (String interfaceName : declaredInterfaces) {
+                                if (interfaceName.matches("com/novalang/runtime/Function[0-8]")) {
+                                    Class<?> functionType = resolveJavaClass(interfaceName);
+                                    if (functionType != null) {
+                                        return functionType;
+                                    }
+                                }
+                            }
+                        }
+                        // 函数引用和捕获 lambda 已声明 FunctionN；保留参数数量用于 Java
+                        // 重载选择，不能擦除成 Object 后适配到其他参数数量的接口。
+                        for (MirClass generated : additionalClasses) {
+                            if (!generated.getName().equals(type.getClassName())) {
+                                continue;
+                            }
+                            for (String interfaceName : generated.getInterfaces()) {
+                                if (interfaceName.matches("com/novalang/runtime/Function[0-8]")) {
+                                    Class<?> functionType = resolveJavaClass(interfaceName);
+                                    if (functionType != null) {
+                                        return functionType;
+                                    }
+                                }
+                            }
+                        }
                         return Object.class;
                     }
                     Class<?> resolved = resolveJavaClass(type.getClassName());

@@ -244,6 +244,17 @@ class JavaTypesCompileValidationTest {
                 "settings.id = \"other\"", "java-extension-property-readonly.nova"));
     }
 
+    @Test
+    @DisplayName("脚本函数应遮蔽同名宿主重载")
+    void shouldPreferScriptFunctionToHostOverloads() {
+        Nova nova = createNova();
+        String source = "fun choose(value: String): String { return \"script:\" + value }\n"
+                + "fun execute(): String { return choose(\"value\") }\n";
+        CompiledNova compiled = nova.compileToBytecode(source, "script-function-shadowing.nova");
+        compiled.run();
+        assertEquals("script:value", compiled.call("execute"));
+    }
+
     private Nova createNova() {
         JavaTypes javaTypes = JavaTypes.builder()
                 .globalFunction("add", function -> function

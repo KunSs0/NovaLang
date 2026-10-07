@@ -18,58 +18,58 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 @DisplayName("单例对象引用在解释、字节码与隔离调用中的一致性")
 class SingletonObjectReferenceTest {
 
-    private static final String API = "object TitleApi {\n"
-            + "    fun send(): String { return \"ok\" }\n"
+    private static final String API = "object ValueSource {\n"
+            + "    fun read(): String { return \"ok\" }\n"
             + "}\n";
 
     static Stream<Arguments> cases() {
         List<Arguments> cases = new ArrayList<Arguments>();
         for (Mode mode : Mode.values()) {
             cases.add(Arguments.of(mode, "直接调用对照", API
-                    + "fun probe(): String { return TitleApi.send() }\n"));
+                    + "fun probe(): String { return ValueSource.read() }\n"));
             cases.add(Arguments.of(mode, "局部单例引用", API
                     + "fun probe(): String {\n"
-                    + "    val title = TitleApi\n"
-                    + "    return title.send()\n"
+                    + "    val source = ValueSource\n"
+                    + "    return source.read()\n"
                     + "}\n"));
             cases.add(Arguments.of(mode, "推导类型门面字段", API
-                    + "object Facade { val title = TitleApi }\n"
-                    + "fun probe(): String { return Facade.title.send() }\n"));
+                    + "object Facade { val source = ValueSource }\n"
+                    + "fun probe(): String { return Facade.source.read() }\n"));
             cases.add(Arguments.of(mode, "显式类型门面字段", API
-                    + "object Facade { val title: TitleApi = TitleApi }\n"
-                    + "fun probe(): String { return Facade.title.send() }\n"));
+                    + "object Facade { val source: ValueSource = ValueSource }\n"
+                    + "fun probe(): String { return Facade.source.read() }\n"));
             // 解释器逐条执行声明，前向引用的未定义变量不属于本次 null 复现。
             if (mode != Mode.INTERPRETED) {
                 cases.add(Arguments.of(mode, "门面先于单例声明",
-                        "object Facade { val title = TitleApi }\n" + API
-                        + "fun probe(): String { return Facade.title.send() }\n"));
+                        "object Facade { val source = ValueSource }\n" + API
+                        + "fun probe(): String { return Facade.source.read() }\n"));
             }
             cases.add(Arguments.of(mode, "函数返回单例", API
-                    + "fun api(): TitleApi { return TitleApi }\n"
-                    + "fun probe(): String { return api().send() }\n"));
+                    + "fun api(): ValueSource { return ValueSource }\n"
+                    + "fun probe(): String { return api().read() }\n"));
             cases.add(Arguments.of(mode, "单例作为参数", API
-                    + "fun send(api: TitleApi): String { return api.send() }\n"
-                    + "fun probe(): String { return send(TitleApi) }\n"));
+                    + "fun read(api: ValueSource): String { return api.read() }\n"
+                    + "fun probe(): String { return read(ValueSource) }\n"));
             cases.add(Arguments.of(mode, "闭包内读取单例", API
                     + "fun probe(): String {\n"
-                    + "    val read = { val api = TitleApi; api.send() }\n"
+                    + "    val read = { val api = ValueSource; api.read() }\n"
                     + "    return read()\n"
                     + "}\n"));
             cases.add(Arguments.of(mode, "局部值遮蔽单例", API
-                    + "fun probe(): String { val TitleApi = \"ok\"; return TitleApi }\n"));
+                    + "fun probe(): String { val ValueSource = \"ok\"; return ValueSource }\n"));
             cases.add(Arguments.of(mode, "参数遮蔽单例", API
-                    + "fun read(TitleApi: String): String { return TitleApi }\n"
+                    + "fun read(ValueSource: String): String { return ValueSource }\n"
                     + "fun probe(): String { return read(\"ok\") }\n"));
             cases.add(Arguments.of(mode, "接收者字段遮蔽单例", API
                     + "class Holder {\n"
-                    + "    val TitleApi = \"ok\"\n"
-                    + "    fun read(): String { return TitleApi }\n"
+                    + "    val ValueSource = \"ok\"\n"
+                    + "    fun read(): String { return ValueSource }\n"
                     + "}\n"
                     + "fun probe(): String { return Holder().read() }\n"));
             cases.add(Arguments.of(mode, "普通类实例字段对照",
-                    "class TitleApi { fun send(): String { return \"ok\" } }\n"
-                    + "object Facade { val title = TitleApi() }\n"
-                    + "fun probe(): String { return Facade.title.send() }\n"));
+                    "class ValueSource { fun read(): String { return \"ok\" } }\n"
+                    + "object Facade { val source = ValueSource() }\n"
+                    + "fun probe(): String { return Facade.source.read() }\n"));
             cases.add(Arguments.of(mode, "别名共享同一单例状态",
                     "object Counter {\n"
                     + "    var value = 0\n"

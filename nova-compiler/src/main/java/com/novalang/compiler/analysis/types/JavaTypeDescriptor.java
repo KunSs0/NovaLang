@@ -97,6 +97,25 @@ public final class JavaTypeDescriptor {
         return qualifiedName;
     }
 
+    /** 函数值实现对应的 FunctionN，也可以直接传给其公共父接口。 */
+    public boolean acceptsNativeFunction(FunctionNovaType function) {
+        Class<?> targetClass = loadJavaClass();
+        int arity = function.getParamTypes().size();
+        if (function.hasReceiverType()) {
+            arity++;
+        }
+        if (targetClass == null || arity > 8) {
+            return false;
+        }
+        try {
+            Class<?> functionClass = Class.forName("com.novalang.runtime.Function" + arity,
+                    false, com.novalang.runtime.ScriptFunction.class.getClassLoader());
+            return targetClass.isAssignableFrom(functionClass);
+        } catch (ClassNotFoundException exception) {
+            throw new IllegalStateException("Native function interface is missing", exception);
+        }
+    }
+
     /**
      * 按简单名称解析当前 Java 类型声明的公开嵌套类。
      *
@@ -247,10 +266,22 @@ public final class JavaTypeDescriptor {
     public FunctionNovaType toSamFunctionType(boolean nullable) {
         if (samMethod == null) return null;
         List<NovaType> paramTypes = new ArrayList<NovaType>();
-        for (Class<?> paramType : samMethod.getParameterTypes()) {
-            paramTypes.add(JavaTypeOracle.get().toNovaType(paramType, false));
+        Class<?>[] parameterClasses = samMethod.getParameterTypes();
+        Type[] genericParameters = samMethod.getGenericParameterTypes();
+        for (int index = 0; index < parameterClasses.length; index++) {
+            // 未绑定的泛型由传入函数确定，不能把擦除后的 Object 当作固定 Any 参数。
+            if (genericParameters[index] instanceof TypeVariable<?>) {
+                paramTypes.add(new ClassNovaType("dynamic", false));
+            } else {
+                paramTypes.add(JavaTypeOracle.get().toNovaType(parameterClasses[index], false));
+            }
         }
-        NovaType returnType = JavaTypeOracle.get().toNovaType(samMethod.getReturnType(), false);
+        NovaType returnType;
+        if (samMethod.getGenericReturnType() instanceof TypeVariable<?>) {
+            returnType = new ClassNovaType("dynamic", false);
+        } else {
+            returnType = JavaTypeOracle.get().toNovaType(samMethod.getReturnType(), false);
+        }
         return new FunctionNovaType(null, paramTypes, returnType, nullable);
     }
 

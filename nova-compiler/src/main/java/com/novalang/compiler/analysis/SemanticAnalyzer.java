@@ -237,8 +237,19 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
         if (root.getOverloads() != null) {
             candidates.addAll(root.getOverloads());
         }
+        // 脚本声明遮蔽宿主注册的同名函数，不能将两者合并成歧义重载。
+        boolean hasScriptDeclaration = false;
+        for (Symbol candidate : candidates) {
+            if (candidate.getDeclaration() instanceof FunDecl) {
+                hasScriptDeclaration = true;
+                break;
+            }
+        }
+        if (hasScriptDeclaration) {
+            candidates.removeIf(candidate -> !(candidate.getDeclaration() instanceof FunDecl));
+        }
         if (candidates.size() == 1) {
-            return root;
+            return candidates.get(0);
         }
 
         Symbol best = null;

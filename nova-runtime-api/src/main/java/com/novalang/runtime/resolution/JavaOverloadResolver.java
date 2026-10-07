@@ -248,13 +248,49 @@ public final class JavaOverloadResolver {
         if (target == Integer.class) return source == int.class;
         if (target == Boolean.class) return source == boolean.class;
         if (target == Character.class) return source == char.class;
+        if (target == com.novalang.runtime.ScriptFunction.class && source != null
+                && NovaCallable.class.isAssignableFrom(source)) {
+            return true;
+        }
         if (source != null && NovaCallable.class.isAssignableFrom(source) && isFunctionalInterface(target)) {
+            int sourceArity = nativeFunctionArity(source);
+            if (sourceArity >= 0) {
+                for (Method method : target.getMethods()) {
+                    if (Modifier.isAbstract(method.getModifiers()) && !method.isDefault()
+                            && method.getDeclaringClass() != Object.class) {
+                        return method.getParameterCount() == sourceArity;
+                    }
+                }
+                return false;
+            }
             return true;
         }
         if (target.isArray() && source != null && java.util.Collection.class.isAssignableFrom(source)) {
             return true;
         }
         return false;
+    }
+
+    /** 编译后的 FunctionN 实例只能适配相同参数数量的 SAM，不能隐式补齐或丢弃。 */
+    private static int nativeFunctionArity(Class<?> type) {
+        if (type == null) {
+            return -1;
+        }
+        String name = type.getName();
+        String prefix = "com.novalang.runtime.Function";
+        if (name.startsWith(prefix) && name.length() == prefix.length() + 1) {
+            char arity = name.charAt(prefix.length());
+            if (arity >= '0' && arity <= '8') {
+                return arity - '0';
+            }
+        }
+        for (Class<?> parent : type.getInterfaces()) {
+            int arity = nativeFunctionArity(parent);
+            if (arity >= 0) {
+                return arity;
+            }
+        }
+        return nativeFunctionArity(type.getSuperclass());
     }
 
     private static boolean isAssignableWithNarrowing(Class<?> target, Class<?> source) {

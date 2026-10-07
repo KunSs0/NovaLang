@@ -11,7 +11,7 @@ import javax.script.ScriptException;
 /**
  * NovaLang precompiled script backed by {@link CompiledNova}.
  */
-public class NovaCompiledScript extends CompiledScript {
+public class NovaCompiledScript extends CompiledScript implements AutoCloseable {
 
     private final NovaScriptEngine engine;
     private final CompiledNova compiled;
@@ -29,6 +29,12 @@ public class NovaCompiledScript extends CompiledScript {
         } catch (Exception e) {
             throw new ScriptException(e);
         }
+    }
+
+    /** 关闭底层脚本实例，并注销该实例创建的宿主回调资源。 */
+    @Override
+    public void close() {
+        compiled.close();
     }
 
     @Override

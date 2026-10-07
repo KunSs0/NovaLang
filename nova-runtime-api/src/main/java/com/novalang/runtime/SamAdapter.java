@@ -49,7 +49,8 @@ public final class SamAdapter {
      * 检查对象是否为可适配的 Nova lambda（FunctionN 或 NovaCallable）。
      */
     public static boolean isAdaptable(Object obj) {
-        return obj instanceof NovaCallable
+        return obj instanceof ScriptFunction
+                || obj instanceof NovaCallable
                 || obj instanceof Function0
                 || obj instanceof Function1
                 || obj instanceof Function2
@@ -60,6 +61,9 @@ public final class SamAdapter {
      * 检查 source 是否可以赋值给 target 类型（考虑 SAM 适配）。
      */
     public static boolean isSamAssignable(Class<?> target, Object arg) {
+        if (target == ScriptFunction.class && arg instanceof NovaCallable) {
+            return true;
+        }
         if (!target.isInterface()) return false;
         if (!isAdaptable(arg)) return false;
         return isFunctionalInterface(target);
@@ -75,6 +79,28 @@ public final class SamAdapter {
      */
     @SuppressWarnings({"unchecked", "rawtypes"})
     public static Object adapt(Class<?> interfaceClass, Object lambda) {
+        if (interfaceClass == ScriptFunction.class && lambda instanceof NovaCallable) {
+            final NovaCallable callable = (NovaCallable) lambda;
+            return new ScriptFunction() {
+                @Override
+                public int argumentCount() {
+                    return callable.getArity();
+                }
+
+                @Override
+                public Object invokeArguments(Object... arguments) {
+                    if (arguments.length != argumentCount()) {
+                        throw new IllegalArgumentException("Script function argument count mismatch");
+                    }
+                    java.util.List<NovaValue> values = new java.util.ArrayList<>();
+                    for (Object argument : arguments) {
+                        values.add(AbstractNovaValue.fromJava(argument));
+                    }
+                    NovaValue result = callable.call(null, values);
+                    return result == null ? null : result.toJavaValue();
+                }
+            };
+        }
         Method sam = findSamMethod(interfaceClass);
         if (sam == null) {
             throw new IllegalArgumentException("Not a functional interface: " + interfaceClass.getName());
@@ -198,7 +224,7 @@ public final class SamAdapter {
      */
     public static Object adaptSingleArg(Class<?> targetType, Object arg) {
         if (arg != null && !targetType.isInstance(arg)
-                && isAdaptable(arg) && isFunctionalInterface(targetType)) {
+                && isSamAssignable(targetType, arg)) {
             return adapt(targetType, arg);
         }
         return arg;

@@ -12,8 +12,22 @@ import java.util.function.BiFunction;
  * @param <R>  返回类型
  */
 @FunctionalInterface
-public interface Function2<T1, T2, R> extends BiFunction<T1, T2, R>, BiConsumer<T1, T2> {
+public interface Function2<T1, T2, R> extends BiFunction<T1, T2, R>, BiConsumer<T1, T2>, ScriptFunction {
     R invoke(T1 arg1, T2 arg2);
+
+    @Override
+    default int argumentCount() {
+        return 2;
+    }
+
+    @Override
+    @SuppressWarnings("unchecked")
+    default Object invokeArguments(Object... arguments) {
+        if (arguments == null || arguments.length != 2) {
+            throw new IllegalArgumentException("Function2 requires 2 arguments");
+        }
+        return invoke((T1) arguments[0], (T2) arguments[1]);
+    }
 
     @Override
     default R apply(T1 arg1, T2 arg2) {

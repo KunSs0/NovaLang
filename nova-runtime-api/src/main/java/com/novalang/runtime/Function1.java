@@ -13,8 +13,22 @@ import java.util.function.Predicate;
  */
 @FunctionalInterface
 @SuppressWarnings("overloads")
-public interface Function1<T1, R> extends Function<T1, R>, Consumer<T1>, Predicate<T1> {
+public interface Function1<T1, R> extends Function<T1, R>, Consumer<T1>, Predicate<T1>, ScriptFunction {
     R invoke(T1 arg1);
+
+    @Override
+    default int argumentCount() {
+        return 1;
+    }
+
+    @Override
+    @SuppressWarnings("unchecked")
+    default Object invokeArguments(Object... arguments) {
+        if (arguments == null || arguments.length != 1) {
+            throw new IllegalArgumentException("Function1 requires 1 arguments");
+        }
+        return invoke((T1) arguments[0]);
+    }
 
     @Override
     default R apply(T1 arg1) {

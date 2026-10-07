@@ -1,5 +1,7 @@
 package com.novalang.runtime.resolution;
 
+import com.novalang.runtime.Function1;
+import com.novalang.runtime.Function2;
 import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Constructor;
@@ -98,7 +100,28 @@ class JavaOverloadResolverTest {
         return result;
     }
 
+    @Test
+    void compiledFunctionCannotAdaptToDifferentSamArity() {
+        Function2<String, String, String> function = (first, second) -> first + second;
+        Method invalid = JavaOverloadResolver.selectBestMethod(
+                methodsNamed("singleArgumentCallback"), true, new Class<?>[]{function.getClass()});
+        assertNull(invalid);
+        Method selected = JavaOverloadResolver.selectBestMethod(
+                methodsNamed("callback"), true, new Class<?>[]{function.getClass()});
+        assertNotNull(selected);
+        assertEquals(Function2.class, selected.getParameterTypes()[0]);
+    }
+
     public static final class OverloadFixture {
+
+        public static void singleArgumentCallback(Function1<String, String> callback) {
+        }
+
+        public static void callback(Function1<String, String> callback) {
+        }
+
+        public static void callback(Function2<String, String, String> callback) {
+        }
 
         public OverloadFixture(Object value) {
         }

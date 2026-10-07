@@ -37,7 +37,15 @@ import java.util.Collections;
  * Object result = compiled.run();  // 3
  * </pre>
  */
-public final class CompiledNova {
+public final class CompiledNova implements AutoCloseable {
+
+    private final ScriptCallbackScope callbackScope = new ScriptCallbackScope();
+
+    /** 关闭脚本实例并释放由它持有的宿主回调资源。 */
+    @Override
+    public void close() {
+        callbackScope.close();
+    }
 
     // ── 解释器模式（与 Nova 实例共享环境，MIR 管线执行） ──
     private final String source;              // nullable
@@ -137,6 +145,7 @@ public final class CompiledNova {
      * 执行预编译的代码，返回最后一个表达式的值。
      */
     public Object run() {
+        requireOpen();
         if (compiledClasses != null) {
             if (mainHandle != null) return runBytecode();
             // 纯函数定义的脚本无 main()，run() 无操作，通过 call() 调用函数
@@ -189,7 +198,9 @@ public final class CompiledNova {
      * 并缓存函数名→编译类的映射以避免重复扫描。
      */
     public Object call(String funcName, Object... args) {
-        if (nova != null) return nova.call(funcName, args);
+        if (nova != null) {
+            return callInterpreted(funcName, args);
+        }
         if (compiledClasses != null) {
             try {
                 return withScriptExecutionContext(bindings, true, () -> {
@@ -213,29 +224,7 @@ public final class CompiledNova {
                 throw attachCallLocation(new NovaRuntimeException("Call to function '" + funcName + "' failed: " + msg, e));
             }
         }
-        // 字节码模式：初始化脚本上下文（使编译函数能访问注入的全局函数），调用后清理
-        try {
-            Class<?> cls = funcClassCache.get(funcName);
-            if (cls == null) {
-                cls = findFuncClass(funcName);
-                funcClassCache.put(funcName, cls);
-            }
-            Object result = MethodHandleCache.getInstance().invokeStatic(cls, funcName, args);
-            // 回写全局变量（函数内可能修改了 showTime 等全局变量）
-            bindings.putAll(NovaScriptContext.getAll());
-            if (result instanceof NovaValue) {
-                if (((NovaValue) result).isNull()) return null;
-                return ((NovaValue) result).toJavaValue();
-            }
-            return result;
-        } catch (NovaRuntimeException e) {
-            throw attachCallLocation(e);
-        } catch (Throwable e) {
-            String msg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
-            throw attachCallLocation(new NovaRuntimeException("Call to function '" + funcName + "' failed: " + msg, e));
-        } finally {
-            NovaScriptContext.clear();
-        }
+        throw new IllegalStateException("The script has no executable program");
     }
 
     /**
@@ -248,7 +237,9 @@ public final class CompiledNova {
      * @return 函数返回值
      */
     public Object callDirect(String funcName, Map<String, Object> liveBindings, Object... args) {
-        if (nova != null) return nova.call(funcName, args);
+        if (nova != null) {
+            return callInterpreted(funcName, args);
+        }
         if (liveBindings != null) {
             try {
                 return withScriptExecutionContext(liveBindings, false, () -> {
@@ -270,30 +261,7 @@ public final class CompiledNova {
                 throw attachCallLocation(new NovaRuntimeException("Call to function '" + funcName + "' failed: " + msg, e));
             }
         }
-        NovaScriptContext prev = NovaScriptContext.current();
-        NovaScriptContext.initDirect(liveBindings);
-        if (extensionRegistry != null) {
-            NovaScriptContext.setExtensionRegistry(extensionRegistry);
-        }
-        try {
-            Class<?> cls = funcClassCache.get(funcName);
-            if (cls == null) {
-                throw NovaErrors.undefinedFunction(funcName, funcClassCache.keySet());
-            }
-            Object result = MethodHandleCache.getInstance().invokeStatic(cls, funcName, args);
-            if (result instanceof NovaValue) {
-                if (((NovaValue) result).isNull()) return null;
-                return ((NovaValue) result).toJavaValue();
-            }
-            return result;
-        } catch (NovaRuntimeException e) {
-            throw attachCallLocation(e);
-        } catch (Throwable e) {
-            String msg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
-            throw attachCallLocation(new NovaRuntimeException("Call to function '" + funcName + "' failed: " + msg, e));
-        } finally {
-            NovaScriptContext.setCurrent(prev);
-        }
+        throw new IllegalArgumentException("liveBindings must not be null");
     }
 
     /**
@@ -372,6 +340,40 @@ public final class CompiledNova {
         T get() throws Throwable;
     }
 
+    private void requireOpen() {
+        if (!callbackScope.isValid()) {
+            throw new IllegalStateException("Script instance is closed");
+        }
+    }
+
+    /** 普通脚本实例的执行环境适配；生命周期由底层 Scope 持有。 */
+    private ScriptCallbackContext createCallbackContext(final ClassLoader capturedLoader) {
+        return new ScriptCallbackContext() {
+            @Override
+            public boolean isValid() {
+                return callbackScope.isValid();
+            }
+
+            @Override
+            public AutoCloseable register(AutoCloseable resource) {
+                return callbackScope.register(resource);
+            }
+
+            @Override
+            public Object invoke(Map<String, Object> extraBindings, Function0<Object> action) {
+                return callbackScope.invoke(extraBindings, () -> {
+                    ClassLoader previous = com.novalang.runtime.interpreter.JavaInterop.getScriptClassLoader();
+                    com.novalang.runtime.interpreter.JavaInterop.setScriptClassLoader(capturedLoader);
+                    try (ScriptCallbackContexts.ContextHandle installed = ScriptCallbackContexts.install(this)) {
+                        return action.invoke();
+                    } finally {
+                        com.novalang.runtime.interpreter.JavaInterop.setScriptClassLoader(previous);
+                    }
+                });
+            }
+        };
+    }
+
     private <T> T withScriptExecutionContext(Map<String, Object> contextBindings,
                                              boolean copyBackBindings,
                                              ThrowingSupplier<T> action) throws Throwable {
@@ -386,7 +388,14 @@ public final class CompiledNova {
             NovaScriptContext.setExtensionRegistry(extensionRegistry);
         }
         com.novalang.runtime.interpreter.JavaInterop.setScriptClassLoader(scriptClassLoader);
-        try {
+        ScriptCallbackContext callbackContext = ScriptCallbackContexts.current();
+        if (callbackContext == null) {
+            callbackContext = createCallbackContext(scriptClassLoader);
+        }
+        try (ScriptCallbackContexts.ContextHandle installed = ScriptCallbackContexts.install(callbackContext)) {
+            if (!callbackScope.isValid()) {
+                throw new IllegalStateException("Script instance is closed");
+            }
             return action.get();
         } finally {
             com.novalang.runtime.interpreter.JavaInterop.setScriptClassLoader(previousScriptClassLoader);
@@ -627,9 +636,26 @@ public final class CompiledNova {
     // ── 内部方法 ──
 
     private Object runInterpreted() {
-        NovaValue result = nova.getInterpreter().eval(source, fileName, program);
-        if (result == NovaNull.UNIT) return null;
-        return result.toJavaValue();
+        try {
+            return withScriptExecutionContext(bindings, true, () -> {
+                NovaValue result = nova.getInterpreter().eval(source, fileName, program);
+                return result == NovaNull.UNIT ? null : result.toJavaValue();
+            });
+        } catch (RuntimeException exception) {
+            throw exception;
+        } catch (Throwable exception) {
+            throw NovaErrors.wrap("Script execution failed", exception);
+        }
+    }
+
+    private Object callInterpreted(String functionName, Object[] arguments) {
+        try {
+            return withScriptExecutionContext(bindings, true, () -> nova.call(functionName, arguments));
+        } catch (RuntimeException exception) {
+            throw exception;
+        } catch (Throwable exception) {
+            throw NovaErrors.wrap("Script invocation failed", exception);
+        }
     }
 
     /**
@@ -648,29 +674,26 @@ public final class CompiledNova {
      * 支持嵌套调用：保存/恢复外层上下文，防止内层 clear 破坏外层。
      */
     public Object runDirect(Map<String, Object> liveBindings) {
+        requireOpen();
         if (compiledClasses == null || mainHandle == null) return null;
-        NovaScriptContext prev = NovaScriptContext.current();
-        NovaScriptContext.initDirect(liveBindings);
-        if (extensionRegistry != null) {
-            NovaScriptContext.setExtensionRegistry(extensionRegistry);
-        }
         try {
-            Object result = mainHandle.invoke();
-            if (result instanceof NovaValue) {
-                if (((NovaValue) result).isNull()) return null;
-                return ((NovaValue) result).toJavaValue();
-            }
-            return result;
+            return withScriptExecutionContext(liveBindings, false, () -> {
+                Object result = mainHandle.invoke();
+                if (result instanceof NovaValue) {
+                    if (((NovaValue) result).isNull()) return null;
+                    return ((NovaValue) result).toJavaValue();
+                }
+                return result;
+            });
         } catch (RuntimeException e) {
             throw e;
         } catch (Throwable e) {
             throw NovaErrors.wrap("Direct script execution failed", e);
-        } finally {
-            NovaScriptContext.setCurrent(prev);
         }
     }
 
     public Object runIsolated(Map<String, Object> executionBindings) {
+        requireOpen();
         if (compiledClasses == null || mainHandle == null) return null;
         Map<String, Object> localBindings = new HashMap<>(bindings);
         if (executionBindings != null) {
@@ -707,31 +730,7 @@ public final class CompiledNova {
                 throw NovaErrors.wrap("Script execution failed", e);
             }
         }
-        NovaScriptContext.init(bindings);
-        if (extensionRegistry != null) {
-            NovaScriptContext.setExtensionRegistry(extensionRegistry);
-        }
-        if (scriptClassLoader != null) {
-            com.novalang.runtime.interpreter.JavaInterop.setScriptClassLoader(scriptClassLoader);
-        }
-        try {
-            Object result = mainHandle.invoke();
-            // 回写导出变量
-            bindings.putAll(NovaScriptContext.getAll());
-            // 将 NovaValue 转为 Java 对象（与解释器模式行为一致）
-            if (result instanceof NovaValue) {
-                if (((NovaValue) result).isNull()) return null;
-                return ((NovaValue) result).toJavaValue();
-            }
-            return result;
-        } catch (RuntimeException e) {
-            throw e;
-        } catch (Throwable e) {
-            throw NovaErrors.wrap("Script execution failed", e);
-        } finally {
-            com.novalang.runtime.interpreter.JavaInterop.setScriptClassLoader(null);
-            NovaScriptContext.clear();
-        }
+        throw new IllegalArgumentException("executionBindings must not be null");
     }
 
     private static MethodHandle findMain(Map<String, Class<?>> classes) {

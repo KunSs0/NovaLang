@@ -21,6 +21,37 @@ class NovaScriptEngineTest {
         manager = new ScriptEngineManager();
     }
 
+    @Test
+    void compiledScriptOwnsCallbackResourcesWithoutWorkspace() throws Exception {
+        NovaScriptEngine engine = (NovaScriptEngine) manager.getEngineByName("nova");
+        CallbackHost host = new CallbackHost();
+        String source = "import java com.novalang.script.NovaScriptEngineTest.CallbackHost\n"
+                + "fun read(value: String): String { return prefix + value }\n"
+                + "(host as CallbackHost).accept(::read)\n";
+        NovaCompiledScript script = (NovaCompiledScript) engine.compile(source);
+        Bindings bindings = new SimpleBindings();
+        bindings.put("host", host);
+        bindings.put("prefix", "captured:");
+        script.eval(bindings);
+        assertThat(host.callback.invoke("value")).isEqualTo("captured:value");
+        script.close();
+        assertThat(host.closed).isEqualTo(1);
+        assertThat(host.callback.isValid()).isFalse();
+        script.close();
+        assertThat(host.closed).isEqualTo(1);
+        assertThatThrownBy(() -> script.eval(bindings)).isInstanceOf(ScriptException.class);
+    }
+
+    public static final class CallbackHost {
+        com.novalang.runtime.ScriptCallback callback;
+        int closed;
+
+        public void accept(com.novalang.runtime.ScriptFunction function) {
+            callback = com.novalang.runtime.ScriptCallbacks.bind(function);
+            callback.register(() -> closed++);
+        }
+    }
+
     // ======== 引擎发现 ========
 
     @Test
