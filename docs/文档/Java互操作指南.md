@@ -36,6 +36,19 @@ println(PI)
 
 导入 Java 类前，先检查 Nova 标准库、集合函数和公开 API 是否已有等价能力。只有 Nova 没有等价方法，且确有 Java 能力边界时，才使用 Java 互操作；应在代码附近或对应审计文档中写明选择理由，并添加覆盖该边界的编译或运行测试。
 
+### Kotlin 伴生对象
+
+导入 Kotlin 外层类型后，直接通过外层类型调用默认伴生对象的方法或读取属性，不需要显式访问 `Companion`，也不要求宿主方法标注 `@JvmStatic`：
+
+```nova
+import java example.Registry
+
+val entry = Registry.get("example")
+val engine = Registry.ENGINE
+```
+
+Nova 优先解析真正的静态成员；对应方法或属性在伴生对象上时，自动读取伴生实例再调用实例方法或 getter。只为调用伴生方法时，不将伴生对象另存为局部变量。
+
 ## Java 命名空间（低层动态互操作）
 
 以下 API 保留用于类名只能在运行时确定、脚本宿主需要动态分派等低层场景。它们不是常规 Java 类调用的首选方式；使用前必须完成上节的等价能力核对、理由记录和测试。
