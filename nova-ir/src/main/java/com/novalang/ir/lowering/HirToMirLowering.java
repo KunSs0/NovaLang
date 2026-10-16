@@ -6467,7 +6467,7 @@ public class HirToMirLowering {
         if (type instanceof ClassType) {
             String name = ((ClassType) type).getName().replace('.', '/');
             if ("dynamic".equals(name) || "Dynamic".equals(name)) {
-                return MirType.ofObject("java/lang/Object");
+                return MirType.ofObject("java/lang/Object", type.isNullable());
             }
             // typealias 展开
             HirType aliasTarget = name.contains("/") ? null : typeAliasMap.get(name);
@@ -6476,7 +6476,7 @@ public class HirToMirLowering {
             if (name.startsWith("nova/") && !name.substring(5).contains("/")) {
                 String simpleName = name.substring(5);
                 String boxed = NovaTypeNames.toBoxedInternalName(simpleName);
-                if (boxed != null) return MirType.ofObject(boxed);
+                if (boxed != null) return MirType.ofObject(boxed, type.isNullable());
             }
             if (!name.contains("/")) {
                 String localName = localClassInternalName(name);
@@ -6484,7 +6484,7 @@ public class HirToMirLowering {
                     name = localName;
                 } else {
                     String boxed = NovaTypeNames.toBoxedInternalName(name);
-                    if (boxed != null) return MirType.ofObject(boxed);
+                    if (boxed != null) return MirType.ofObject(boxed, type.isNullable());
                     Class<?> javaClass = resolveJavaClass(name);
                     if (javaClass != null) name = javaClass.getName().replace('.', '/');
                 }
