@@ -3,6 +3,8 @@
 字节码 UI、工作流等宿主可以在编译阶段准备组件工厂，避免每个实例重新扫描所有模块方法、
 重复构建资源路径，以及使用通用函数重载匹配调用无参数工厂。
 
+组件工厂和字节码缓存现位于 `com.novalang.runtime.compilation`，仅需依赖 `nova-runtime`。
+
 ## API 与生命周期
 
 - `CompiledProgramLayout.fromBytecode(bytecode)`：使用 ASM 读取函数所属模块和 main 入口，
@@ -35,10 +37,10 @@ Nova 类覆盖 Java 宿主的 Long/Double/Float 参数方法时，后端生成�
 ## 验证
 
 `IsolatedComponentFactoryTest` 覆盖组件字段、作用域静态状态、绑定隔离、无参入口约束、返回类型检查、
-异常上下文恢复。`WorkspaceBytecodeArtifactCacheMockTest` 保持原有不同 Workspace 的静态隔离。
+异常上下文恢复。`BytecodeArtifactCacheMockTest` 保持不同 Nova 程序的静态隔离。
 `CompiledWideOverrideTest` 覆盖 Long 参数、大于 int 范围的 Long 值、Float/Double 混合参数和返回值。
 
 ```powershell
-.\gradlew.bat --no-daemon :nova-ir:build :nova-runtime:build :nova-runtime-workspace:build
-.\gradlew.bat --no-daemon :nova-ir:publishToMavenLocal :nova-runtime:publishToMavenLocal :nova-runtime-workspace:publishToMavenLocal
+.\gradlew.bat --no-daemon :nova-ir:build :nova-runtime:build
+.\gradlew.bat --no-daemon :nova-ir:publishToMavenLocal :nova-runtime:publishToMavenLocal
 ```

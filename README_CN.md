@@ -157,7 +157,6 @@ dependencies {
 |------|------|
 | `nova-runtime-all` | 完整运行时（解释器 + 编译器 + 标准库） |
 | `nova-runtime-api` | 运行时 API（插件开发用） |
-| `nova-runtime-workspace` | 服务端 Workspace、模块 Alias、隔离执行与资源生命周期 |
 | `nova-bukkit` | 独立 Bukkit/Paper 运行时插件与调度器集成 |
 | `nova-json-gson` | JSON 提供者 — Gson |
 | `nova-json-fastjson2` | JSON 提供者 — FastJSON2 |
@@ -307,11 +306,11 @@ val first = list?[0]
 | [语法规范](docs/语法规范.md) | 完整 EBNF 语法定义 |
 | [使用文档](docs/文档/使用文档.md) | NovaLang 使用指南 |
 | [Java 互操作](docs/文档/Java互操作指南.md) | Java 集成指南 |
+| [编译元数据](docs/设计/Nova编译元数据.md) | 单入口按引用编译，支持可选路径别名 |
 | [标准库模块](docs/文档/标准库模块.md) | 内置模块参考 |
 | [反射 API](docs/文档/反射API.md) | 运行时类型反射 |
 | [注解系统](docs/文档/注解系统.md) | 自定义注解 |
 | [语法文档](docs/文档/语法文档.md) | 语法详解与示例 |
-| [Runtime Workspace 设计](docs/设计/nova-runtime-workspace.md) | 模块 Alias、资源作用域、执行隔离与销毁重建规范 |
 | [更新日志](CHANGELOG.md) | 版本历史与发布说明 |
 
 ---
@@ -324,7 +323,6 @@ NovaLang
 ├── nova-compiler       # 词法分析、语法解析、AST
 ├── nova-ir             # HIR/MIR + 优化 Pass
 ├── nova-runtime        # 解释器 + 标准库
-├── nova-runtime-workspace # 服务端脚本 Workspace
 ├── nova-cli            # 命令行工具
 ├── nova-script         # JSR-223 脚本引擎
 ├── nova-lsp            # 语言服务器协议
@@ -407,4 +405,5 @@ action: |-
   giveItem("diamond", 3)
 `
 
-eward 命名空间会从 .nova/*.json 中加载对应的宿主变量、函数和对象成员，用于补全、悬停、签名帮助与 YAML 嵌入脚本诊断。
+
+eward 命名空间会从 .nova/*.json 中加载对应的宿主变量、函数和对象成员，用于补全、悬停、签名帮助与 YAML 嵌入脚本诊断。

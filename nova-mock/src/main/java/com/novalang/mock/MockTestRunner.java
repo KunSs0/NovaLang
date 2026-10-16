@@ -2,16 +2,15 @@ package com.novalang.mock;
 
 import com.novalang.runtime.NovaScheduler;
 import com.novalang.runtime.SchedulerHolder;
-import com.novalang.workspace.RuntimeWorkspace;
-import com.novalang.workspace.WorkspaceConfig;
-import com.novalang.workspace.WorkspaceConfigLoader;
-import com.novalang.workspace.WorkspaceException;
+import com.novalang.runtime.Nova;
+import com.novalang.runtime.CompiledNova;
+import com.novalang.runtime.compilation.CompilationConfig;
+import com.novalang.runtime.compilation.CompilationConfigLoader;
+import com.novalang.runtime.compilation.CompilationException;
 
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -27,38 +26,54 @@ import java.util.function.Consumer;
 public final class MockTestRunner {
     private static final String SUFFIX = ".mock.nova";
 
+    /**
+     * 发现测试文件，每个文件分别作为唯一编译入口执行并汇总结果。
+     * @param target 测试文件或目录
+     * @param aliases 宿主显式提供的编译路径别名
+     * @param initialMocks 每份测试的初始 Mock 绑定
+     * @param host 安装平台类型和绑定的宿主
+     * @param output 可为空的结果输出回调
+     * @return 全部测试的执行报告
+     */
     public MockTestReport run(Path target,
-                              List<Path> sourceRoots,
                               Map<String, Path> aliases,
                               Map<String, Object> initialMocks,
                               MockTestHost host,
                               Consumer<String> output) {
         if (target == null) {
-            throw new WorkspaceException("Mock 目标不能为空");
+            throw new CompilationException("Mock 目标不能为空");
         }
-        if (sourceRoots == null || aliases == null || initialMocks == null) {
-            throw new WorkspaceException("Mock sourceRoots、aliases 和 initialMocks 不能为空");
+        if (aliases == null || initialMocks == null) {
+            throw new CompilationException("Mock aliases 和 initialMocks 不能为空");
         }
         if (host == null) {
-            throw new WorkspaceException("Mock host 不能为空");
+            throw new CompilationException("Mock host 不能为空");
         }
         List<Path> files = collect(target);
         if (files.isEmpty()) {
-            throw new WorkspaceException("没有找到 .mock.nova 文件: " + target);
+            throw new CompilationException("没有找到 .mock.nova 文件: " + target);
         }
         NovaScheduler scheduler = SchedulerHolder.get();
         if (scheduler == null) {
-            throw new WorkspaceException("NovaLang 调度器尚未安装");
+            throw new CompilationException("NovaLang 调度器尚未安装");
         }
         MockTestReport report = new MockTestReport();
         for (Path file : files) {
-            runOne(file, sourceRoots, aliases, initialMocks, host, output, report);
+            runOne(file, aliases, initialMocks, host, output, report);
         }
         return report;
     }
 
+    /**
+     * 为单个测试编译独立程序，执行 test() 并释放脚本与宿主资源。
+     * @param file 唯一测试入口
+     * @param aliases 额外路径别名
+     * @param initialMocks 初始 Mock 绑定
+     * @param host 平台宿主
+     * @param output 可为空的输出回调
+     * @param report 汇总报告
+     */
     private void runOne(Path file,
-                         List<Path> sourceRoots,
                          Map<String, Path> aliases,
                          Map<String, Object> initialMocks,
                          MockTestHost host,
@@ -66,26 +81,26 @@ public final class MockTestRunner {
                          MockTestReport report) {
         AtomicInteger assertionCount = new AtomicInteger();
         MockTestBindings bindings = new MockTestBindings(assertionCount, initialMocks);
-        RuntimeWorkspace workspace = null;
-        Path temporaryRoot = null;
+        CompiledNova program = null;
         Throwable failure = null;
         MockTestBindings.Scope scope = bindings.installCurrent();
         try {
             if (!file.getFileName().toString().endsWith(SUFFIX)) {
-                throw new WorkspaceException("Mock 文件必须以 " + SUFFIX + " 结尾");
+                throw new CompilationException("Mock 文件必须以 " + SUFFIX + " 结尾");
             }
-            temporaryRoot = Files.createTempDirectory("novalang-mock-");
-            Path config = writeConfig(temporaryRoot, file, sourceRoots, aliases);
-            workspace = new RuntimeWorkspace(config, host);
-            workspace.load();
-            workspace.invoke(moduleEntry(file), "test",
-                    Collections.<String, Object>emptyMap(), null, new Object[0]);
+            CompilationConfig config = createConfig(file, aliases);
+            Nova nova = new Nova();
+            nova.setScriptClassLoader(host.getClass().getClassLoader());
+            host.install(nova);
+            program = nova.compileToBytecode(file, config);
+            program.run();
+            program.call("test");
         } catch (Exception | AssertionError caught) {
             failure = caught;
         } finally {
-            if (workspace != null) {
+            if (program != null) {
                 try {
-                    workspace.dispose();
+                    program.close();
                 } catch (RuntimeException cleanupFailure) {
                     failure = mergeFailure(failure, cleanupFailure);
                 }
@@ -100,8 +115,6 @@ public final class MockTestRunner {
             } catch (RuntimeException cleanupFailure) {
                 failure = mergeFailure(failure, cleanupFailure);
             }
-            Throwable temporaryCleanupFailure = deleteTemporaryRoot(temporaryRoot);
-            failure = mergeFailure(failure, temporaryCleanupFailure);
         }
         if (failure == null) {
             report.add(new MockTestReport.TestCase(file, true, assertionCount.get(), null));
@@ -113,65 +126,51 @@ public final class MockTestRunner {
         }
     }
 
-    private Path writeConfig(Path temporaryRoot,
-                             Path file,
-                             List<Path> sourceRoots,
-                             Map<String, Path> aliases) throws IOException {
+    /**
+     * 收集测试和平台路径别名，入口文件由编译调用单独传入。
+     * @param file 用于定位测试目录和服务端环境的入口文件
+     * @param aliases 宿主显式提供的别名
+     * @return 不包含入口列表或源码目录的编译元数据
+     */
+    private CompilationConfig createConfig(Path file, Map<String, Path> aliases) {
         Path testRoot = file.toAbsolutePath().normalize().getParent();
-        List<Path> roots = new ArrayList<Path>();
-        addPath(roots, testRoot);
-        for (Path root : sourceRoots) { addPath(roots, root.toAbsolutePath().normalize()); }
         Path serverRoot = findServerRoot(file);
-        addPath(roots, serverRoot);
         Map<String, Path> actualAliases = new LinkedHashMap<String, Path>();
         actualAliases.put("@mock", testRoot);
         actualAliases.put("@", testRoot);
         if (serverRoot != null) {
             Path novaLibraries = serverRoot.resolve("plugins").resolve("NovaLang").resolve("libs");
             if (!Files.isDirectory(novaLibraries)) {
-                throw new WorkspaceException("服务端缺少 NovaLang 全局前置库: " + novaLibraries);
+                throw new CompilationException("服务端缺少 NovaLang 全局前置库: " + novaLibraries);
             }
             actualAliases.put("@nova", novaLibraries.toAbsolutePath().normalize());
-            discoverWorkspaceConfig(serverRoot, roots, actualAliases);
+            discoverCompilationConfig(serverRoot, actualAliases);
         }
         for (Map.Entry<String, Path> entry : aliases.entrySet()) {
             String name = entry.getKey();
             Path path = entry.getValue();
             if (name == null || name.isEmpty() || path == null) {
-                throw new WorkspaceException("Mock alias 名称和目录不能为空");
+                throw new CompilationException("Mock alias 名称和目录不能为空");
             }
             if (actualAliases.containsKey(name)) {
-                throw new WorkspaceException("Mock alias 不得覆盖保留映射: " + name);
+                throw new CompilationException("Mock alias 不得覆盖保留映射: " + name);
             }
             actualAliases.put(name, path.toAbsolutePath().normalize());
         }
-        for (Path aliasRoot : actualAliases.values()) { addPath(roots, aliasRoot); }
-        StringBuilder content = new StringBuilder("version: 1\nname: mock-")
-                .append(Integer.toHexString(file.toString().hashCode())).append("\naliases:\n");
+        CompilationConfig.Builder builder = new CompilationConfig.Builder();
+        builder.name("mock-" + Integer.toHexString(file.toString().hashCode()));
         for (Map.Entry<String, Path> entry : actualAliases.entrySet()) {
-            content.append("  ").append(yaml(entry.getKey())).append(": ")
-                    .append(yaml(entry.getValue().toAbsolutePath().normalize().toString())).append('\n');
+            builder.alias(entry.getKey(), entry.getValue());
         }
-        content.append("sources:\n");
-        for (Path root : roots) { content.append("  - ").append(yaml(root.toString())).append('\n'); }
-        content.append("entries:\n  - ").append(yaml(moduleEntry(file)))
-                .append("\nruntime:\n  security: trusted-server\n  thread: caller\n");
-        Path config = temporaryRoot.resolve("nova.config.yml");
-        Files.write(config, content.toString().getBytes(StandardCharsets.UTF_8),
-                StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
-        return config;
+        return builder.build();
     }
 
-    private static String moduleEntry(Path file) { return "@mock/" + file.getFileName(); }
-    private static String yaml(String value) { return "'" + value.replace("'", "''") + "'"; }
-    private static void addPath(List<Path> paths, Path path) {
-        if (path != null && Files.isDirectory(path)) {
-            Path normalized = path.toAbsolutePath().normalize();
-            if (!paths.contains(normalized)) { paths.add(normalized); }
-        }
-    }
-    private static void discoverWorkspaceConfig(Path serverRoot,
-                                                List<Path> roots,
+    /**
+     * 读取服务端项目的别名元数据，发现冲突时明确报错。
+     * @param serverRoot 服务端根目录
+     * @param aliases 接收项目别名的映射
+     */
+    private static void discoverCompilationConfig(Path serverRoot,
                                                 Map<String, Path> aliases) {
         Path pluginsRoot = serverRoot.resolve("plugins");
         List<Path> configFiles = new ArrayList<Path>();
@@ -180,15 +179,12 @@ public final class MockTestRunner {
                     .filter(path -> "nova.config.yml".equals(path.getFileName().toString()))
                     .forEach(configFiles::add);
         } catch (IOException exception) {
-            throw new WorkspaceException("扫描服务端 Workspace 配置失败: " + pluginsRoot, exception);
+            throw new CompilationException("扫描服务端编译配置失败: " + pluginsRoot, exception);
         }
         Collections.sort(configFiles, Comparator.comparing(Path::toString));
-        WorkspaceConfigLoader loader = new WorkspaceConfigLoader();
+        CompilationConfigLoader loader = new CompilationConfigLoader();
         for (Path configFile : configFiles) {
-            WorkspaceConfig config = loader.load(configFile);
-            for (Path sourceRoot : config.getSourceRoots()) {
-                addPath(roots, sourceRoot);
-            }
+            CompilationConfig config = loader.load(configFile);
             for (Map.Entry<String, Path> entry : config.getAliases().entrySet()) {
                 String alias = entry.getKey();
                 if ("@nova".equals(alias)) {
@@ -197,7 +193,7 @@ public final class MockTestRunner {
                 Path path = entry.getValue().toAbsolutePath().normalize();
                 Path existing = aliases.get(alias);
                 if (existing != null && !existing.equals(path)) {
-                    throw new WorkspaceException("服务端 Workspace alias 冲突: " + alias
+                    throw new CompilationException("服务端编译配置 Alias 冲突: " + alias
                             + " -> " + existing + " / " + path);
                 }
                 aliases.put(alias, path);
@@ -216,7 +212,7 @@ public final class MockTestRunner {
         return null;
     }
     private static List<Path> collect(Path target) {
-        if (!Files.exists(target)) { throw new WorkspaceException("Mock 文件或目录不存在: " + target); }
+        if (!Files.exists(target)) { throw new CompilationException("Mock 文件或目录不存在: " + target); }
         List<Path> files = new ArrayList<Path>();
         if (Files.isRegularFile(target)) { files.add(target.toAbsolutePath().normalize()); }
         else {
@@ -225,22 +221,11 @@ public final class MockTestRunner {
                         .filter(path -> path.getFileName().toString().endsWith(SUFFIX))
                         .forEach(path -> files.add(path.toAbsolutePath().normalize()));
             } catch (IOException exception) {
-                throw new WorkspaceException("扫描 mock 目录失败: " + target, exception);
+                throw new CompilationException("扫描 mock 目录失败: " + target, exception);
             }
         }
         Collections.sort(files, Comparator.comparing(Path::toString));
         return files;
-    }
-    private static Throwable deleteTemporaryRoot(Path root) {
-        if (root == null || !Files.exists(root)) { return null; }
-        try (java.util.stream.Stream<Path> stream = Files.walk(root)) {
-            List<Path> paths = new ArrayList<Path>(); stream.forEach(paths::add);
-            Collections.sort(paths, Comparator.comparing(Path::toString).reversed());
-            for (Path path : paths) { Files.deleteIfExists(path); }
-            return null;
-        } catch (IOException | RuntimeException failure) {
-            return failure;
-        }
     }
     private static void send(Consumer<String> output, String message) { if (output != null) { output.accept(message); } }
     private static String describeFailure(Throwable failure) {

@@ -1,7 +1,7 @@
 package com.novalang.bukkit;
 
 import com.novalang.test.TestReport;
-import com.novalang.workspace.test.WorkspaceTestRunner;
+import com.novalang.test.ProjectTestRunner;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
@@ -9,7 +9,7 @@ import org.bukkit.command.CommandSender;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 
-/** NovaLang Bukkit 管理命令。测试配置由 Workspace 的 nova.config.yml 提供。 */
+/** NovaLang Bukkit 管理命令。测试配置由 项目的 nova.config.yml 提供。 */
 public final class NovaPluginCommand implements CommandExecutor {
 
     @Override
@@ -18,7 +18,7 @@ public final class NovaPluginCommand implements CommandExecutor {
                              String label,
                              String[] args) {
         if (args.length < 2 || !"test".equalsIgnoreCase(args[0])) {
-            sender.sendMessage("用法: /nova test <测试文件|Workspace目录> [--report=<文件>]");
+            sender.sendMessage("用法: /nova test <测试文件|项目目录> [--report=<文件>]");
             return true;
         }
         try {
@@ -33,7 +33,7 @@ public final class NovaPluginCommand implements CommandExecutor {
                     return true;
                 }
             }
-            TestReport report = new WorkspaceTestRunner().run(target, sender::sendMessage);
+            TestReport report = new ProjectTestRunner().run(target, sender::sendMessage);
             if (reportPath != null) {
                 report.writeJson(reportPath);
             }

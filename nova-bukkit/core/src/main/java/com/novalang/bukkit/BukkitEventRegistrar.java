@@ -1,236 +1,128 @@
 package com.novalang.bukkit;
 
-import com.novalang.workspace.ResourceScope;
-import com.novalang.workspace.WorkspaceCallbacks;
-import com.novalang.workspace.WorkspaceDirectCallback;
-import com.novalang.workspace.WorkspaceEventCallback;
-import com.novalang.workspace.WorkspaceExecutionContext;
-import com.novalang.workspace.WorkspaceGeneration;
+import com.novalang.runtime.ScriptCallback;
+import com.novalang.runtime.ScriptCallbackContexts;
+import com.novalang.runtime.ScriptCallbacks;
+import com.novalang.runtime.ScriptFunction;
 import org.bukkit.event.Event;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.HandlerList;
 import org.bukkit.event.Listener;
 import org.bukkit.plugin.EventExecutor;
 import org.bukkit.plugin.Plugin;
-import org.bukkit.plugin.PluginManager;
 
 /**
- * Bukkit 事件注册器。
- *
- * <p>注册所有者始终是构造器传入的业务插件。注册调用发生在 Workspace 执行上下文中
- * 时，回调会捕获当前 Generation、Scope 和绑定快照；否则回调直接在 Bukkit 调用线程
- * 执行。</p>
+ * 绑定业务插件的 Bukkit 事件注册器。
+ * <p>Nova 调用通过底层 ScriptCallback 捕获绑定和程序生命周期；Java 调用由插件或调用方管理。</p>
  */
 public final class BukkitEventRegistrar {
-
     private final Plugin plugin;
-    private final RegistrationMode mode;
-    private final WorkspaceGeneration boundGeneration;
-    private final ResourceScope boundScope;
-    private BukkitEventRegistrar(Plugin plugin,
-                                 RegistrationMode mode,
-                                 WorkspaceGeneration boundGeneration,
-                                 ResourceScope boundScope) {
+
+    /** 校验并保存实际 Bukkit 注册所有者。 */
+    private BukkitEventRegistrar(Plugin plugin) {
         if (plugin == null) {
             throw new IllegalArgumentException("plugin must not be null");
         }
         this.plugin = plugin;
-        this.mode = mode;
-        this.boundGeneration = boundGeneration;
-        this.boundScope = boundScope;
     }
 
     /**
-     * 创建绑定 Bukkit Plugin 的注册器。
-     *
+     * 创建业务插件的事件注册器。
      * @param plugin Bukkit 注册所有者
-     * @return standalone 注册器；若调用时存在 Workspace 上下文则自动捕获该上下文
+     * @return 不持有额外脚本容器的注册器
      */
     public static BukkitEventRegistrar forPlugin(Plugin plugin) {
-        return new BukkitEventRegistrar(plugin, RegistrationMode.CONTEXTUAL, null, null);
+        return new BukkitEventRegistrar(plugin);
     }
 
     /**
-     * 创建绑定具体 ResourceScope 的 Workspace 注册器。
-     *
-     * @param plugin Bukkit 注册所有者
-     * @param scope 事件资源所属作用域；注册时必须处于该 Scope 的执行上下文
-     * @return Workspace 注册器
-     */
-    public static BukkitEventRegistrar forWorkspace(Plugin plugin, ResourceScope scope) {
-        if (scope == null) {
-            throw new IllegalArgumentException("scope must not be null");
-        }
-        return new BukkitEventRegistrar(plugin, RegistrationMode.BOUND_SCOPE, null, scope);
-    }
-
-    /**
-     * 创建可在 Workspace 执行上下文之外使用的显式注册器。
-     */
-    public static BukkitEventRegistrar forWorkspace(Plugin plugin,
-                                                    WorkspaceGeneration generation,
-                                                    ResourceScope scope) {
-        if (generation == null) {
-            throw new IllegalArgumentException("generation must not be null");
-        }
-        if (scope == null) {
-            throw new IllegalArgumentException("scope must not be null");
-        }
-        return new BukkitEventRegistrar(plugin, RegistrationMode.BOUND_GENERATION,
-                generation, scope);
-    }
-
-    /**
-     * 注册一个编译期检查过的 Bukkit 监听器。
-     *
+     * 注册编译期检查过的强类型监听器，Nova 调用自动归属于当前编译程序。
      * @param eventType Bukkit 事件类型
      * @param priority 监听优先级
      * @param ignoreCancelled 是否忽略已取消事件
-     * @param listener 强类型事件监听器
-     * @return 可手动或自动释放的注册句柄
+     * @param listener 事件监听器
+     * @return 可主动释放、并随所属程序关闭而自动注销的句柄
      */
-    public EventRegistration listen(Class<? extends Event> eventType,
-                                    EventPriority priority,
-                                    boolean ignoreCancelled,
-                                    BukkitEventListener listener) {
-        if (eventType == null) {
-            throw new IllegalArgumentException("eventType must not be null");
+    public EventRegistration listen(Class<? extends Event> eventType, EventPriority priority,
+                                    boolean ignoreCancelled, BukkitEventListener listener) {
+        if (eventType == null || !Event.class.isAssignableFrom(eventType)) {
+            throw new IllegalArgumentException("eventType must extend org.bukkit.event.Event");
         }
-        if (!Event.class.isAssignableFrom(eventType)) {
-            throw new IllegalArgumentException(
-                    "Bukkit event class must extend org.bukkit.event.Event: " + eventType.getName());
+        if (priority == null || listener == null) {
+            throw new IllegalArgumentException("priority and listener must not be null");
         }
-        if (listener == null) {
-            throw new IllegalArgumentException("listener must not be null");
-        }
-        if (priority == null) {
-            throw new IllegalArgumentException("priority must not be null");
-        }
-        ResourceScope scope = boundScope;
-        if (mode == RegistrationMode.CONTEXTUAL) {
-            scope = WorkspaceExecutionContext.currentScope();
-        }
-        if (mode == RegistrationMode.CONTEXTUAL && scope == null) {
-            return registerStandalone(eventType, priority, ignoreCancelled, listener);
-        }
-        ResourceScope currentScope = WorkspaceExecutionContext.currentScope();
-        if (mode == RegistrationMode.BOUND_SCOPE && currentScope != boundScope) {
-            throw new IllegalStateException("The current Workspace scope does not match the registrar scope");
-        }
-        WorkspaceDirectCallback callback;
-        if (mode == RegistrationMode.BOUND_GENERATION) {
-            callback = boundGeneration.createDirectCallback(scope, new WorkspaceEventCallback() {
+        ScriptCallback callback = null;
+        if (ScriptCallbackContexts.current() != null) {
+            callback = ScriptCallbacks.bind(new ScriptFunction() {
+                /** Bukkit 事件回调只接收一个事件。 */
                 @Override
-                public Object invoke(Object value) {
-                    listener.handle((Event) value);
-                    return null;
+                public int argumentCount() {
+                    return 1;
                 }
-            });
-        } else {
-            if (WorkspaceExecutionContext.currentGeneration() == null) {
-                throw new IllegalStateException("A Workspace Generation is required for Workspace event registration");
-            }
-            callback = WorkspaceCallbacks.createDirect(new WorkspaceEventCallback() {
+
+                /** 将原始事件直接交给强类型监听器，保留对象身份。 */
                 @Override
-                public Object invoke(Object value) {
-                    listener.handle((Event) value);
+                public Object invokeArguments(Object... arguments) {
+                    listener.handle(eventType.cast(arguments[0]));
                     return null;
                 }
             });
         }
-        return registerWorkspace(eventType, priority, ignoreCancelled, scope, callback);
-    }
-
-    private EventRegistration registerStandalone(Class<? extends Event> eventType,
-                                                 EventPriority priority,
-                                                 boolean ignoreCancelled,
-                                                 BukkitEventListener listener) {
-        Subscription subscription = new Subscription(null, listener, null, eventType);
-        registerWithBukkit(eventType, priority, ignoreCancelled, subscription);
-        subscription.markRegistered();
-        return subscription;
-    }
-
-    private EventRegistration registerWorkspace(Class<? extends Event> eventType,
-                                                EventPriority priority,
-                                                boolean ignoreCancelled,
-                                                ResourceScope scope,
-                                                WorkspaceDirectCallback callback) {
-        Subscription subscription = new Subscription(scope, null, callback, eventType);
+        Subscription subscription = new Subscription(listener, callback);
         try {
-            registerWithBukkit(eventType, priority, ignoreCancelled, subscription);
-            scope.register(subscription);
-            subscription.markRegistered();
+            EventExecutor executor = (registered, event) -> {
+                if (eventType.isInstance(event)) {
+                    subscription.invoke(event);
+                }
+            };
+            plugin.getServer().getPluginManager().registerEvent(
+                    eventType, subscription, priority, executor, plugin, ignoreCancelled);
+            if (callback != null) {
+                subscription.bind(callback.register(subscription));
+            }
             return subscription;
-        } catch (RuntimeException exception) {
+        } catch (RuntimeException failure) {
             subscription.dispose();
-            throw exception;
+            throw failure;
         }
     }
 
-    private void registerWithBukkit(Class<? extends Event> eventType,
-                                    EventPriority priority,
-                                    boolean ignoreCancelled,
-                                    Subscription subscription) {
-        EventExecutor executor = (registeredListener, event) -> {
-            if (!eventType.isInstance(event)) {
-                return;
-            }
-            subscription.invoke(event);
-        };
-        PluginManager pluginManager = plugin.getServer().getPluginManager();
-        pluginManager.registerEvent(eventType, subscription, priority,
-                executor, plugin, ignoreCancelled);
-    }
-
-    private enum RegistrationMode {
-        CONTEXTUAL,
-        BOUND_SCOPE,
-        BOUND_GENERATION
-    }
-
-    /** Bukkit Listener 与 WorkspaceResource 的统一句柄。 */
+    /** Bukkit Listener 和 Nova 程序资源共用一个幂等注销句柄。 */
     private static final class Subscription implements Listener, EventRegistration {
-        private final ResourceScope scope;
-        private final BukkitEventListener standaloneListener;
-        private final WorkspaceDirectCallback workspaceCallback;
-        private final Class<? extends Event> eventType;
-        private boolean registered;
+        private final BukkitEventListener listener;
+        private final ScriptCallback callback;
+        private AutoCloseable registration;
         private boolean disposed;
 
-        private Subscription(ResourceScope scope,
-                             BukkitEventListener standaloneListener,
-                             WorkspaceDirectCallback workspaceCallback,
-                             Class<? extends Event> eventType) {
-            this.scope = scope;
-            this.standaloneListener = standaloneListener;
-            this.workspaceCallback = workspaceCallback;
-            this.eventType = eventType;
+        /** 保存 Java 监听器及可选的 Nova 回调上下文。 */
+        private Subscription(BukkitEventListener listener, ScriptCallback callback) {
+            this.listener = listener;
+            this.callback = callback;
         }
 
-        private synchronized void markRegistered() {
-            registered = true;
-            if (disposed && scope != null) {
-                scope.unregister(this);
+        /** 覆盖注册资源期间程序已经关闭的竞态。 */
+        private synchronized void bind(AutoCloseable handle) {
+            registration = handle;
+            if (disposed) {
+                detach();
             }
         }
 
+        /** 校验生命周期后执行，Nova 路径恢复捕获的绑定和类加载环境。 */
         private void invoke(Event event) {
             synchronized (this) {
-                if (disposed) {
-                    return;
-                }
-                if (workspaceCallback != null && !workspaceCallback.isValid()) {
+                if (disposed || (callback != null && !callback.isValid())) {
                     return;
                 }
             }
-            if (workspaceCallback != null) {
-                workspaceCallback.invoke(event);
-                return;
+            if (callback != null) {
+                callback.invoke(event);
+            } else {
+                listener.handle(event);
             }
-            standaloneListener.handle(eventType.cast(event));
         }
 
+        /** 注销 Bukkit 监听器并解除程序资源登记。 */
         @Override
         public synchronized void dispose() {
             if (disposed) {
@@ -238,8 +130,20 @@ public final class BukkitEventRegistrar {
             }
             disposed = true;
             HandlerList.unregisterAll(this);
-            if (registered && scope != null) {
-                scope.unregister(this);
+            detach();
+        }
+
+        /** 解除所有者引用，不重复执行资源注销。 */
+        private void detach() {
+            if (registration == null) {
+                return;
+            }
+            try {
+                registration.close();
+            } catch (Exception failure) {
+                throw new IllegalStateException("Cannot detach Bukkit event registration", failure);
+            } finally {
+                registration = null;
             }
         }
     }

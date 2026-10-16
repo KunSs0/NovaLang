@@ -4,8 +4,8 @@ import com.novalang.runtime.Nova;
 import com.novalang.runtime.NovaScheduler;
 import com.novalang.runtime.SchedulerHolder;
 import com.novalang.runtime.interpreter.JavaInterop;
-import com.novalang.workspace.RuntimeWorkspace;
-import com.novalang.workspace.WorkspaceGeneration;
+import com.novalang.runtime.CompiledNova;
+import com.novalang.runtime.compilation.CompilationConfigLoader;
 import org.bukkit.event.Event;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.HandlerList;
@@ -187,12 +187,12 @@ public class BukkitEventRegistrarTest {
     }
 
     /**
-     * 验证跨 Workspace 编译组导出的 Bukkit Vector 参数不会因 Java 类型解析丢失限定名。
+     * 验证跨 Compilation 编译组导出的 Bukkit Vector 参数不会因 Java 类型解析丢失限定名。
      *
      * @throws Exception 工作区源码写入、编译或执行失败。
      */
     @Test
-    void compilesBukkitVectorParameterAcrossWorkspaceGroups() throws Exception {
+    void compilesBukkitVectorParameterAcrossCompilationGroups() throws Exception {
         final Thread ownerThread = Thread.currentThread();
         SchedulerHolder.set(new NovaScheduler() {
             @Override
@@ -232,29 +232,20 @@ public class BukkitEventRegistrarTest {
         ).getBytes(StandardCharsets.UTF_8));
         Files.write(tempDirectory.resolve("nova.config.yml"), (
                 "version: 1\n"
-                        + "name: bukkit-vector-workspace\n"
+                        + "name: bukkit-vector-compilation\n"
                         + "aliases:\n"
                         + "  \"@\": \".\"\n"
-                        + "sources:\n"
-                        + "  - .\n"
-                        + "entries:\n"
-                        + "  - entry.nova\n"
-                        + "runtime:\n"
-                        + "  security: trusted-server\n"
-                        + "  thread: main\n"
         ).getBytes(StandardCharsets.UTF_8));
-        RuntimeWorkspace workspace = new RuntimeWorkspace(
-                tempDirectory.resolve("nova.config.yml"),
-                nova -> {
-                    NovaBukkit.install(nova, pluginProxy());
-                    nova.setScriptClassLoader(BukkitEventRegistrarTest.class.getClassLoader());
-                });
+        Nova nova = new Nova();
+        NovaBukkit.install(nova, pluginProxy());
+        nova.setScriptClassLoader(BukkitEventRegistrarTest.class.getClassLoader());
+        CompiledNova program = nova.compileToBytecode(tempDirectory.resolve("entry.nova"), new CompilationConfigLoader().load(
+                tempDirectory.resolve("nova.config.yml")));
         try {
-            workspace.load();
-            assertEquals(4, workspace.invoke("entry.nova", "execute",
-                    java.util.Collections.emptyMap(), null));
+            program.run();
+            assertEquals(4, program.call("execute"));
         } finally {
-            workspace.dispose();
+            program.close();
             SchedulerHolder.clear();
         }
     }
@@ -273,7 +264,7 @@ public class BukkitEventRegistrarTest {
     }
 
     @Test
-    void workspaceRegistrationIsDisposedWithGeneration() throws Exception {
+    void compilationRegistrationIsDisposedWithGeneration() throws Exception {
         AtomicReference<Listener> registeredListener = new AtomicReference<Listener>();
         AtomicReference<EventExecutor> executor = new AtomicReference<EventExecutor>();
         AtomicReference<Plugin> owner = new AtomicReference<Plugin>();
@@ -316,45 +307,34 @@ public class BukkitEventRegistrarTest {
         ).getBytes(StandardCharsets.UTF_8));
         Files.write(tempDirectory.resolve("nova.config.yml"), (
                 "version: 1\n"
-                        + "name: bukkit-event-workspace\n"
+                        + "name: bukkit-event-compilation\n"
                         + "aliases:\n"
                         + "  \"@\": \".\"\n"
-                        + "sources:\n"
-                        + "  - .\n"
-                        + "entries:\n"
-                        + "  - entry.nova\n"
-                        + "runtime:\n"
-                        + "  security: trusted-server\n"
-                        + "  thread: main\n"
         ).getBytes(StandardCharsets.UTF_8));
-        RuntimeWorkspace workspace = new RuntimeWorkspace(
-                tempDirectory.resolve("nova.config.yml"),
-                nova -> {
-                    NovaBukkit.install(nova, plugin);
-                    nova.setScriptClassLoader(BukkitEventRegistrarTest.class.getClassLoader());
-                });
+        Nova nova = new Nova();
+        NovaBukkit.install(nova, plugin);
+        nova.setScriptClassLoader(BukkitEventRegistrarTest.class.getClassLoader());
+        CompiledNova program = nova.compileToBytecode(tempDirectory.resolve("entry.nova"), new CompilationConfigLoader().load(
+                tempDirectory.resolve("nova.config.yml")));
         try {
-            workspace.load();
+            program.run();
             assertSame(plugin, owner.get());
             executor.get().execute(registeredListener.get(), new TestEvent());
-            assertSame(1, workspace.invoke("entry.nova", "getCount",
-                    java.util.Collections.emptyMap(), null));
-            WorkspaceGeneration generation = workspace.getGeneration();
+            assertSame(1, program.call("getCount"));
             AtomicInteger explicitCount = new AtomicInteger();
-            EventRegistration explicitRegistration = BukkitEventRegistrar.forWorkspace(
-                    plugin, generation, generation.getRootScope()).listen(
+            EventRegistration explicitRegistration = BukkitEventRegistrar.forPlugin(plugin).listen(
                     TestEvent.class, EventPriority.NORMAL, false,
                     event -> explicitCount.incrementAndGet());
+            program.registerResource(explicitRegistration);
             executor.get().execute(registeredListener.get(), new TestEvent());
             assertEquals(1, explicitCount.get());
             explicitRegistration.dispose();
             executor.get().execute(registeredListener.get(), new TestEvent());
             assertEquals(1, explicitCount.get());
-            workspace.dispose();
-            assertThrows(RuntimeException.class, () -> workspace.invoke("entry.nova", "getCount",
-                    java.util.Collections.emptyMap(), null));
+            program.close();
+            assertThrows(RuntimeException.class, () -> program.call("getCount"));
         } finally {
-            workspace.dispose();
+            program.close();
             SchedulerHolder.clear();
         }
     }

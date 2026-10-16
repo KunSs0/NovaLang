@@ -6,6 +6,7 @@ description = 'NovaLang 底层单元测试执行 API'
 
 dependencies {
     api project(':nova-runtime')
+    implementation 'org.yaml:snakeyaml:2.0'
 }
 
 tasks.withType(JavaCompile) {

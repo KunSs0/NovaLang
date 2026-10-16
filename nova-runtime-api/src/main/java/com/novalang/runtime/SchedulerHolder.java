@@ -26,7 +26,7 @@ public final class SchedulerHolder {
     /**
      * 安装进程级唯一调度器。
      *
-     * <p>同一实例可以由 Workspace 重复确认；不同实例不得覆盖当前宿主调度器。</p>
+     * <p>同一实例可以由 Program 重复确认；不同实例不得覆盖当前宿主调度器。</p>
      *
      * @param scheduler 宿主调度器
      * @throws IllegalArgumentException 调度器为空时抛出

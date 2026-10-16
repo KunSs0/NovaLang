@@ -13,7 +13,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
 
-/** Bukkit mock provider；造出的玩家只存在于当前测试 Workspace 生命周期。 */
+/** Bukkit mock provider；造出的玩家只存在于当前测试 Program 生命周期。 */
 public final class BukkitMockTestHost implements MockTestHost {
 
     private final Map<String, MockPlayer> players = new LinkedHashMap<String, MockPlayer>();

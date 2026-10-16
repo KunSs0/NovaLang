@@ -52,7 +52,7 @@ public final class NovaBukkit {
         return builder().build();
     }
 
-    /** 单体 Nova 直接调用；Workspace 可把该方法引用作为 WorkspaceHost。 */
+    /** 将平台插件拥有的 Bukkit API 显式安装到普通 Nova 实例。 */
     public static Nova install(Nova nova) {
         if (nova == null) {
             throw new IllegalArgumentException("nova must not be null");
@@ -96,12 +96,12 @@ public final class NovaBukkit {
         return types.build();
     }
 
-    /** 注册由 Bukkit 插件提供、供全部 Nova Workspace 使用的共享逻辑模块。 */
+    /** 注册由 Bukkit 插件提供、供全部 Nova 程序 使用的共享逻辑模块。 */
     public static void registerModule(String moduleId, String source) {
         ModuleLoader.registerSharedModule(moduleId, source);
     }
 
-    /** 将 Java 类型注册为供全部 Nova Workspace 使用的共享逻辑模块。 */
+    /** 将 Java 类型注册为供全部 Nova 程序 使用的共享逻辑模块。 */
     public static void registerModule(String moduleId, Collection<Class<?>> types) {
         ModuleLoader.registerSharedModule(moduleId, types);
     }

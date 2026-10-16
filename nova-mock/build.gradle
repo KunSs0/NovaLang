@@ -5,7 +5,7 @@ plugins {
 description = 'NovaLang 通用 .mock.nova 单元测试流程'
 
 dependencies {
-    api project(':nova-runtime-workspace')
+    api project(':nova-runtime')
 }
 
 tasks.withType(JavaCompile) {

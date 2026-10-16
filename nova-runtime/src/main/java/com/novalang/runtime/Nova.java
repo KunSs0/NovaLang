@@ -1,6 +1,11 @@
 package com.novalang.runtime;
 
 import com.novalang.ir.NovaIrCompiler;
+import com.novalang.runtime.compilation.BytecodeArtifactCache;
+import com.novalang.runtime.compilation.CompilationConfig;
+import com.novalang.runtime.compilation.SourceUnit;
+import com.novalang.runtime.compilation.CompiledProgramMetadata;
+import com.novalang.runtime.compilation.NovaCompiler;
 import com.novalang.compiler.ast.decl.Program;
 import com.novalang.compiler.parser.Parser;
 import com.novalang.compiler.lexer.Lexer;
@@ -12,6 +17,7 @@ import com.novalang.runtime.types.Environment;
 
 import java.io.*;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.*;
@@ -135,7 +141,7 @@ public final class Nova {
 
     /**
      * 设置编译期是否拒绝未声明的全局函数调用。
-     * Workspace 应启用该选项，普通嵌入式宿主可保留动态函数注入。
+     * 需要严格校验的宿主应启用该选项，普通嵌入式宿主可保留动态函数注入。
      */
     public Nova setRejectUnknownGlobalCalls(boolean rejectUnknownGlobalCalls) {
         this.rejectUnknownGlobalCalls = rejectUnknownGlobalCalls;
@@ -1131,6 +1137,59 @@ public final class Nova {
         if (compilationCache != null) compilationCache.clear();
     }
 
+    /**
+     * 从唯一入口文件递归编译 import 依赖，无需声明源码目录或配置文件。
+     * @param entryFile 入口文件，相对路径按宿主工作目录解析
+     * @return 尚未执行初始化的独立程序
+     */
+    public CompiledNova compileToBytecode(Path entryFile) {
+        return compileToBytecode(entryFile, new CompilationConfig.Builder().build());
+    }
+
+    /**
+     * 使用可选元数据编译唯一入口及其可达依赖。
+     * @param entryFile 唯一入口文件
+     * @param config 路径别名和诊断名称
+     * @return 由调用方 run()、call() 并最终 close() 的程序
+     */
+    public CompiledNova compileToBytecode(Path entryFile, CompilationConfig config) {
+        return compileToBytecode(entryFile, config, new BytecodeArtifactCache());
+    }
+
+    /**
+     * 复用字节码缓存编译唯一文件入口，每次独立加载生成类。
+     * @param entryFile 唯一入口文件
+     * @param config 可选编译元数据
+     * @param cache 不保存已加载 Class 的缓存
+     * @return 类与静态状态独立的程序
+     */
+    public CompiledNova compileToBytecode(Path entryFile, CompilationConfig config,
+                                          BytecodeArtifactCache cache) {
+        return new NovaCompiler().compile(this, entryFile, config, cache);
+    }
+
+    /**
+     * 编译宿主生成的唯一源码入口，保留原始文件和业务位置诊断。
+     * @param entry 唯一源码入口，无需在元数据中重复登记
+     * @param config 路径别名和诊断名称
+     * @return 尚未执行初始化的独立程序
+     */
+    public CompiledNova compileToBytecode(SourceUnit entry, CompilationConfig config) {
+        return compileToBytecode(entry, config, new BytecodeArtifactCache());
+    }
+
+    /**
+     * 复用字节码缓存编译宿主提供的唯一源码入口。
+     * @param entry 唯一源码入口
+     * @param config 可选编译元数据
+     * @param cache 不保存已加载 Class 的缓存
+     * @return 类与静态状态独立的程序
+     */
+    public CompiledNova compileToBytecode(SourceUnit entry,
+                                          CompilationConfig config, BytecodeArtifactCache cache) {
+        return new NovaCompiler().compile(this, entry, config, cache);
+    }
+
     public CompiledNova compileToBytecode(String code) {
         return compileToBytecode(code, "<compiled>");
     }
@@ -1164,9 +1223,9 @@ public final class Nova {
     }
 
     /**
-     * 编译完整脚本源码为可跨 Workspace 复用的字节码产物。
+     * 编译完整脚本源码为可跨编译实例 复用的字节码产物。
      *
-     * <p>调用方必须为每个 Workspace 创建独立 ClassLoader 再加载这些字节码，不能直接
+     * <p>调用方必须为每个程序实例 创建独立 ClassLoader 再加载这些字节码，不能直接
      * 复用已经加载的 Class 对象，否则模块静态状态会跨业务实例泄漏。</p>
      */
     public Map<String, byte[]> compileToBytecodeArtifact(String code, String fileName) {
@@ -1213,7 +1272,7 @@ public final class Nova {
         }
     }
 
-    /** 编译独立行内动作。字符串模块依赖通过 Workspace 接入。 */
+    /** 编译独立行内动作。字符串模块依赖通过编译元数据接入。 */
     public Map<String, byte[]> compileInlineToBytecodeArtifact(
             String code, String fileName, String entryName, String returnType) {
         Parser parser = new Parser(
@@ -1224,7 +1283,7 @@ public final class Nova {
     /**
      * 用已经独立加载的字节码类创建当前 Nova 实例的运行包装。
      *
-     * @param classes 当前 Workspace 独占的已加载类
+     * @param classes 当前程序实例 独占的已加载类
      * @return 绑定当前 Nova Java API 的编译程序
      */
     public CompiledNova createCompiledNova(Map<String, Class<?>> classes) {
@@ -1232,6 +1291,19 @@ public final class Nova {
             throw new IllegalArgumentException("Compiled classes must not be empty");
         }
         return buildCompiledNova(classes);
+    }
+
+    /**
+     * 将编译器链接结果绑定为普通 Nova 程序，生命周期归 CompiledNova 所有。
+     * @param classes 本次编译独立加载的类
+     * @param metadata 入口、初始化顺序及 Source Map
+     * @return 绑定当前 Nova 宿主 API 的程序
+     */
+    public CompiledNova createCompiledNova(Map<String, Class<?>> classes, CompiledProgramMetadata metadata) {
+        if (classes == null || metadata == null) {
+            throw new IllegalArgumentException("Compiled classes and metadata are required");
+        }
+        return bindCompiledNova(new CompiledNova(classes, extensionRegistry, metadata), null);
     }
 
     /** 使用预先解析的字节码索引创建隔离程序，避免再次扫描全部模块方法。 */

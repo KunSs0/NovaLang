@@ -1,7 +1,7 @@
 package com.novalang.cli;
 
 import com.novalang.test.TestReport;
-import com.novalang.workspace.test.WorkspaceTestRunner;
+import com.novalang.test.ProjectTestRunner;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
 import picocli.CommandLine.Parameters;
@@ -10,12 +10,12 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.concurrent.Callable;
 
-/** nova test 子命令：执行 Workspace 目录下的 Nova 测试。 */
-@Command(name = "test", description = "执行 Workspace Nova 单元测试",
+/** nova test 子命令：执行 项目目录下的 Nova 测试。 */
+@Command(name = "test", description = "执行 Nova 项目单元测试",
         mixinStandardHelpOptions = true)
 public final class TestCommand implements Callable<Integer> {
 
-    @Parameters(index = "0", description = "测试文件或 Workspace 目录")
+    @Parameters(index = "0", description = "测试文件或 项目目录")
     private String target;
 
     @Option(names = "--report", description = "输出 JSON 测试报告")
@@ -23,7 +23,7 @@ public final class TestCommand implements Callable<Integer> {
 
     @Override
     public Integer call() {
-        TestReport result = new WorkspaceTestRunner().run(
+        TestReport result = new ProjectTestRunner().run(
                 Paths.get(target), System.out::println);
         if (report != null) {
             try {

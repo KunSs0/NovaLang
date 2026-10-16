@@ -14,8 +14,8 @@ dependencies {
     implementation project(':nova-compiler')
     implementation project(':nova-ir')
     implementation project(':nova-runtime')
+    implementation project(':nova-test')
     implementation project(':nova-script')
-    implementation project(':nova-runtime-workspace')
 
     // 命令行解析
     implementation 'info.picocli:picocli:4.7.5'

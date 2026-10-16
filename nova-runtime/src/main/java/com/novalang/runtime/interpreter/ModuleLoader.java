@@ -31,7 +31,7 @@ public final class ModuleLoader {
     /** 模块缓存上限，防止无限增长 */
     private static final int MAX_CACHE_SIZE = 256;
 
-    /** 由宿主插件注册、供所有 Workspace 解析的共享逻辑模块。 */
+    /** 由宿主插件注册、供所有 Program 解析的共享逻辑模块。 */
     private static final Map<String, String> SHARED_VIRTUAL_MODULES = new ConcurrentHashMap<>();
 
     private final Path basePath;
@@ -48,7 +48,7 @@ public final class ModuleLoader {
     /**
      * 注册进程级共享逻辑模块。
      *
-     * <p>共享模块不属于任一 Workspace。相同 ID 只能重复注册完全相同的源码，避免不同
+     * <p>共享模块不属于任一 Program。相同 ID 只能重复注册完全相同的源码，避免不同
      * 插件对同一稳定模块标识产生不确定覆盖。</p>
      */
     public static void registerSharedModule(String moduleId, String source) {
@@ -89,7 +89,7 @@ public final class ModuleLoader {
         return SHARED_VIRTUAL_MODULES.remove(moduleId) != null;
     }
 
-    /** 返回当前共享逻辑模块的稳定快照，供一次 Workspace 模块图解析使用。 */
+    /** 返回当前共享逻辑模块的稳定快照，供一次 Program 模块图解析使用。 */
     public static Map<String, String> sharedModuleSnapshot() {
         return Collections.unmodifiableMap(new LinkedHashMap<>(SHARED_VIRTUAL_MODULES));
     }

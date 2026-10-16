@@ -38,7 +38,7 @@ public final class BukkitSchedulers {
             throw new IllegalStateException("A Nova scheduler has already been registered.");
         }
 
-        // 调度器必须在业务 Workspace 加载前完成唯一注册。
+        // 调度器必须在业务 Program 加载前完成唯一注册。
         com.novalang.runtime.NovaScheduler scheduler = create(plugin);
         SchedulerHolder.set(scheduler);
         return scheduler;

@@ -38,7 +38,8 @@ dependencies {
     api project(':nova-bukkit:core')
     api project(':nova-bukkit:paper-1_21')
     api project(':nova-bukkit:bukkit-1_12')
-    api project(':nova-runtime-workspace')
+    api project(':nova-runtime')
+    implementation project(':nova-test')
     api project(':nova-mock')
     implementation project(':nova-cli')
     compileOnly("${bukkitApiGroup}:${bukkitApiArtifact}:${bukkitApiVersion}")
@@ -170,14 +171,14 @@ tasks.register('verifyPluginJar') {
         if (!zipTree(pluginJar).matching { include 'com/novalang/bukkit/NovaBukkitPlugin.class' }.files) {
             throw new GradleException('The NovaLang Bukkit JAR does not contain its plugin main class.')
         }
-        if (!zipTree(pluginJar).matching { include 'com/novalang/workspace/RuntimeWorkspace.class' }.files) {
-            throw new GradleException('The NovaLang Bukkit JAR does not contain the workspace runtime.')
+        if (!zipTree(pluginJar).matching { include 'com/novalang/runtime/CompiledNova.class' }.files) {
+            throw new GradleException('The NovaLang Bukkit JAR does not contain the compiled Nova runtime.')
         }
-        if (!zipTree(pluginJar).matching { include 'com/novalang/workspace/WorkspaceScheduleContext.class' }.files) {
-            throw new GradleException('The NovaLang Bukkit JAR does not contain Workspace schedule support.')
+        if (!zipTree(pluginJar).matching { include 'com/novalang/runtime/ScriptScheduleContext.class' }.files) {
+            throw new GradleException('The NovaLang Bukkit JAR does not contain Nova schedule ownership.')
         }
-        if (!zipTree(pluginJar).matching { include 'com/novalang/workspace/WorkspaceConfigFiles.class' }.files) {
-            throw new GradleException('The NovaLang Bukkit JAR does not contain Workspace config support.')
+        if (!zipTree(pluginJar).matching { include 'com/novalang/runtime/compilation/CompilationConfig.class' }.files) {
+            throw new GradleException('The NovaLang Bukkit JAR does not contain compiler metadata support.')
         }
         if (!zipTree(pluginJar).matching { include 'com/novalang/bukkit/BukkitEventRegistrar.class' }.files) {
             throw new GradleException('The NovaLang Bukkit JAR does not contain Bukkit event registrar support.')

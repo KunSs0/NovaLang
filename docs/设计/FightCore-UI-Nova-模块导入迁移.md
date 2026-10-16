@@ -1,5 +1,7 @@
 # FightCore UI Nova 模块导入迁移
 
+> 历史设计记录：本文中的 Workspace API 已移除。当前接入方式见 [Nova 编译元数据](Nova编译元数据.md)。
+
 ## 1. 文档目的
 
 本文用于指导 `fight-core-monorepo` 与服务端 FightCore ConfigPack 将 UI Nova 脚本从逐类 Java 导入迁移到宿主虚拟模块导入。

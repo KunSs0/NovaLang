@@ -21,7 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/** 验证单文件 Workspace、通用断言和失败汇总。 */
+/** 验证单文件 Program、通用断言和失败汇总。 */
 class MockTestRunnerTest {
 
     @TempDir
@@ -38,7 +38,7 @@ class MockTestRunnerTest {
     }
 
     @Test
-    void shouldRunOneMockFileInIsolatedWorkspace() throws Exception {
+    void shouldRunOneMockFileInIsolatedProgram() throws Exception {
         Path file = temporaryDirectory.resolve("sample.mock.nova");
         Files.write(file, ("fun test() {\n"
                 + "  mockSet(\"input\", 2)\n"
@@ -47,7 +47,7 @@ class MockTestRunnerTest {
                 + "  assertTrue(random >= 2 && random <= 3, \"stdlib randomInt\")\n"
                 + "}\n").getBytes(StandardCharsets.UTF_8));
         MockTestReport report = new MockTestRunner().run(
-                file, Collections.<Path>emptyList(), Collections.<String, Path>emptyMap(),
+                file, Collections.<String, Path>emptyMap(),
                 Collections.<String, Object>emptyMap(), new TestHost(), null);
         assertEquals(1, report.getTotal());
         assertEquals(1, report.getPassed(), report.getCases().get(0).getError());
@@ -106,7 +106,7 @@ class MockTestRunnerTest {
     }
 
     @Test
-    void shouldDiscoverBusinessWorkspaceAliasesFromServerConfigs() throws Exception {
+    void shouldDiscoverBusinessProgramAliasesFromServerConfigs() throws Exception {
         Path serverRoot = temporaryDirectory.resolve("server");
         Path businessRoot = serverRoot.resolve("plugins").resolve("SamplePlugin").resolve("script");
         Path testRoot = serverRoot.resolve("tests").resolve("nova");
@@ -122,13 +122,7 @@ class MockTestRunnerTest {
                         + "name: sample\n"
                         + "aliases:\n"
                         + "  '@sample': .\n"
-                        + "sources:\n"
-                        + "  - .\n"
-                        + "entries:\n"
-                        + "  - '@sample/business.api'\n"
-                        + "runtime:\n"
-                        + "  security: trusted-server\n"
-                        + "  thread: caller\n").getBytes(StandardCharsets.UTF_8));
+                ).getBytes(StandardCharsets.UTF_8));
         Path file = testRoot.resolve("business.mock.nova");
         Files.write(file,
                 ("import \"@sample/business.api\"\n"
@@ -165,7 +159,7 @@ class MockTestRunnerTest {
                                MockTestHost host,
                                Map<String, Path> aliases) {
         return new MockTestRunner().run(
-                target, Collections.<Path>emptyList(), aliases,
+                target, aliases,
                 Collections.<String, Object>emptyMap(), host, null);
     }
 

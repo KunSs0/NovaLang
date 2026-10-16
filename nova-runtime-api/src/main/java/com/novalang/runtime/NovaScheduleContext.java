@@ -3,7 +3,7 @@ package com.novalang.runtime;
 /**
  * 当前脚本调用可选的调度任务所有者。
  *
- * <p>宿主运行时通过 {@link NovaScheduler} 提供实际调度能力；Workspace 等上层运行时
+ * <p>宿主运行时通过 {@link NovaScheduler} 提供实际调度能力；Program 等上层运行时
  * 可在当前调用期间安装本上下文，为原生 {@code schedule}/{@code scheduleRepeat} 增加
  * 资源归属和生命周期管理，而不会改变脚本层语法。</p>
  */

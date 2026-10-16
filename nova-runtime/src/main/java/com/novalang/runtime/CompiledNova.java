@@ -1,5 +1,6 @@
 package com.novalang.runtime;
 
+import com.novalang.runtime.compilation.CompiledProgramMetadata;
 import com.novalang.runtime.interpreter.MethodHandleCache;
 import com.novalang.runtime.interpreter.NovaNativeFunction;
 import com.novalang.runtime.interpreter.NovaRuntimeException;
@@ -62,6 +63,8 @@ public final class CompiledNova implements AutoCloseable {
     private final Map<String, Class<?>> funcClassCache = new HashMap<>();
     /** 脚本级 ClassLoader（编译模式用于 javaClass() 类隔离） */
     private ClassLoader scriptClassLoader;
+    /** 项目编译的链接信息；源码字符串编译没有此元数据。 */
+    private CompiledProgramMetadata compilationMetadata;
 
     /** 解释器模式构造 — 预解析源代码为 AST，run() 时跳过词法分析和解析 */
     CompiledNova(String source, String fileName, Nova nova) {
@@ -99,12 +102,61 @@ public final class CompiledNova implements AutoCloseable {
         this.funcClassCache.putAll(layout.bindFunctions(classes));
     }
 
+    /** 为项目编译结果安装入口和初始化顺序，不引入第二套程序生命周期。 */
+    CompiledNova(Map<String, Class<?>> classes, ExtensionRegistry registry, CompiledProgramMetadata metadata) {
+        this(classes, registry);
+        compilationMetadata = metadata;
+    }
+
+    /** @return 编译器生成的模块元数据；普通源码字符串程序返回 null */
+    public CompiledProgramMetadata getCompilationMetadata() {
+        return compilationMetadata;
+    }
+
+    /** @return 程序是否尚未关闭 */
+    public boolean isOpen() {
+        return callbackScope.isValid();
+    }
+
+    /**
+     * 将宿主资源归属于当前程序；close() 会按登记逆序释放资源。
+     * @param resource 已创建的宿主资源
+     * @return 仅解除登记的句柄，关闭该句柄不会关闭资源
+     */
+    public AutoCloseable registerResource(AutoCloseable resource) {
+        return callbackScope.register(resource);
+    }
+
+    /** 按依赖顺序执行模块初始化，执行上下文和资源所有权始终属于本程序。 */
+    private Object runModules(Map<String, Object> contextBindings, boolean copyBindings) {
+        try {
+            return withScriptExecutionContext(contextBindings, copyBindings, () -> {
+                Object result = null;
+                for (Class<?> initializer : compilationMetadata.getInitializers()) {
+                    if (MethodHandleCache.getInstance().hasMethodName(initializer, "main")) {
+                        result = MethodHandleCache.getInstance().invokeStatic(initializer, "main", new Object[0]);
+                    }
+                }
+                if (copyBindings) {
+                    contextBindings.putAll(NovaScriptContext.getAll());
+                }
+                if (result instanceof NovaValue) {
+                    return ((NovaValue) result).toJavaValue();
+                }
+                return result;
+            });
+        } catch (Throwable failure) {
+            throw compilationMetadata.mapFailure("Module initialization failed", failure);
+        }
+    }
+
     /** 绑定确定的无参入口，组件实例化不再走通用重载匹配。 */
     public <T> CompiledComponentFactory<T> prepareComponentFactory(String name, Class<T> type) {
+        requireOpen();
         if (compiledClasses == null || type == null) {
             throw new IllegalArgumentException("Component factory requires bytecode program and component type");
         }
-        Class<?> owner = funcClassCache.get(name);
+        Class<?> owner = resolveFunction(name);
         if (owner == null) {
             throw new IllegalArgumentException("Component factory not found: " + name);
         }
@@ -146,6 +198,9 @@ public final class CompiledNova implements AutoCloseable {
      */
     public Object run() {
         requireOpen();
+        if (compilationMetadata != null) {
+            return runModules(bindings, true);
+        }
         if (compiledClasses != null) {
             if (mainHandle != null) return runBytecode();
             // 纯函数定义的脚本无 main()，run() 无操作，通过 call() 调用函数
@@ -196,15 +251,20 @@ public final class CompiledNova implements AutoCloseable {
      * 调用预编译代码中定义的函数。
      * 通过 MethodHandleCache 进行类型兼容匹配（支持自动装箱、数值宽化、varargs），
      * 并缓存函数名→编译类的映射以避免重复扫描。
+     * @param funcName 函数名称
+     * @param args 函数参数
+     * @return 脚本函数返回值
+     * @throws IllegalStateException 当前程序已关闭时抛出
      */
     public Object call(String funcName, Object... args) {
+        requireOpen();
         if (nova != null) {
             return callInterpreted(funcName, args);
         }
         if (compiledClasses != null) {
             try {
                 return withScriptExecutionContext(bindings, true, () -> {
-                    Class<?> cls = funcClassCache.get(funcName);
+                    Class<?> cls = resolveFunction(funcName);
                     if (cls == null) {
                         cls = findFuncClass(funcName);
                         funcClassCache.put(funcName, cls);
@@ -237,13 +297,14 @@ public final class CompiledNova implements AutoCloseable {
      * @return 函数返回值
      */
     public Object callDirect(String funcName, Map<String, Object> liveBindings, Object... args) {
+        requireOpen();
         if (nova != null) {
             return callInterpreted(funcName, args);
         }
         if (liveBindings != null) {
             try {
                 return withScriptExecutionContext(liveBindings, false, () -> {
-                    Class<?> cls = funcClassCache.get(funcName);
+                    Class<?> cls = resolveFunction(funcName);
                     if (cls == null) {
                         throw NovaErrors.undefinedFunction(funcName, funcClassCache.keySet());
                     }
@@ -280,6 +341,7 @@ public final class CompiledNova implements AutoCloseable {
     public Object callIsolated(String funcName,
                                Map<String, Object> executionBindings,
                                Object... args) {
+        requireOpen();
         if (nova != null) {
             throw new NovaRuntimeException("callIsolated is only available in bytecode mode");
         }
@@ -299,7 +361,7 @@ public final class CompiledNova implements AutoCloseable {
 
         try {
             return withScriptExecutionContext(localBindings, false, () -> {
-                Class<?> functionClass = funcClassCache.get(funcName);
+                Class<?> functionClass = resolveFunction(funcName);
                 if (functionClass == null) {
                     functionClass = findFuncClass(funcName);
                     funcClassCache.put(funcName, functionClass);
@@ -324,8 +386,16 @@ public final class CompiledNova implements AutoCloseable {
         }
     }
 
-    /** 从原始异常链提取本程序的脚本帧，避免把宿主插件位置当作脚本位置。 */
-    private NovaRuntimeException attachCallLocation(NovaRuntimeException exception) {
+    /**
+     * 将单入口依赖图的异常映射回原始文件，其余编译模式补充脚本栈位置。
+     * @param exception 函数调用的原始运行异常
+     * @return 包含源码位置的运行异常
+     */
+    private RuntimeException attachCallLocation(NovaRuntimeException exception) {
+        if (compilationMetadata != null) {
+            return compilationMetadata.mapFailure(exception.getMessage(), exception);
+        }
+
         if (compiledClasses == null || exception.getLocation() != null
                 || exception.getSourceLineNumber() > 0) {
             return exception;
@@ -364,7 +434,8 @@ public final class CompiledNova implements AutoCloseable {
                 return callbackScope.invoke(extraBindings, () -> {
                     ClassLoader previous = com.novalang.runtime.interpreter.JavaInterop.getScriptClassLoader();
                     com.novalang.runtime.interpreter.JavaInterop.setScriptClassLoader(capturedLoader);
-                    try (ScriptCallbackContexts.ContextHandle installed = ScriptCallbackContexts.install(this)) {
+                    try (ScriptCallbackContexts.ContextHandle installed = ScriptCallbackContexts.install(this);
+                         NovaScheduleContexts.ContextHandle schedules = NovaScheduleContexts.install(new ScriptScheduleContext(this, capturedLoader))) {
                         return action.invoke();
                     } finally {
                         com.novalang.runtime.interpreter.JavaInterop.setScriptClassLoader(previous);
@@ -388,11 +459,9 @@ public final class CompiledNova implements AutoCloseable {
             NovaScriptContext.setExtensionRegistry(extensionRegistry);
         }
         com.novalang.runtime.interpreter.JavaInterop.setScriptClassLoader(scriptClassLoader);
-        ScriptCallbackContext callbackContext = ScriptCallbackContexts.current();
-        if (callbackContext == null) {
-            callbackContext = createCallbackContext(scriptClassLoader);
-        }
-        try (ScriptCallbackContexts.ContextHandle installed = ScriptCallbackContexts.install(callbackContext)) {
+        ScriptCallbackContext callbackContext = createCallbackContext(scriptClassLoader);
+        try (ScriptCallbackContexts.ContextHandle installed = ScriptCallbackContexts.install(callbackContext);
+             NovaScheduleContexts.ContextHandle schedules = NovaScheduleContexts.install(new ScriptScheduleContext(callbackContext, scriptClassLoader))) {
             if (!callbackScope.isValid()) {
                 throw new IllegalStateException("Script instance is closed");
             }
@@ -405,6 +474,14 @@ public final class CompiledNova implements AutoCloseable {
                 NovaScriptContext.clear();
             }
         }
+    }
+
+    /** 项目程序要求函数唯一；普通单文件保留原有函数索引。 */
+    private Class<?> resolveFunction(String functionName) {
+        if (compilationMetadata != null) {
+            return compilationMetadata.requireFunction(functionName);
+        }
+        return funcClassCache.get(functionName);
     }
 
     private Class<?> findFuncClass(String funcName) {
@@ -675,6 +752,12 @@ public final class CompiledNova implements AutoCloseable {
      */
     public Object runDirect(Map<String, Object> liveBindings) {
         requireOpen();
+        if (compilationMetadata != null) {
+            if (liveBindings == null) {
+                throw new IllegalArgumentException("liveBindings must not be null");
+            }
+            return runModules(liveBindings, false);
+        }
         if (compiledClasses == null || mainHandle == null) return null;
         try {
             return withScriptExecutionContext(liveBindings, false, () -> {
@@ -694,14 +777,17 @@ public final class CompiledNova implements AutoCloseable {
 
     public Object runIsolated(Map<String, Object> executionBindings) {
         requireOpen();
-        if (compiledClasses == null || mainHandle == null) return null;
+        if (compiledClasses == null) {
+            return null;
+        }
         Map<String, Object> localBindings = new HashMap<>(bindings);
         if (executionBindings != null) {
             for (Map.Entry<String, Object> entry : executionBindings.entrySet()) {
                 localBindings.put(entry.getKey(), NativeFunctionAdapter.toBindingValue(entry.getValue()));
             }
         }
-        Object result = runBytecodeWithBindings(localBindings);
+        Object result = compilationMetadata == null
+                ? runBytecodeWithBindings(localBindings) : runModules(localBindings, true);
         if (executionBindings != null) {
             executionBindings.putAll(localBindings);
         }

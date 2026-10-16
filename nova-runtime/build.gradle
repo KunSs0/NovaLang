@@ -21,6 +21,7 @@ def resolveOptionalPath = { String propertyName, String defaultPath ->
 dependencies {
     api project(':nova-runtime-api')
     api project(':nova-runtime-types')
+    implementation 'org.yaml:snakeyaml:2.0'
     implementation project(':nova-ir')
     implementation 'com.github.ben-manes.caffeine:caffeine:2.9.3'
     implementation 'org.nanohttpd:nanohttpd:2.3.1'

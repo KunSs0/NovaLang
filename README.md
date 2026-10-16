@@ -153,7 +153,7 @@ dependencies {
 |--------|-------------|
 | `nova-runtime-all` | Full runtime (interpreter + compiler + stdlib) |
 | `nova-runtime-api` | Runtime API only (for plugin development) |
-| `nova-runtime-workspace` | Server Workspace, module aliases, isolated execution, and resource lifecycle |
+| `nova-runtime` | Runtime and single-entry dependency compilation with optional aliases |
 | `nova-bukkit` | Standalone Bukkit/Paper runtime plugin and scheduler integration |
 | `nova-json-gson` | JSON provider — Gson |
 | `nova-json-fastjson2` | JSON provider — FastJSON2 |
@@ -319,7 +319,6 @@ NovaLang
 ├── nova-compiler       # Lexer, Parser, AST
 ├── nova-ir             # HIR/MIR + Optimization passes
 ├── nova-runtime        # Interpreter + Stdlib
-├── nova-runtime-workspace # Server script Workspace
 ├── nova-cli            # Command-line interface
 ├── nova-script         # JSR-223 script engine
 ├── nova-lsp            # Language Server Protocol

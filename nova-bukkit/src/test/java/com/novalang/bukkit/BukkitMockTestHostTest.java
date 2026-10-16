@@ -72,14 +72,14 @@ class BukkitMockTestHostTest {
     }
 
     @Test
-    void shouldCompileAndRunMockPlayerThroughWorkspace() throws Exception {
+    void shouldCompileAndRunMockPlayerThroughProgram() throws Exception {
         Path file = temporaryDirectory.resolve("player.mock.nova");
         Files.write(file, ("fun test() {\n"
                 + "  val player = mock.player(\"offline\")\n"
                 + "  assertEquals(\"offline\", player.getName(), \"player identity\")\n"
                 + "}\n").getBytes(StandardCharsets.UTF_8));
         MockTestReport report = new MockTestRunner().run(
-                file, java.util.Collections.<Path>emptyList(),
+                file,
                 java.util.Collections.<String, Path>emptyMap(),
                 java.util.Collections.<String, Object>emptyMap(),
                 new BukkitMockTestHost(), null);

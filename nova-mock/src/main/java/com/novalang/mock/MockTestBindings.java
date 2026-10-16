@@ -32,7 +32,7 @@ public final class MockTestBindings {
         return new Scope(previous);
     }
 
-    /** @return 当前 Workspace 初始化所使用的绑定 */
+    /** @return 当前 Program 初始化所使用的绑定 */
     public static MockTestBindings requireCurrent() {
         MockTestBindings bindings = CURRENT.get();
         if (bindings == null) {
