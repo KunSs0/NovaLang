@@ -3400,6 +3400,36 @@ public class HirToMirLowering {
     }
 
     /**
+     * 解析显式静态导入的函数引用，保留真实的声明类、参数和返回值描述符。
+     * @param owner 导入目标的 JVM 类名。
+     * @param name 目标静态方法名。
+     * @return 唯一公开静态方法。
+     * @throws IllegalArgumentException 目标不可解析或存在无法消歧的重载。
+     */
+    private java.lang.reflect.Method resolveStaticFunctionReference(String owner, String name) {
+        Class<?> ownerClass = resolveJavaClass(owner);
+        if (ownerClass == null) {
+            throw new IllegalArgumentException("Cannot resolve static function reference: " + owner + "." + name);
+        }
+        java.lang.reflect.Method selected = null;
+        for (java.lang.reflect.Method method : ownerClass.getMethods()) {
+            if (!method.getName().equals(name)
+                    || !java.lang.reflect.Modifier.isStatic(method.getModifiers())
+                    || method.isBridge() || method.isSynthetic()) {
+                continue;
+            }
+            if (selected != null) {
+                throw new IllegalArgumentException("Ambiguous static function reference: " + owner + "." + name);
+            }
+            selected = method;
+        }
+        if (selected == null) {
+            throw new IllegalArgumentException("Cannot resolve static function reference: " + owner + "." + name);
+        }
+        return selected;
+    }
+
+    /**
      * 方法引用 ::funcName / obj::method / Type::new → FunctionN 包装类
      */
     private int lowerMethodRef(MethodRefExpr expr, MirBuilder builder) {
@@ -3433,6 +3463,16 @@ public class HirToMirLowering {
 
             // 全局函数引用 ::funcName → 生成 FunctionN 包装类，invoke 转发到 $Module.funcName
             String desc = topLevelFuncDescs.get(methodName);
+            String owner = moduleClassName;
+            String targetMethodName = methodName;
+            if (desc == null && staticImports.containsKey(methodName)) {
+                String qualifiedName = staticImports.get(methodName);
+                int separator = qualifiedName.lastIndexOf('.');
+                owner = qualifiedName.substring(0, separator);
+                targetMethodName = qualifiedName.substring(separator + 1);
+                java.lang.reflect.Method importedMethod = resolveStaticFunctionReference(owner, targetMethodName);
+                desc = buildJavaMethodDescriptor(importedMethod);
+            }
 
             // 跨 evalRepl（desc 为 null）：直接从环境获取函数引用
             if (desc == null) {
@@ -3442,7 +3482,7 @@ public class HirToMirLowering {
                         new int[]{nameConst}, MirType.ofObject("java/lang/Object"), loc);
             }
 
-            int paramCount = desc != null ? countDescParams(desc) : 1;
+            int paramCount = countDescParams(desc);
 
             // 创建 invoke 方法：接收 paramCount 个 Object 参数，转发到目标函数
             List<MirParam> invokeParams = new ArrayList<>();
@@ -3458,11 +3498,14 @@ public class HirToMirLowering {
                 argLocals[i] = invokeBuilder.newLocal("p" + i, MirType.ofObject("java/lang/Object"));
             }
             // INVOKESTATIC $Module.funcName(args)
-            String callDesc = desc != null ? desc : MethodDescriptor.allObjectDesc(paramCount);
-            String extra = moduleClassName + "|" + methodName + "|" + callDesc;
+            String callDesc = desc;
+            String extra = owner + "|" + targetMethodName + "|" + callDesc;
             String retDescStr = callDesc.substring(callDesc.indexOf(')') + 1);
             MirType retType = descriptorToMirType(retDescStr);
             int result = invokeBuilder.emitInvokeStatic(extra, argLocals, retType, loc);
+            if (retType.getKind() == MirType.Kind.VOID) {
+                result = invokeBuilder.emitConstNull(loc);
+            }
             invokeBuilder.emitReturn(result, loc);
 
             // 选择 FunctionN 接口
