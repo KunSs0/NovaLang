@@ -127,6 +127,58 @@ public final class CompiledNova implements AutoCloseable {
         return callbackScope.register(resource);
     }
 
+    /**
+     * 返回绑定本程序生命周期与类加载器的回调上下文，供宿主建立业务子生命周期。
+     */
+    public ScriptCallbackContext getCallbackContext() {
+        requireOpen();
+        return createCallbackContext(scriptClassLoader);
+    }
+
+    /**
+     * 将宿主资源所有者适配到当前程序的类加载器和任务调度上下文。
+     */
+    public ScriptCallbackContext getCallbackContext(ScriptCallbackContext owner) {
+        requireOpen();
+        if (owner == null) {
+            throw new IllegalArgumentException("Callback owner is required");
+        }
+        return createCallbackContext(scriptClassLoader, owner);
+    }
+
+    /**
+     * 在宿主指定的子生命周期中调用模块函数，保留本程序状态与本次独立绑定。
+     */
+    public Object callModuleIsolated(String moduleId, String function, Map<String, Object> executionBindings,
+                                     ScriptCallbackContext context, Object... arguments) {
+        requireOpen();
+        if (compilationMetadata == null || context == null || executionBindings == null) {
+            throw new IllegalArgumentException("Module program, callback context and bindings are required");
+        }
+        final Class<?> owner = compilationMetadata.requireFunction(moduleId, function);
+        final Map<String, Object> localBindings = new HashMap<>(bindings);
+        localBindings.putAll(executionBindings);
+        try {
+            return withScriptExecutionContext(localBindings, false, () -> context.invoke(localBindings, () -> {
+                try (ScriptCallbackContexts.ContextHandle installed = ScriptCallbackContexts.install(context);
+                     NovaScheduleContexts.ContextHandle schedules = NovaScheduleContexts.install(
+                             new ScriptScheduleContext(context, scriptClassLoader))) {
+                    Object result = MethodHandleCache.getInstance().invokeStatic(owner, function, arguments);
+                    if (result instanceof NovaValue) {
+                        return ((NovaValue) result).toJavaValue();
+                    }
+                    return result;
+                } catch (RuntimeException failure) {
+                    throw failure;
+                } catch (Throwable failure) {
+                    throw new NovaRuntimeException("Module function failed: " + moduleId + "#" + function, failure);
+                }
+            }));
+        } catch (Throwable failure) {
+            throw compilationMetadata.mapFailure("Module function failed: " + moduleId + "#" + function, failure);
+        }
+    }
+
     /** 按依赖顺序执行模块初始化，执行上下文和资源所有权始终属于本程序。 */
     private Object runModules(Map<String, Object> contextBindings, boolean copyBindings) {
         try {
@@ -418,20 +470,26 @@ public final class CompiledNova implements AutoCloseable {
 
     /** 普通脚本实例的执行环境适配；生命周期由底层 Scope 持有。 */
     private ScriptCallbackContext createCallbackContext(final ClassLoader capturedLoader) {
+        return createCallbackContext(capturedLoader, callbackScope);
+    }
+
+    private ScriptCallbackContext createCallbackContext(final ClassLoader capturedLoader,
+                                                         final ScriptCallbackContext owner) {
         return new ScriptCallbackContext() {
             @Override
             public boolean isValid() {
-                return callbackScope.isValid();
+                return callbackScope.isValid() && owner.isValid();
             }
 
             @Override
             public AutoCloseable register(AutoCloseable resource) {
-                return callbackScope.register(resource);
+                requireOpen();
+                return owner.register(resource);
             }
 
             @Override
             public Object invoke(Map<String, Object> extraBindings, Function0<Object> action) {
-                return callbackScope.invoke(extraBindings, () -> {
+                return callbackScope.invoke(extraBindings, () -> owner.invoke(extraBindings, () -> {
                     ClassLoader previous = com.novalang.runtime.interpreter.JavaInterop.getScriptClassLoader();
                     com.novalang.runtime.interpreter.JavaInterop.setScriptClassLoader(capturedLoader);
                     try (ScriptCallbackContexts.ContextHandle installed = ScriptCallbackContexts.install(this);
@@ -440,7 +498,7 @@ public final class CompiledNova implements AutoCloseable {
                     } finally {
                         com.novalang.runtime.interpreter.JavaInterop.setScriptClassLoader(previous);
                     }
-                });
+                }));
             }
         };
     }

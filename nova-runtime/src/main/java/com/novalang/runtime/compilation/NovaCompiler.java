@@ -40,6 +40,14 @@ public final class NovaCompiler {
     }
 
     /**
+     * 编译包含显式宿主虚拟模块的单入口图，不执行不可达的源码。
+     */
+    public CompiledNova compile(Nova nova, SourceUnit entry, CompilationConfig config,
+                                java.util.Collection<SourceUnit> sources, BytecodeArtifactCache cache) {
+        return compileGraph(nova, new ModuleResolver().resolve(entry, config, sources), config, cache);
+    }
+
+    /**
      * 按依赖图链接字节码并建立一个程序的函数和初始化索引。
      * @param nova 编译门面
      * @param graph 单入口依赖图
@@ -65,6 +73,7 @@ public final class NovaCompiler {
         Map<String, Map<String, Class<?>>> classesByGroup = new LinkedHashMap<>();
         Map<String, CompilationExports> exportsByGroup = new LinkedHashMap<>();
         Map<String, String> fingerprints = new LinkedHashMap<>();
+        Map<String, Class<?>> moduleClasses = new LinkedHashMap<>();
         Map<String, SourceMap> sourceMaps = new LinkedHashMap<>();
         List<Class<?>> initializers = new ArrayList<>();
 
@@ -95,6 +104,9 @@ public final class NovaCompiler {
                     Class<?> module = classes.get(group.getPackageName() + ".$Module");
                     if (module != null) {
                         initializers.add(module);
+                        for (String moduleId : group.getModuleIds()) {
+                            moduleClasses.put(moduleId, module);
+                        }
                     }
                 } catch (RuntimeException failure) {
                     throw bundle.getSourceMap().mapFailure(
@@ -109,7 +121,7 @@ public final class NovaCompiler {
             for (int index = groups.size() - 1; index >= 0; index--) {
                 collectFunctions(classesByGroup.get(groups.get(index).getId()), functions);
             }
-            CompiledProgramMetadata metadata = new CompiledProgramMetadata(graph, functions, initializers, sourceMaps);
+            CompiledProgramMetadata metadata = new CompiledProgramMetadata(graph, functions, moduleClasses, initializers, sourceMaps);
             return nova.createCompiledNova(allClasses, metadata);
         } finally {
             // 编译器恢复宿主设置；返回程序保留自己的类加载器，不修改 Nova 的后续编译。

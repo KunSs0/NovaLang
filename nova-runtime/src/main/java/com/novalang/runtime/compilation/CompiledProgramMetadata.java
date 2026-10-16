@@ -13,13 +13,15 @@ import java.util.Map;
 public final class CompiledProgramMetadata {
     private final ModuleGraph graph;
     private final Map<String, Class<?>> functions;
+    private final Map<String, Class<?>> moduleClasses;
     private final List<Class<?>> initializers;
     private final Map<String, SourceMap> sourceMaps;
 
     /** 复制编译器生成的索引，禁止编译完成后修改链接关系。 */
     CompiledProgramMetadata(ModuleGraph graph, Map<String, Class<?>> functions,
-                            List<Class<?>> initializers, Map<String, SourceMap> sourceMaps) {
+                            Map<String, Class<?>> moduleClasses, List<Class<?>> initializers, Map<String, SourceMap> sourceMaps) {
         this.graph = graph;
+        this.moduleClasses = Collections.unmodifiableMap(new LinkedHashMap<>(moduleClasses));
         this.functions = Collections.unmodifiableMap(new LinkedHashMap<>(functions));
         this.initializers = Collections.unmodifiableList(new ArrayList<>(initializers));
         this.sourceMaps = Collections.unmodifiableMap(new LinkedHashMap<>(sourceMaps));
@@ -47,6 +49,23 @@ public final class CompiledProgramMetadata {
             throw new CompilationException("Function does not exist: " + function);
         }
         return owner;
+    }
+
+    /**
+     * 严格定位指定模块的函数，避免多个虚拟动作同名时选中其他模块。
+     */
+    public Class<?> requireFunction(String moduleId, String function) {
+        Class<?> owner = moduleClasses.get(moduleId);
+        if (owner != null) {
+            for (java.lang.reflect.Method method : owner.getDeclaredMethods()) {
+                int modifiers = method.getModifiers();
+                if (method.getName().equals(function) && java.lang.reflect.Modifier.isStatic(modifiers)
+                        && java.lang.reflect.Modifier.isPublic(modifiers)) {
+                    return owner;
+                }
+            }
+        }
+        throw new CompilationException("Function does not exist: " + moduleId + "#" + function);
     }
 
     /**

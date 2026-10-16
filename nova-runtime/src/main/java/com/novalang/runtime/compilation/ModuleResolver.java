@@ -62,6 +62,26 @@ public final class ModuleResolver {
     }
 
     /**
+     * 解析单入口可达的宿主虚拟模块，保留每个模块的行内契约和来源映射。
+     */
+    public ModuleGraph resolve(SourceUnit entry, CompilationConfig config,
+                               java.util.Collection<SourceUnit> sources) {
+        if (entry == null || config == null || sources == null) {
+            throw new IllegalArgumentException("Entry, metadata and virtual sources are required");
+        }
+        ResolutionContext context = new ResolutionContext(config, entry);
+        for (SourceUnit source : sources) {
+            if (source == null || entry.getModuleId().equals(source.getModuleId())
+                    || context.sharedSources.putIfAbsent(source.getModuleId(), source) != null) {
+                throw new CompilationException("Duplicate or invalid virtual module: "
+                        + (source == null ? "null" : source.getModuleId()));
+            }
+        }
+        context.visit(entry);
+        return new ModuleGraph(context.modules, entry.getModuleId(), context.topologicalOrder);
+    }
+
+    /**
      * 单次模块图构建使用的可变解析上下文。
      */
     private static final class ResolutionContext {
