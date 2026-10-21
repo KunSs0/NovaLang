@@ -172,6 +172,55 @@ public final class ModuleLoader {
         return expandVirtualImports(source, fileName, new HashSet<String>(), new HashSet<String>());
     }
 
+    /**
+     * 把相对模块引用解析成虚拟模块表里的绝对 ID。
+     *
+     * <p>字符串编译没有物理来源，但入口 moduleId 是路径形的：以最后一个 {@code /} 为界
+     * 取目录，拼接 {@code ./}、{@code ../} 后折叠路径段；省略扩展名时补 {@code .nova}，
+     * 与磁盘编译的解析规则保持一致。</p>
+     *
+     * @param specifier import 中的原始引用
+     * @param importerId 发起导入的模块 ID
+     * @return 命中的模块 ID；非相对引用或解析不到时返回 null
+     */
+    private String resolveVirtualRelativeModule(String specifier, String importerId) {
+        if (specifier == null || importerId == null) {
+            return null;
+        }
+        if (!specifier.startsWith("./") && !specifier.startsWith("../")) {
+            return null;
+        }
+        int separator = importerId.lastIndexOf('/');
+        if (separator < 0) {
+            return null;
+        }
+        String candidate = normalizeVirtualPath(importerId.substring(0, separator) + "/" + specifier);
+        if (virtualModules.containsKey(candidate)) {
+            return candidate;
+        }
+        String withExtension = candidate.endsWith(".nova") ? candidate : candidate + ".nova";
+        return virtualModules.containsKey(withExtension) ? withExtension : null;
+    }
+
+    /** 折叠虚拟路径中的 {@code .} 与 {@code ..}，保留首段 scheme。 */
+    private String normalizeVirtualPath(String path) {
+        String[] parts = path.split("/");
+        java.util.ArrayList<String> result = new java.util.ArrayList<String>(parts.length);
+        for (String part : parts) {
+            if (part.isEmpty() || ".".equals(part)) {
+                continue;
+            }
+            if ("..".equals(part)) {
+                if (result.size() > 1) {
+                    result.remove(result.size() - 1);
+                }
+                continue;
+            }
+            result.add(part);
+        }
+        return String.join("/", result);
+    }
+
     private String expandVirtualImports(String source, String fileName,
                                         Set<String> loading, Set<String> included) {
         StringBuilder out = new StringBuilder(source.length());
@@ -182,6 +231,17 @@ public final class ModuleLoader {
             if (matcher.matches()) {
                 String moduleId = unescapeModuleId(matcher.group(1));
                 String moduleSource = virtualModules.get(moduleId);
+                if (moduleSource == null) {
+                    // 字符串编译没有物理来源，相对导入按入口 moduleId 推导；
+                    // 模块 ID 本身是路径形的（如 fightcoremod:ui/screen/demo/entry.nova）。
+                    String resolved = resolveVirtualRelativeModule(moduleId, fileName);
+                    if (resolved != null) {
+                        moduleSource = virtualModules.get(resolved);
+                        if (moduleSource != null) {
+                            moduleId = resolved;
+                        }
+                    }
+                }
                 if (moduleSource == null) {
                     throw new NovaRuntimeException("Cannot resolve module import '" + moduleId + "'");
                 }
