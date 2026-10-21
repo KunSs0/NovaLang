@@ -46,3 +46,6 @@ htmlReport/
 
 # Windows reserved names
 nul
+
+# IDE output
+/*/bin/
