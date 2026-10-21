@@ -192,6 +192,38 @@ public final class StringExtensions {
         return StringOps.substring((String) str, ((Number) start).intValue(), ((Number) end).intValue());
     }
 
+    public static Object substringBefore(Object str, Object delimiter) {
+        return substringBefore(str, delimiter, str);
+    }
+
+    public static Object substringBefore(Object str, Object delimiter, Object missingDelimiterValue) {
+        return StringOps.substringBefore((String) str, toDelimiter(delimiter), requireMissingDelimiterValue(missingDelimiterValue));
+    }
+
+    public static Object substringAfter(Object str, Object delimiter) {
+        return substringAfter(str, delimiter, str);
+    }
+
+    public static Object substringAfter(Object str, Object delimiter, Object missingDelimiterValue) {
+        return StringOps.substringAfter((String) str, toDelimiter(delimiter), requireMissingDelimiterValue(missingDelimiterValue));
+    }
+
+    public static Object substringBeforeLast(Object str, Object delimiter) {
+        return substringBeforeLast(str, delimiter, str);
+    }
+
+    public static Object substringBeforeLast(Object str, Object delimiter, Object missingDelimiterValue) {
+        return StringOps.substringBeforeLast((String) str, toDelimiter(delimiter), requireMissingDelimiterValue(missingDelimiterValue));
+    }
+
+    public static Object substringAfterLast(Object str, Object delimiter) {
+        return substringAfterLast(str, delimiter, str);
+    }
+
+    public static Object substringAfterLast(Object str, Object delimiter, Object missingDelimiterValue) {
+        return StringOps.substringAfterLast((String) str, toDelimiter(delimiter), requireMissingDelimiterValue(missingDelimiterValue));
+    }
+
     public static Object padStart(Object str, Object length) {
         return padStart(str, length, (Object) ' ');
     }
@@ -394,6 +426,20 @@ public final class StringExtensions {
     }
 
     // ========== 辅助 ==========
+
+    private static String toDelimiter(Object delimiter) {
+        if (delimiter instanceof String || delimiter instanceof Character) {
+            return delimiter.toString();
+        }
+        throw new NovaException(ErrorKind.TYPE_MISMATCH, "delimiter 必须为 String 或 Char", "传入字符串或字符分隔符");
+    }
+
+    private static String requireMissingDelimiterValue(Object value) {
+        if (value instanceof String) {
+            return (String) value;
+        }
+        throw new NovaException(ErrorKind.TYPE_MISMATCH, "missingDelimiterValue 必须为 String", "传入未找到分隔符时返回的字符串");
+    }
 
     private static char toPadChar(Object arg) {
         if (arg instanceof Character) return (Character) arg;

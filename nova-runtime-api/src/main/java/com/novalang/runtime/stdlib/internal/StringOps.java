@@ -120,6 +120,26 @@ public final class StringOps {
         return value.substring(start, end);
     }
 
+    public static String substringBefore(String value, String delimiter, String missingDelimiterValue) {
+        int index = value.indexOf(delimiter);
+        return index < 0 ? missingDelimiterValue : value.substring(0, index);
+    }
+
+    public static String substringAfter(String value, String delimiter, String missingDelimiterValue) {
+        int index = value.indexOf(delimiter);
+        return index < 0 ? missingDelimiterValue : value.substring(index + delimiter.length());
+    }
+
+    public static String substringBeforeLast(String value, String delimiter, String missingDelimiterValue) {
+        int index = value.lastIndexOf(delimiter);
+        return index < 0 ? missingDelimiterValue : value.substring(0, index);
+    }
+
+    public static String substringAfterLast(String value, String delimiter, String missingDelimiterValue) {
+        int index = value.lastIndexOf(delimiter);
+        return index < 0 ? missingDelimiterValue : value.substring(index + delimiter.length());
+    }
+
     public static String repeat(String value, int count) {
         StringBuilder sb = new StringBuilder(value.length() * Math.max(count, 0));
         for (int i = 0; i < count; i++) {

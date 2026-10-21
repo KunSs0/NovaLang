@@ -1,0 +1,17 @@
+name: NovaLang
+version: '${version}'
+main: com.novalang.bukkit.NovaBukkitPlugin
+api-version: '1.21'
+load: STARTUP
+authors:
+  - NovaLang
+description: NovaLang runtime and workspace platform for Bukkit and Paper plugins.
+commands:
+  nova:
+    description: NovaLang Workspace 管理和单元测试
+    usage: /nova test <测试文件|Workspace目录> [--report=<文件>]
+    permission: novalang.test
+permissions:
+  novalang.test:
+    description: 运行 NovaLang Workspace 单元测试
+    default: op

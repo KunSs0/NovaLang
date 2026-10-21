@@ -368,6 +368,16 @@ public final class StdlibContracts {
                 .returns(TypeExpr.concrete("String"))
                 .build());
 
+        // String/Char 共用同一个成员契约，分隔符的类型边界由共享扩展实现验证。
+        for (String method : new String[]{"substringBefore", "substringAfter", "substringBeforeLast", "substringAfterLast"}) {
+            register(NovaContract.member("string." + method)
+                    .receiver(TypeExpr.concrete("String"))
+                    .valueArg("delimiter", TypeExpr.concrete("Any"))
+                    .valueArg("missingDelimiterValue", TypeExpr.concrete("String"))
+                    .returns(TypeExpr.concrete("String"))
+                    .build());
+        }
+
         register(NovaContract.member("string.repeat")
                 .receiver(TypeExpr.concrete("String"))
                 .valueArg("count", TypeExpr.concrete("Int"))

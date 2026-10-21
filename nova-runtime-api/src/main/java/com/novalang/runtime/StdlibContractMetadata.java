@@ -100,6 +100,10 @@ public final class StdlibContractMetadata {
         registerMemberContract("String", "indexOf", "string.indexOf");
         registerMemberContract("String", "replace", "string.replace");
         registerMemberContract("String", "substring", "string.substring");
+        registerMemberContract("String", "substringBefore", "string.substringBefore");
+        registerMemberContract("String", "substringAfter", "string.substringAfter");
+        registerMemberContract("String", "substringBeforeLast", "string.substringBeforeLast");
+        registerMemberContract("String", "substringAfterLast", "string.substringAfterLast");
         registerMemberContract("String", "repeat", "string.repeat");
         registerMemberContract("String", "take", "string.take");
         registerMemberContract("String", "drop", "string.drop");
