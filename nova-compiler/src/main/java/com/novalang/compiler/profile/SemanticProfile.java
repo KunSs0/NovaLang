@@ -15,6 +15,7 @@ public final class SemanticProfile {
     private static final boolean ENABLED = "true".equals(System.getProperty("nova.profile"));
     private static final Map<String, Long> NANOS = new ConcurrentHashMap<String, Long>();
     private static final Map<String, Long> COUNT = new ConcurrentHashMap<String, Long>();
+    private static final Map<String, Long> EVENTS = new ConcurrentHashMap<String, Long>();
 
     private SemanticProfile() {
     }
@@ -38,6 +39,13 @@ public final class SemanticProfile {
         COUNT.merge(phase, 1L, Long::sum);
     }
 
+    /** 记录一次事件计数。 */
+    public static void increment(String name) {
+        if (ENABLED) {
+            EVENTS.merge(name, 1L, Long::sum);
+        }
+    }
+
     /** 输出当前累计结果。 */
     public static void report(String title) {
         if (!ENABLED) {
@@ -48,11 +56,16 @@ public final class SemanticProfile {
                 .sorted((left, right) -> Long.compare(right.getValue(), left.getValue()))
                 .forEach(entry -> System.out.println("[SemanticProfile]   " + entry.getKey()
                         + " " + (entry.getValue() / 1000000L) + "ms x" + COUNT.get(entry.getKey())));
+        EVENTS.entrySet().stream()
+                .sorted((left, right) -> Long.compare(right.getValue(), left.getValue()))
+                .forEach(entry -> System.out.println("[SemanticProfile]   " + entry.getKey()
+                        + " count=" + entry.getValue()));
     }
 
     /** 清空累计，用于分轮对照。 */
     public static void reset() {
         NANOS.clear();
         COUNT.clear();
+        EVENTS.clear();
     }
 }

@@ -18,6 +18,21 @@ public final class JavaTypeOracle {
 
     private static final JavaTypeOracle INSTANCE = new JavaTypeOracle();
 
+    /**
+     * JDK 标准库加载器。
+     *
+     * <p>简单类型名会依次尝试 java.lang/java.util 等标准包；这些包不依赖业务插件。
+     * 使用平台/扩展加载器可以直接命中或快速失败，避免每次失败都让 Paper 的插件组
+     * 遍历全部插件依赖。</p>
+     */
+    private static final ClassLoader STANDARD_LIBRARY_LOADER = standardLibraryLoader();
+
+    private static ClassLoader standardLibraryLoader() {
+        ClassLoader systemLoader = ClassLoader.getSystemClassLoader();
+        ClassLoader parent = systemLoader != null ? systemLoader.getParent() : null;
+        return parent != null ? parent : systemLoader;
+    }
+
     private final Map<CacheKey, JavaTypeDescriptor> descriptorCache =
             new ConcurrentHashMap<CacheKey, JavaTypeDescriptor>();
     private final Set<CacheKey> negativeCache = ConcurrentHashMap.newKeySet();
@@ -46,11 +61,14 @@ public final class JavaTypeOracle {
         CacheKey requestedKey = new CacheKey(lookupLoader, typeName);
         JavaTypeDescriptor cached = descriptorCache.get(requestedKey);
         if (cached != null) {
+            SemanticProfile.increment("semantic.java.resolve.cache-hit");
             return cached;
         }
         if (negativeCache.contains(requestedKey)) {
+            SemanticProfile.increment("semantic.java.resolve.negative-hit");
             return null;
         }
+        SemanticProfile.increment("semantic.java.resolve.miss");
 
         JavaTypeDescriptor descriptor = resolveUncached(typeName, contextLoader, lookupLoader);
         if (descriptor != null) {
@@ -82,13 +100,20 @@ public final class JavaTypeOracle {
 
     private JavaTypeDescriptor resolveUncached(String typeName, ClassLoader contextLoader,
                                                ClassLoader lookupLoader) {
-        Class<?> javaClass = loadClass(typeName, contextLoader, lookupLoader);
-        if (javaClass == null && typeName.indexOf('.') < 0) {
+        Class<?> javaClass = null;
+        if (typeName.indexOf('.') < 0) {
+            // 先查 JDK 标准包，失败也不会进入 Paper 插件组扫描；最后再查宿主
+            // 类加载器，兼容插件内简单类型和默认包类型。
             String[] prefixes = { "java.lang.", "java.util.", "java.util.concurrent.", "java.util.function." };
             for (String prefix : prefixes) {
-                javaClass = loadClass(prefix + typeName, contextLoader, lookupLoader);
+                javaClass = loadClass(prefix + typeName, contextLoader, STANDARD_LIBRARY_LOADER);
                 if (javaClass != null) break;
             }
+            if (javaClass == null) {
+                javaClass = loadClass(typeName, contextLoader, lookupLoader);
+            }
+        } else {
+            javaClass = loadClass(typeName, contextLoader, lookupLoader);
         }
         if (javaClass == null) return null;
         Method samMethod = JavaTypeDescriptor.findSamMethod(javaClass);
@@ -97,6 +122,10 @@ public final class JavaTypeOracle {
 
     private Class<?> loadClass(String qualifiedName, ClassLoader contextLoader, ClassLoader lookupLoader) {
         long profileStart = SemanticProfile.start();
+        boolean local = isLocalClass(contextLoader, qualifiedName);
+        String phase = local
+                ? "semantic.java.class-load.local"
+                : "semantic.java.class-load.host";
         try {
             String candidate = qualifiedName;
             while (candidate != null) {
@@ -104,8 +133,11 @@ public final class JavaTypeOracle {
                         ? contextLoader
                         : lookupLoader;
                 try {
-                    return Class.forName(candidate, false, candidateLoader);
+                    Class<?> loaded = Class.forName(candidate, false, candidateLoader);
+                    SemanticProfile.increment(phase + ".success");
+                    return loaded;
                 } catch (ClassNotFoundException ignored) {
+                    SemanticProfile.increment(phase + ".miss");
                     int separator = candidate.lastIndexOf('.');
                     if (separator < 0) {
                         candidate = null;
@@ -117,7 +149,7 @@ public final class JavaTypeOracle {
             }
             return null;
         } finally {
-            SemanticProfile.add("semantic.java.class-load", profileStart);
+            SemanticProfile.add(phase, profileStart);
         }
     }
 
