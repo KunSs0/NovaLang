@@ -1,6 +1,5 @@
 package com.novalang.runtime.compilation;
 
-import com.novalang.runtime.interpreter.ModuleLoader;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -103,12 +102,6 @@ public final class ModuleResolver {
          */
         ResolutionContext(CompilationConfig config, SourceUnit entrySource) {
             this.entrySource = entrySource;
-            Map<String, String> sharedModules = ModuleLoader.sharedModuleSnapshot();
-            for (Map.Entry<String, String> entry : sharedModules.entrySet()) {
-                SourceUnit source = new SourceUnit(
-                        entry.getKey(), entry.getValue(), null, null, 1, 0, null);
-                sharedSources.put(entry.getKey(), source);
-            }
             realAliases.putAll(config.getAliases());
             if (entrySource != null && sharedSources.containsKey(entrySource.getModuleId())) {
                 throw new CompilationException("Entry conflicts with a shared module: " + entrySource.getModuleId());

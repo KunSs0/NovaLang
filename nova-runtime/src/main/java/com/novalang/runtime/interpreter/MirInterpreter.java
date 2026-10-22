@@ -336,19 +336,9 @@ final class MirInterpreter {
         for (MirModule.NovaImportInfo imp : module.getNovaImports()) {
             String qn = imp.qualifiedName;
             if (imp.stringModule) {
-                if (interp.moduleLoader == null) {
-                    throw new NovaRuntimeException(NovaException.ErrorKind.UNDEFINED,
-                            "Cannot resolve module '" + qn + "'",
-                            "Register the source with the same fileName before importing it");
-                }
-                Environment moduleEnv = interp.moduleLoader.loadVirtualModule(qn, interp);
-                if (moduleEnv == null) {
-                    throw new NovaRuntimeException(NovaException.ErrorKind.UNDEFINED,
-                            "Cannot resolve module '" + qn + "'",
-                            "Register the source with the same fileName before importing it");
-                }
-                moduleEnv.exportAll(interp.getEnvironment());
-                continue;
+                throw new NovaRuntimeException(NovaException.ErrorKind.UNDEFINED,
+                        "Nova source modules are not supported: '" + qn + "'",
+                        "Use native Java imports or host bindings");
             }
             String[] parts = qn.split("\\.");
             String builtinModule = BuiltinModuleRegistry.resolveModuleName(java.util.Arrays.asList(parts));
@@ -367,42 +357,9 @@ final class MirInterpreter {
                 continue;
             }
 
-            if (interp.moduleLoader == null) {
-                throw new NovaRuntimeException(NovaException.ErrorKind.UNDEFINED,
-                        "无法解析模块 '" + qn + "'（未配置模块加载器）",
-                        "确认 import 路径是否正确");
-            }
-            java.util.List<String> pathParts;
-            String symbolName;
-            if (imp.wildcard) {
-                pathParts = new java.util.ArrayList<String>(java.util.Arrays.asList(parts));
-                symbolName = null;
-            } else {
-                pathParts = new java.util.ArrayList<String>();
-                for (int i = 0; i < parts.length - 1; i++) {
-                    pathParts.add(parts[i]);
-                }
-                symbolName = parts[parts.length - 1];
-            }
-            java.nio.file.Path modulePath = interp.moduleLoader.resolveModulePath(pathParts);
-            if (modulePath == null) {
-                throw new NovaRuntimeException(NovaException.ErrorKind.UNDEFINED,
-                        "找不到模块 '" + qn + "'",
-                        "检查模块路径和文件是否存在");
-            }
-            Environment moduleEnv = interp.moduleLoader.loadModule(modulePath, interp);
-            if (symbolName == null) {
-                moduleEnv.exportAll(interp.getEnvironment());
-            } else {
-                NovaValue value = moduleEnv.tryGet(symbolName);
-                if (value == null) {
-                    throw new NovaRuntimeException(NovaException.ErrorKind.UNDEFINED,
-                            "模块中找不到符号 '" + symbolName + "'",
-                            "检查导出名称是否正确");
-                }
-                String localName = imp.alias != null ? imp.alias : symbolName;
-                interp.getEnvironment().redefine(localName, value, false);
-            }
+            throw new NovaRuntimeException(NovaException.ErrorKind.UNDEFINED,
+                    "Nova source imports are not supported: '" + qn + "'",
+                    "Use native Java imports or host bindings");
         }
 
         for (MirModule.ExtensionPropertyInfo epInfo : module.getExtensionProperties()) {

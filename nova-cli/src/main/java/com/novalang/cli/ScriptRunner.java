@@ -57,10 +57,6 @@ public class ScriptRunner {
             }
             interpreter.getGlobals().defineVal("args", args);
 
-            // 设置脚本基路径，启用模块加载
-            Path scriptDir = path.toAbsolutePath().getParent();
-            interpreter.setScriptBasePath(scriptDir);
-
             // 语义分析（类型检查）
             runSemanticAnalysis(source, filePath);
 

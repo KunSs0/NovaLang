@@ -3,7 +3,6 @@ package com.novalang.bukkit;
 import com.novalang.runtime.Nova;
 import com.novalang.runtime.host.JavaTypes;
 import com.novalang.bukkit.core.BukkitJavaTypesModule;
-import com.novalang.runtime.interpreter.ModuleLoader;
 import com.novalang.bukkit.types.entity.NovaEntity;
 import com.novalang.bukkit.types.entity.NovaEntityHierarchy;
 import com.novalang.bukkit.types.entity.NovaEntityMoreTypes;
@@ -31,7 +30,6 @@ import com.novalang.bukkit.types.world.NovaBlockInventoryMoreTypes;
 import com.novalang.bukkit.types.world.NovaBlockStateMoreTypes;
 import com.novalang.bukkit.types.world.NovaWorldToolMoreTypes;
 
-import java.util.Collection;
 import org.bukkit.plugin.Plugin;
 
 /**
@@ -94,28 +92,6 @@ public final class NovaBukkit {
         JavaTypes.Builder types = builder(module);
         NoBukkit.register(types, plugin);
         return types.build();
-    }
-
-    /** 注册由 Bukkit 插件提供、供全部 Nova 程序 使用的共享逻辑模块。 */
-    public static void registerModule(String moduleId, String source) {
-        ModuleLoader.registerSharedModule(moduleId, source);
-    }
-
-    /** 将 Java 类型注册为供全部 Nova 程序 使用的共享逻辑模块。 */
-    public static void registerModule(String moduleId, Collection<Class<?>> types) {
-        ModuleLoader.registerSharedModule(moduleId, types);
-    }
-
-    /** 将 Java 类型与自定义 Nova 源码注册为共享逻辑模块。 */
-    public static void registerModule(String moduleId,
-                                      Collection<Class<?>> types,
-                                      String source) {
-        ModuleLoader.registerSharedModule(moduleId, types, source);
-    }
-
-    /** 注销由 Bukkit 插件提供的共享逻辑模块。 */
-    public static boolean unregisterModule(String moduleId) {
-        return ModuleLoader.unregisterSharedModule(moduleId);
     }
 
     /** 创建预装 Bukkit API 的 builder，业务插件可继续追加自己的 JavaTypes。 */

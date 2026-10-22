@@ -27,7 +27,6 @@ import com.novalang.runtime.interpreter.reflect.*;
 
 import java.io.InputStream;
 import java.io.PrintStream;
-import java.nio.file.Path;
 import java.util.*;
 
 /**
@@ -109,9 +108,6 @@ public class Interpreter implements ExecutionContext {
     /** 标准输入流 */
     private InputStream stdin = System.in;
 
-
-    /** 模块加载器（脚本模式下初始化） */
-    protected ModuleLoader moduleLoader;
 
     // ============ HIR 元数据字段 ============
     /** 类名 → 所有 HirField（用于反射 API 获取字段信息） */
@@ -312,69 +308,6 @@ public class Interpreter implements ExecutionContext {
         StructuredConcurrencyHelper.resetGlobalState();
     }
 
-    // ============ 模块系统 ============
-
-    public void setScriptBasePath(Path basePath) {
-        ModuleLoader old = this.moduleLoader;
-        this.moduleLoader = new ModuleLoader(basePath);
-        this.moduleLoader.copyVirtualModulesFrom(old);
-    }
-
-    public void registerVirtualModule(String moduleId, String source) {
-        if (moduleLoader == null) {
-            moduleLoader = new ModuleLoader(java.nio.file.Paths.get("").toAbsolutePath());
-        }
-        moduleLoader.registerVirtualModule(moduleId, source);
-    }
-
-    public void registerVirtualModule(String moduleId, Collection<Class<?>> types) {
-        registerVirtualModule(moduleId, types, "");
-    }
-
-    public void registerVirtualModule(String moduleId,
-                                      Collection<Class<?>> types,
-                                      String source) {
-        if (moduleLoader == null) {
-            moduleLoader = new ModuleLoader(java.nio.file.Paths.get("").toAbsolutePath());
-        }
-        moduleLoader.registerVirtualModule(moduleId, types, source);
-    }
-
-    public String expandVirtualImports(String source, String fileName) {
-        return moduleLoader != null ? moduleLoader.expandVirtualImports(source, fileName) : source;
-    }
-
-    /** 在指定环境中执行模块（供 ModuleLoader 调用）*/
-    public void executeModule(String source, String fileName, Environment moduleEnv) {
-        withEnvironment(moduleEnv, () -> {
-            String actualSource = expandVirtualImports(source, fileName);
-            Lexer lexer = new Lexer(actualSource, fileName);
-            Parser parser = new Parser(lexer, fileName);
-            Program program = parser.parse();
-            ClassLoader previousContextLoader = Thread.currentThread().getContextClassLoader();
-            if (scriptClassLoader != null) {
-                Thread.currentThread().setContextClassLoader(scriptClassLoader);
-            }
-            try {
-                mirPipeline.setScriptMode(true);
-                MirModule mir = mirPipeline.executeToMir(program);
-                mirInterpreter.resetState();
-                ClassLoader previousScriptClassLoader = JavaInterop.getScriptClassLoader();
-                if (scriptClassLoader != null) {
-                    JavaInterop.setScriptClassLoader(scriptClassLoader);
-                }
-                try {
-                    mirInterpreter.executeModule(mir);
-                } finally {
-                    JavaInterop.setScriptClassLoader(previousScriptClassLoader);
-                }
-            } finally {
-                Thread.currentThread().setContextClassLoader(previousContextLoader);
-            }
-            return NovaNull.UNIT;
-        });
-    }
-
     /**
      * 获取全局环境
      */
@@ -564,7 +497,7 @@ public class Interpreter implements ExecutionContext {
      */
     public NovaValue eval(String source, String fileName) {
         resetExecutionState();
-        String actualSource = expandVirtualImports(source, fileName);
+        String actualSource = source;
         this.currentSource = actualSource;
         this.currentFileName = fileName;
         this.sourceLines = null;
@@ -588,7 +521,7 @@ public class Interpreter implements ExecutionContext {
      */
     public NovaValue eval(String source, String fileName, Program program) {
         resetExecutionState();
-        String actualSource = expandVirtualImports(source, fileName);
+        String actualSource = source;
         this.currentSource = actualSource;
         this.currentFileName = fileName;
         this.sourceLines = null;
@@ -610,7 +543,7 @@ public class Interpreter implements ExecutionContext {
      */
     public NovaValue evalRepl(String source) {
         resetExecutionState();
-        String actualSource = expandVirtualImports(source, "<repl>");
+        String actualSource = source;
         this.currentSource = actualSource;
         this.currentFileName = "<repl>";
         this.sourceLines = null;

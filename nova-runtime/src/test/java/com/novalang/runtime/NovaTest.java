@@ -1830,41 +1830,6 @@ class NovaTest {
         }
 
         @Test
-        void importCanResolveSourceRegisteredByFileName() {
-            Nova nova = new Nova();
-            nova.compile("fun inc(x: Int) = x + 1", "std/math");
-
-            assertEquals(42, nova.eval("import \"std/math\"\ninc(41)"));
-            assertEquals(42, nova.eval("import \"std/math\"; inc(41)"));
-            assertEquals(42, nova.compileToBytecode("import \"std/math\"\ninc(41)", "user/main").run());
-            assertEquals(42, nova.compileToBytecode("import \"std/math\"; inc(41)", "user/main-inline").run());
-        }
-
-        @Test
-        void importCanResolveNestedVirtualModules() {
-            Nova nova = new Nova();
-            nova.compile("fun base() = 40", "pkg/base");
-            nova.compile("import \"pkg/base\"\nfun answer() = base() + 2", "pkg/answer");
-
-            assertEquals(42, nova.eval("import \"pkg/answer\"\nanswer()"));
-            assertEquals(42, nova.compileToBytecode("import \"pkg/answer\"\nanswer()", "user/main").run());
-        }
-
-        @Test
-        void importCanResolveJavaTypesRegisteredAsModule() {
-            Nova nova = new Nova();
-            nova.registerModule("java.duration",
-                    Collections.<Class<?>>singletonList(java.time.Duration.class));
-
-            CompiledNova compiled = nova.compileToBytecode(
-                    "import \"java.duration\"\n"
-                            + "fun seconds(value: Duration): Long { return value.getSeconds() }",
-                    "user/java-type-module.nova");
-
-            assertEquals(3L, compiled.call("seconds", java.time.Duration.ofSeconds(3)));
-        }
-
-        @Test
         void getPreloadsReturnsRegisteredSources() {
             Nova nova = new Nova();
             nova.preload("val x = 1", "x.nova");

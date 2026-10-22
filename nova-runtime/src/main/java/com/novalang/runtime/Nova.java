@@ -934,46 +934,7 @@ public final class Nova {
             throw new IllegalArgumentException("preload source must not be null");
         }
         String actualFileName = fileName != null ? fileName : "<preload>";
-        interpreter.registerVirtualModule(actualFileName, source);
         preludeSources.add(new PreludeSource(source, actualFileName));
-        return this;
-    }
-
-    /**
-     * 注册只可通过字符串 {@code import} 引用的 Nova 模块。
-     *
-     * <p>该方法不会执行模块，也不会将模块当作 Prelude 注入。调用方应在编译入口前
-     * 完成完整模块图解析，并使用稳定且唯一的 {@code moduleId} 注册依赖源码。</p>
-     *
-     * @param moduleId 字符串 import 使用的模块标识
-     * @param source Nova 模块源码
-     * @return 当前 Nova 实例
-     * @throws IllegalArgumentException 模块标识为空或源码为 {@code null} 时抛出
-     */
-    public Nova registerModule(String moduleId, String source) {
-        if (moduleId == null || moduleId.trim().isEmpty()) {
-            throw new IllegalArgumentException("moduleId must not be blank");
-        }
-        if (source == null) {
-            throw new IllegalArgumentException("module source must not be null");
-        }
-        interpreter.registerVirtualModule(moduleId, source);
-        return this;
-    }
-
-    /** 将 Java 类型注册为当前 Nova 实例的字符串 import 模块。 */
-    public Nova registerModule(String moduleId, Collection<Class<?>> types) {
-        return registerModule(moduleId, types, "");
-    }
-
-    /** 将 Java 类型与自定义 Nova 源码注册为当前 Nova 实例的字符串 import 模块。 */
-    public Nova registerModule(String moduleId,
-                               Collection<Class<?>> types,
-                               String source) {
-        if (moduleId == null || moduleId.trim().isEmpty()) {
-            throw new IllegalArgumentException("moduleId must not be blank");
-        }
-        interpreter.registerVirtualModule(moduleId, types, source);
         return this;
     }
 
@@ -997,7 +958,7 @@ public final class Nova {
 
     private String withPreloads(String code, String fileName) {
         if (preludeSources.isEmpty()) {
-            return interpreter.expandVirtualImports(code, fileName);
+            return code;
         }
         StringBuilder combined = new StringBuilder();
         for (PreludeSource prelude : preludeSources) {
@@ -1008,7 +969,7 @@ public final class Nova {
             }
         }
         combined.append(code);
-        return interpreter.expandVirtualImports(combined.toString(), fileName);
+        return combined.toString();
     }
 
     private void markAllPreloadsEvaluated() {
@@ -1018,13 +979,12 @@ public final class Nova {
     private void ensureInterpreterPreloadsEvaluated() {
         while (evaluatedPreludeCount < preludeSources.size()) {
             PreludeSource prelude = preludeSources.get(evaluatedPreludeCount);
-            interpreter.eval(interpreter.expandVirtualImports(prelude.source, prelude.fileName), prelude.fileName);
+            interpreter.eval(prelude.source, prelude.fileName);
             evaluatedPreludeCount++;
         }
     }
 
     public Object eval(String code) {
-        interpreter.registerVirtualModule("<repl>", code);
         NovaValue result = preludeSources.isEmpty()
                 ? interpreter.evalRepl(code)
                 : interpreter.eval(withPreloads(code, "<repl>"), "<repl>");
@@ -1052,9 +1012,6 @@ public final class Nova {
      */
     public Object evalFile(File file) {
         String source = readFile(file);
-        interpreter.registerVirtualModule(file.getName(), source);
-        interpreter.registerVirtualModule(file.getPath(), source);
-        interpreter.registerVirtualModule(file.toPath().toAbsolutePath().normalize().toString(), source);
         NovaValue result = preludeSources.isEmpty()
                 ? interpreter.eval(source, file.getName())
                 : interpreter.eval(withPreloads(source, file.getName()), file.getName());
@@ -1089,7 +1046,6 @@ public final class Nova {
      */
     public CompiledNova compile(String code, String fileName) {
         String actualFileName = fileName != null ? fileName : "<compiled>";
-        interpreter.registerVirtualModule(actualFileName, code);
         return new CompiledNova(withPreloads(code, actualFileName), actualFileName, this);
     }
 
@@ -1106,9 +1062,6 @@ public final class Nova {
      */
     public CompiledNova compileFile(File file) {
         String source = readFile(file);
-        interpreter.registerVirtualModule(file.getName(), source);
-        interpreter.registerVirtualModule(file.getPath(), source);
-        interpreter.registerVirtualModule(file.toPath().toAbsolutePath().normalize().toString(), source);
         return new CompiledNova(withPreloads(source, file.getName()), file.getName(), this);
     }
 
@@ -1201,7 +1154,6 @@ public final class Nova {
     public CompiledNova compileToBytecode(String code, String fileName) {
         Builtins.ensureJavaClassRegistered();
         String actualFileName = fileName != null ? fileName : "<compiled>";
-        interpreter.registerVirtualModule(actualFileName, code);
         String actualCode = withPreloads(code, actualFileName);
 
         // 编译缓存：相同源码不重复编译
@@ -1231,7 +1183,6 @@ public final class Nova {
     public Map<String, byte[]> compileToBytecodeArtifact(String code, String fileName) {
         Builtins.ensureJavaClassRegistered();
         String actualFileName = fileName != null ? fileName : "<compiled>";
-        interpreter.registerVirtualModule(actualFileName, code);
         String actualCode = withPreloads(code, actualFileName);
         NovaIrCompiler compiler = new NovaIrCompiler();
         compiler.setScriptMode(true);
@@ -1359,7 +1310,6 @@ public final class Nova {
     public CompiledNova compileToBytecode(String code, String fileName, String namespace) {
         Builtins.ensureJavaClassRegistered();
         String actualFileName = fileName != null ? fileName : "<compiled>";
-        interpreter.registerVirtualModule(actualFileName, code);
         String actualCode = withPreloads(code, actualFileName);
 
         String cacheKey = null;

@@ -15,8 +15,9 @@ public final class JavaTypeOracle {
 
     private static final JavaTypeOracle INSTANCE = new JavaTypeOracle();
 
-    private final Map<String, JavaTypeDescriptor> descriptorCache = new ConcurrentHashMap<String, JavaTypeDescriptor>();
-    private final Set<String> negativeCache = ConcurrentHashMap.newKeySet();
+    private final Map<CacheKey, JavaTypeDescriptor> descriptorCache =
+            new ConcurrentHashMap<CacheKey, JavaTypeDescriptor>();
+    private final Set<CacheKey> negativeCache = ConcurrentHashMap.newKeySet();
 
     private JavaTypeOracle() {}
 
@@ -26,28 +27,50 @@ public final class JavaTypeOracle {
 
     public JavaTypeDescriptor resolve(String typeName) {
         if (typeName == null || typeName.isEmpty()) return null;
-        if (descriptorCache.containsKey(typeName)) {
-            return descriptorCache.get(typeName);
+        ClassLoader loader = contextClassLoader();
+        CacheKey requestedKey = new CacheKey(loader, typeName);
+        JavaTypeDescriptor cached = descriptorCache.get(requestedKey);
+        if (cached != null) {
+            return cached;
         }
-        if (negativeCache.contains(typeName)) {
+        if (negativeCache.contains(requestedKey)) {
             return null;
         }
 
-        JavaTypeDescriptor descriptor = resolveUncached(typeName);
+        JavaTypeDescriptor descriptor = resolveUncached(typeName, loader);
         if (descriptor != null) {
-            descriptorCache.put(typeName, descriptor);
+            CacheKey actualKey = new CacheKey(descriptor.getJavaClass().getClassLoader(),
+                    descriptor.getQualifiedName());
+            descriptorCache.put(actualKey, descriptor);
         } else {
-            negativeCache.add(typeName);
+            negativeCache.add(requestedKey);
         }
         return descriptor;
     }
 
-    private JavaTypeDescriptor resolveUncached(String typeName) {
-        Class<?> javaClass = loadClass(typeName);
+    /**
+     * 按已经解析出的 Java 类获取描述符，避免再次依赖当前线程上下文类加载器。
+     *
+     * @param javaClass 已加载的 Java 类
+     * @return 与该类所属类加载器绑定的描述符
+     */
+    public JavaTypeDescriptor resolve(Class<?> javaClass) {
+        if (javaClass == null) return null;
+        CacheKey key = new CacheKey(javaClass.getClassLoader(), javaClass.getName());
+        JavaTypeDescriptor cached = descriptorCache.get(key);
+        if (cached != null) return cached;
+        JavaTypeDescriptor descriptor = new JavaTypeDescriptor(
+                javaClass, JavaTypeDescriptor.findSamMethod(javaClass));
+        descriptorCache.put(key, descriptor);
+        return descriptor;
+    }
+
+    private JavaTypeDescriptor resolveUncached(String typeName, ClassLoader loader) {
+        Class<?> javaClass = loadClass(typeName, loader);
         if (javaClass == null && typeName.indexOf('.') < 0) {
             String[] prefixes = { "java.lang.", "java.util.", "java.util.concurrent.", "java.util.function." };
             for (String prefix : prefixes) {
-                javaClass = loadClass(prefix + typeName);
+                javaClass = loadClass(prefix + typeName, loader);
                 if (javaClass != null) break;
             }
         }
@@ -56,11 +79,7 @@ public final class JavaTypeOracle {
         return new JavaTypeDescriptor(javaClass, samMethod);
     }
 
-    private Class<?> loadClass(String qualifiedName) {
-        ClassLoader contextLoader = Thread.currentThread().getContextClassLoader();
-        ClassLoader loader = contextLoader != null
-                ? contextLoader
-                : JavaTypeOracle.class.getClassLoader();
+    private Class<?> loadClass(String qualifiedName, ClassLoader loader) {
         String candidate = qualifiedName;
         while (candidate != null) {
             try {
@@ -76,6 +95,11 @@ public final class JavaTypeOracle {
             }
         }
         return null;
+    }
+
+    private ClassLoader contextClassLoader() {
+        ClassLoader contextLoader = Thread.currentThread().getContextClassLoader();
+        return contextLoader != null ? contextLoader : JavaTypeOracle.class.getClassLoader();
     }
 
     public NovaType toNovaType(Class<?> javaClass, boolean nullable) {
@@ -101,7 +125,7 @@ public final class JavaTypeOracle {
         if (javaClass == String.class) return nullable ? NovaTypes.STRING.withNullable(true) : NovaTypes.STRING;
         if (javaClass == Object.class) return nullable ? NovaTypes.ANY.withNullable(true) : NovaTypes.ANY;
 
-        JavaTypeDescriptor descriptor = resolve(javaClass.getName());
+        JavaTypeDescriptor descriptor = resolve(javaClass);
         if (descriptor == null) {
             return nullable ? NovaTypes.ANY.withNullable(true) : NovaTypes.ANY;
         }
@@ -139,18 +163,41 @@ public final class JavaTypeOracle {
         if ("Map".equals(typeName)) return java.util.Map.class;
         if ("Array".equals(typeName)) return Object[].class;
         if (type instanceof JavaClassNovaType) {
-            Class<?> javaClass = loadClass(((JavaClassNovaType) type).getQualifiedName());
-            if (javaClass != null) return javaClass;
+            JavaTypeDescriptor descriptor = ((JavaClassNovaType) type).getDescriptor();
+            if (descriptor != null) return descriptor.getJavaClass();
         }
         if (typeName != null) {
-            Class<?> javaClass = loadClass(typeName);
+            Class<?> javaClass = loadClass(typeName, contextClassLoader());
             if (javaClass != null) return javaClass;
             JavaTypeDescriptor descriptor = resolve(typeName);
             if (descriptor != null) {
-                javaClass = loadClass(descriptor.getQualifiedName());
-                if (javaClass != null) return javaClass;
+                return descriptor.getJavaClass();
             }
         }
         return Object.class;
+    }
+
+    /** 按类加载器身份和二进制类名区分 Java 类型缓存。 */
+    private static final class CacheKey {
+        private final ClassLoader loader;
+        private final String name;
+
+        private CacheKey(ClassLoader loader, String name) {
+            this.loader = loader;
+            this.name = name;
+        }
+
+        @Override
+        public boolean equals(Object other) {
+            if (this == other) return true;
+            if (!(other instanceof CacheKey)) return false;
+            CacheKey that = (CacheKey) other;
+            return loader == that.loader && name.equals(that.name);
+        }
+
+        @Override
+        public int hashCode() {
+            return 31 * System.identityHashCode(loader) + name.hashCode();
+        }
     }
 }

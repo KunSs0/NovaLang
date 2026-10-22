@@ -89,17 +89,9 @@ try (CompiledNova program = nova.compileToBytecode(entry, metadata.build())) {
 入口直接传给编译器。内存源码使用相对 import 时必须提供物理来源文件，
 也可以使用显式 Alias 引用文件依赖。编译失败和执行失败会映射回原始源码。
 
-需要被其他源码 import 的宿主模块通过现有模块系统提供，例如：
-
-```java
-import com.novalang.runtime.interpreter.ModuleLoader;
-
-ModuleLoader.registerSharedModule("business.api", "fun value(): Int = 7");
-```
-
-Nova 源码通过 `import "business.api"` 引用。共享模块注册作用于进程，宿主负责在不再需要时
-调用 `ModuleLoader.unregisterSharedModule("business.api")` 注销。编译元数据不登记模块，
-也不配置跳过初始化；`run()` 统一按依赖顺序初始化所有可达模块，行内动作的函数体仅在调用时执行。
+宿主 API 不再通过 Nova 源码模块注册。宿主应使用 `JavaTypes` 描述和安装 Java 类型、
+函数及扩展，Nova 源码直接使用原生 Java import。源码依赖只作为编译器内部的输入组织，
+不会创建运行时模块环境，也不会通过 `exportAll()` 注入符号。
 
 ## 编译缓存与程序资源
 

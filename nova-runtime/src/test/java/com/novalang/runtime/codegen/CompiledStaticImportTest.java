@@ -91,34 +91,6 @@ class CompiledStaticImportTest {
         }
     }
 
-    @Test
-    @DisplayName("module exported Java outer class resolves nested type")
-    void moduleExportedJavaOuterClassShouldResolveNestedType() throws Exception {
-        try (URLClassLoader loader = compileFixture()) {
-            Class<?> outerClass = loader.loadClass("dynamic.StaticFixture");
-            Nova nova = new Nova().setScriptClassLoader(loader);
-            nova.registerModule("dynamic.fixture.api", Collections.<Class<?>>singletonList(outerClass));
-            assertEquals("FLOW", nova.compileToBytecode(
-                    "import \"dynamic.fixture.api\"\n" +
-                            "StaticFixture.Kind.FLOW.name()",
-                    "java-nested-type-module.nova").run());
-        }
-    }
-
-    @Test
-    @DisplayName("module source Java outer import resolves nested type")
-    void moduleSourceJavaOuterImportShouldResolveNestedType() throws Exception {
-        try (URLClassLoader loader = compileFixture()) {
-            Nova nova = new Nova().setScriptClassLoader(loader);
-            nova.registerModule("dynamic.fixture.api", Collections.<Class<?>>emptyList(),
-                    "import java dynamic.StaticFixture\n");
-            assertEquals("FLOW", nova.compileToBytecode(
-                    "import \"dynamic.fixture.api\"\n" +
-                            "StaticFixture.Kind.FLOW.name()",
-                    "java-nested-type-module-source.nova").run());
-        }
-    }
-
     /**
      * 验证直接导入 Java 外层类后，嵌套类构造器调用可以通过语义分析和字节码编译。
      *

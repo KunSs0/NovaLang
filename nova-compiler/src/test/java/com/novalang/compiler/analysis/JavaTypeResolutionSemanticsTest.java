@@ -2,6 +2,7 @@ package com.novalang.compiler.analysis;
 
 import com.novalang.compiler.ast.decl.Program;
 import com.novalang.compiler.analysis.types.JavaTypeOracle;
+import com.novalang.compiler.analysis.types.JavaTypeDescriptor;
 import com.novalang.compiler.lexer.Lexer;
 import com.novalang.compiler.parser.Parser;
 import org.junit.jupiter.api.DisplayName;
@@ -9,9 +10,18 @@ import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertSame;
 
 @DisplayName("Java type resolution semantics")
 class JavaTypeResolutionSemanticsTest {
+
+    @Test
+    @DisplayName("Java 类型描述符应绑定解析时的 Class 实例")
+    void javaDescriptorShouldKeepResolvedClassInstance() {
+        JavaTypeDescriptor descriptor = JavaTypeOracle.get().resolve(StringBuilder.class);
+
+        assertSame(StringBuilder.class, descriptor.getJavaClass());
+    }
 
     private AnalysisResult analyze(String source) {
         Lexer lexer = new Lexer(source, "<java-type-semantics>");

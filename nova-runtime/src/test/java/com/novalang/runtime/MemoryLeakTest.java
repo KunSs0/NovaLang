@@ -197,21 +197,6 @@ class MemoryLeakTest {
                         growth / (1024.0 * 1024.0), maxGrowthBytes / (1024.0 * 1024.0)));
     }
 
-    // ============ 6. ModuleLoader 缓存有上限 ============
-
-    @Test
-    @DisplayName("ModuleLoader 缓存有上限保护")
-    void moduleLoaderCacheBounded() {
-        Interpreter interp = new Interpreter();
-        // ModuleLoader 内部 MAX_CACHE_SIZE = 256
-        // 直接验证 clear/invalidate 方法存在且可调用
-        com.novalang.runtime.interpreter.ModuleLoader loader =
-                new com.novalang.runtime.interpreter.ModuleLoader(java.nio.file.Paths.get("."));
-        loader.clear(); // 不抛异常即可
-        loader.invalidate(java.nio.file.Paths.get("nonexistent.nova"));
-        interp.cleanup();
-    }
-
     // ============ 7. Interpreter.cleanup() 释放 ThreadLocal ============
 
     @Test

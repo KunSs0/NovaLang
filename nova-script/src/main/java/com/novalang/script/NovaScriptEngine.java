@@ -3,7 +3,6 @@ package com.novalang.script;
 import com.novalang.runtime.CompiledNova;
 import com.novalang.runtime.Nova;
 
-import java.nio.file.Path;
 
 import javax.script.*;
 import java.io.*;
@@ -88,13 +87,6 @@ public class NovaScriptEngine extends AbstractScriptEngine implements Compilable
         } catch (Exception e) {
             throw new ScriptException(e);
         }
-    }
-
-    /**
-     * 设置脚本基路径（用于模块导入）
-     */
-    public void setScriptBasePath(Path basePath) {
-        nova.getInterpreter().setScriptBasePath(basePath);
     }
 
     Nova getNova() {

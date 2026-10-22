@@ -33,6 +33,7 @@ public final class JavaTypeDescriptor {
         ANNOTATION
     }
 
+    private final Class<?> javaClass;
     private final String simpleName;
     private final String qualifiedName;
     private final Kind kind;
@@ -41,6 +42,10 @@ public final class JavaTypeDescriptor {
     private final int typeParameterCount;
     private final boolean functionalInterface;
     private final Method samMethod;
+    private final Method[] publicMethods;
+    private final Method[] declaredMethods;
+    private final Constructor<?>[] publicConstructors;
+    private final Class<?>[] declaredClasses;
 
     public static final class JavaExecutableDescriptor {
         private final List<NovaType> paramTypes;
@@ -67,6 +72,7 @@ public final class JavaTypeDescriptor {
     }
 
     JavaTypeDescriptor(Class<?> javaClass, Method samMethod) {
+        this.javaClass = javaClass;
         this.simpleName = javaClass.getSimpleName();
         this.qualifiedName = javaClass.getName();
         this.kind = determineKind(javaClass);
@@ -80,6 +86,10 @@ public final class JavaTypeDescriptor {
         this.typeParameterCount = javaClass.getTypeParameters().length;
         this.functionalInterface = samMethod != null;
         this.samMethod = samMethod;
+        this.publicMethods = javaClass.getMethods();
+        this.declaredMethods = javaClass.getDeclaredMethods();
+        this.publicConstructors = javaClass.getConstructors();
+        this.declaredClasses = javaClass.getDeclaredClasses();
     }
 
     private static Kind determineKind(Class<?> javaClass) {
@@ -95,6 +105,15 @@ public final class JavaTypeDescriptor {
 
     public String getQualifiedName() {
         return qualifiedName;
+    }
+
+    /**
+     * 返回生成该描述符的 Java 类，确保后续成员解析继续使用同一个类加载器。
+     *
+     * @return 原始 Java 类
+     */
+    public Class<?> getJavaClass() {
+        return javaClass;
     }
 
     /** 函数值实现对应的 FunctionN，也可以直接传给其公共父接口。 */
@@ -130,7 +149,7 @@ public final class JavaTypeDescriptor {
         if (javaClass == null) {
             return null;
         }
-        for (Class<?> nestedClass : javaClass.getDeclaredClasses()) {
+        for (Class<?> nestedClass : declaredClasses) {
             if (memberName.equals(nestedClass.getSimpleName())
                     && Modifier.isPublic(nestedClass.getModifiers())) {
                 return JavaTypeOracle.get().resolve(nestedClass.getName());
@@ -253,14 +272,7 @@ public final class JavaTypeDescriptor {
 
     public boolean isAssignableFrom(JavaTypeDescriptor other) {
         if (other == null) return false;
-        try {
-            Class<?> target = loadClassWithoutInitialization(qualifiedName);
-            Class<?> source = loadClassWithoutInitialization(other.qualifiedName);
-            if (target == null || source == null) return false;
-            return target.isAssignableFrom(source);
-        } catch (ClassNotFoundException e) {
-            return false;
-        }
+        return javaClass.isAssignableFrom(other.javaClass);
     }
 
     public FunctionNovaType toSamFunctionType(boolean nullable) {
@@ -314,7 +326,7 @@ public final class JavaTypeDescriptor {
         Class<?> javaClass = loadJavaClass();
         if (javaClass == null) return null;
         List<Method> candidates = new ArrayList<Method>();
-        for (Method method : javaClass.getMethods()) {
+        for (Method method : publicMethods) {
             if (methodName.equals(method.getName())) {
                 candidates.add(method);
             }
@@ -423,7 +435,7 @@ public final class JavaTypeDescriptor {
         Class<?> javaClass = loadJavaClass();
         if (javaClass == null) return null;
         Constructor<?> bestCtor = JavaOverloadResolver.selectBestConstructor(
-                Arrays.asList(javaClass.getConstructors()),
+                Arrays.asList(publicConstructors),
                 JavaTypeOracle.get().toJavaArgumentTypes(argTypes));
         return bestCtor != null ? toExecutableDescriptor(bestCtor) : null;
     }
@@ -442,7 +454,7 @@ public final class JavaTypeDescriptor {
         Class<?> javaClass = loadJavaClass();
         if (javaClass == null) return Collections.emptyList();
         List<JavaExecutableDescriptor> overloads = new ArrayList<JavaExecutableDescriptor>();
-        for (Method method : javaClass.getMethods()) {
+        for (Method method : publicMethods) {
             if (!methodName.equals(method.getName())) continue;
             if (Modifier.isStatic(method.getModifiers()) != staticOnly) continue;
             overloads.add(toExecutableDescriptor(method, receiverTypeArguments));
@@ -465,7 +477,7 @@ public final class JavaTypeDescriptor {
         Class<?> javaClass = loadJavaClass();
         if (javaClass == null) return Collections.emptyList();
         List<JavaExecutableDescriptor> overloads = new ArrayList<JavaExecutableDescriptor>();
-        for (Constructor<?> ctor : javaClass.getConstructors()) {
+        for (Constructor<?> ctor : publicConstructors) {
             overloads.add(toExecutableDescriptor(ctor));
         }
         return overloads;
@@ -488,7 +500,7 @@ public final class JavaTypeDescriptor {
             return Collections.emptyList();
         }
         List<JavaExecutableDescriptor> overloads = new ArrayList<JavaExecutableDescriptor>();
-        for (Method method : javaClass.getDeclaredMethods()) {
+        for (Method method : declaredMethods) {
             if (!methodName.equals(method.getName())
                     || Modifier.isStatic(method.getModifiers()) != staticOnly) {
                 continue;
@@ -654,7 +666,7 @@ public final class JavaTypeDescriptor {
 
         String setterName = "set" + Character.toUpperCase(memberName.charAt(0))
                 + memberName.substring(1);
-        for (Method method : javaClass.getMethods()) {
+        for (Method method : publicMethods) {
             if (setterName.equals(method.getName())
                     && method.getParameterCount() == 1
                     && Modifier.isStatic(method.getModifiers()) == staticOnly) {
@@ -705,7 +717,7 @@ public final class JavaTypeDescriptor {
         String setterName = "set" + Character.toUpperCase(memberName.charAt(0))
                 + memberName.substring(1);
         List<Method> candidates = new ArrayList<Method>();
-        for (Method method : javaClass.getMethods()) {
+        for (Method method : publicMethods) {
             if (setterName.equals(method.getName()) && method.getParameterCount() == 1) {
                 candidates.add(method);
             }
@@ -813,23 +825,7 @@ public final class JavaTypeDescriptor {
     }
 
     private Class<?> loadJavaClass() {
-        try {
-            ClassLoader contextLoader = Thread.currentThread().getContextClassLoader();
-            if (contextLoader != null) {
-                return Class.forName(qualifiedName, false, contextLoader);
-            }
-            return Class.forName(qualifiedName, false, JavaTypeDescriptor.class.getClassLoader());
-        } catch (ClassNotFoundException e) {
-            return null;
-        }
-    }
-
-    private static Class<?> loadClassWithoutInitialization(String name) throws ClassNotFoundException {
-        ClassLoader contextLoader = Thread.currentThread().getContextClassLoader();
-        if (contextLoader != null) {
-            return Class.forName(name, false, contextLoader);
-        }
-        return Class.forName(name, false, JavaTypeDescriptor.class.getClassLoader());
+        return javaClass;
     }
 
     static Method findSamMethod(Class<?> javaClass) {
