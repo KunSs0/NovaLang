@@ -90,6 +90,34 @@ class JavaClassResolutionPerformanceTest {
     }
 
     @Test
+    @DisplayName("导入函数和内置函数调用不应探测 Java 类")
+    void importedAndBuiltinFunctionCallsShouldNotProbeJavaClasses() {
+        CountingClassLoader loader = compileWithCountingLoader(
+                "import nova.json.*\n"
+                        + "fun render(): String {\n"
+                        + "  return jsonStringify(mapOf(\"now\" to currentTimeMillis()))\n"
+                        + "}\n",
+                "imported-function-calls.nova");
+
+        assertEquals(0, loader.countContaining("jsonStringify"),
+                "导入的 Nova 函数调用不应按 Java 类构造器探测");
+        assertEquals(0, loader.countContaining("currentTimeMillis"),
+                "内置全局函数调用不应按 Java 类构造器探测");
+    }
+
+    @Test
+    @DisplayName("Nova 函数别名导入不应探测 Java 类")
+    void aliasedNovaFunctionImportsShouldNotProbeJavaClasses() {
+        CountingClassLoader loader = compileWithCountingLoader(
+                "import nova.time.now as currentTimeMillis\n"
+                        + "fun stamp(): Long { return currentTimeMillis() }\n",
+                "aliased-function-import.nova");
+
+        assertEquals(0, loader.countContaining("currentTimeMillis"),
+                "camelCase 函数别名不是 Java 类型，不应在导入阶段探测宿主类");
+    }
+
+    @Test
     @DisplayName("Nova 前向类型引用不应探测 Java 类")
     void forwardNovaTypeReferencesShouldNotProbeJavaClasses() {
         CountingClassLoader loader = compileWithCountingLoader(

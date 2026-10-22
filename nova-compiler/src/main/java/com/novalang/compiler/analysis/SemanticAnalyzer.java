@@ -4044,7 +4044,11 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
             }
             if (funcSym != null) {
                 funcSym = resolveJavaFunctionOverload(funcSym, node);
+                // 导入的函数/内置函数不是类型构造器；只有首字母大写的导入符号
+                // 才可能是 Java 类。否则 jsonStringify/currentTimeMillis 这类
+                // 函数名会逐级触发 java.lang/java.util 的失败类加载。
                 NovaType importedType = funcSym.getKind() == SymbolKind.IMPORT
+                        && looksLikeTypeName(funcName)
                         ? typeResolver.resolveTypeNameReference(funcName) : null;
                 if (importedType instanceof JavaClassNovaType) {
                     JavaTypeDescriptor descriptor = ((JavaClassNovaType) importedType).getDescriptor();
@@ -4108,7 +4112,10 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
                     checker.checkCallArgTypes(node, extension);
                     setNovaType(node, extension.getResolvedNovaType());
                 } else {
-                    NovaType typeCallee = typeResolver.resolveTypeNameReference(funcName);
+                    // 未知小写标识符通常是全局函数或宿主注入函数，不是 Java
+                    // 构造器；按类型名探测只会扩散出大量 java.lang/java.util 失败查询。
+                    NovaType typeCallee = looksLikeTypeName(funcName)
+                            ? typeResolver.resolveTypeNameReference(funcName) : null;
                     if (typeCallee instanceof JavaClassNovaType) {
                         JavaTypeDescriptor descriptor = ((JavaClassNovaType) typeCallee).getDescriptor();
                         JavaTypeDescriptor.JavaExecutableDescriptor ctor = descriptor != null

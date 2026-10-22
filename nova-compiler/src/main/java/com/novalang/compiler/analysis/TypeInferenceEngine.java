@@ -84,6 +84,11 @@ public final class TypeInferenceEngine {
         if (result == null && knownTypeNames.contains(simpleName)) {
             result = new ClassNovaType(simpleName, false);
         }
+        // 编译器生成的 lambda/匿名类型参数使用 $0、$1 等名字，它们不是
+        // 宿主 Java 类型；直接按 Nova 类回退，避免无意义的类加载探测。
+        if (result == null && simpleName.startsWith("$")) {
+            result = new ClassNovaType(simpleName, false);
+        }
         if (result == null) {
             JavaTypeDescriptor javaType = JavaTypeOracle.get().resolve(simpleName);
             if (javaType != null) {

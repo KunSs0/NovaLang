@@ -348,13 +348,24 @@ public final class TypeResolver implements TypeRefVisitor<NovaType> {
 
     public boolean knowsTypeName(String name) {
         name = normalizeTypeName(name);
-        return name != null &&
-                (lookupTypeParam(name) != null
-                        || NovaTypes.fromName(name) != null
-                        || typeAliases.containsKey(name)
-                        || resolveVisibleNovaTypeName(name) != null
-                        || resolveImportedJavaType(name) != null
-                        || javaTypeOracle.resolve(name) != null);
+        if (name == null) {
+            return false;
+        }
+        if (lookupTypeParam(name) != null
+                || NovaTypes.fromName(name) != null
+                || typeAliases.containsKey(name)
+                || resolveVisibleNovaTypeName(name) != null) {
+            return true;
+        }
+        // 导入的函数别名通常是 camelCase；Java 类型名按约定首字母大写。
+        // 未限定的小写名称不应触发 java.lang/java.util 等前缀探测；
+        // java.lang.StringBuilder 这类全限定名仍按原逻辑解析。
+        boolean qualified = name.indexOf('.') >= 0;
+        if (!qualified && !Character.isUpperCase(name.charAt(0))) {
+            return false;
+        }
+        return resolveImportedJavaType(name) != null
+                || javaTypeOracle.resolve(name) != null;
     }
 
     private String resolveVisibleNovaTypeName(String name) {
