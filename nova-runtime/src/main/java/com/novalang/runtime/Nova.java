@@ -1202,6 +1202,31 @@ public final class Nova {
         }
     }
 
+    /**
+     * 从唯一物理入口递归编译依赖图，返回可跨编译实例复用的链接字节码。
+     *
+     * <p>与 {@link #compileToBytecode(Path, CompilationConfig)} 使用同一模块解析和链接规则，
+     * 但不加载运行期类，供组件工厂按作用域重复装载。</p>
+     *
+     * @param entryFile 唯一入口文件
+     * @param config 可选编译元数据
+     * @return className 到 bytecode 的映射
+     */
+    public Map<String, byte[]> compileToBytecodeArtifact(Path entryFile, CompilationConfig config) {
+        return new NovaCompiler().compileArtifact(this, entryFile, config);
+    }
+
+    /**
+     * 从宿主源码入口递归编译依赖图，返回可跨编译实例复用的链接字节码。
+     *
+     * @param entry 唯一源码入口
+     * @param config 可选编译元数据
+     * @return className 到 bytecode 的映射
+     */
+    public Map<String, byte[]> compileToBytecodeArtifact(SourceUnit entry, CompilationConfig config) {
+        return new NovaCompiler().compileArtifact(this, entry, config);
+    }
+
     /** 编译由宿主组织的 AST；模块导入必须由调用方完成解析与链接。 */
     public Map<String, byte[]> compileToBytecodeArtifact(Program program) {
         Builtins.ensureJavaClassRegistered();

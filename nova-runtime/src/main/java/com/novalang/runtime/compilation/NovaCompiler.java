@@ -48,6 +48,33 @@ public final class NovaCompiler {
     }
 
     /**
+     * 从物理入口递归编译完整依赖图，返回可重复装载的链接字节码。
+     *
+     * <p>结果包含入口及全部可达模块的类，可直接交给
+     * {@link BytecodeArtifactCache.BytecodeArtifact} 建立隔离组件工厂。</p>
+     *
+     * @param nova 提供绑定和 Java 类型的编译门面
+     * @param entryFile 唯一入口文件
+     * @param config 可选编译元数据
+     * @return className 到 bytecode 的映射
+     */
+    public Map<String, byte[]> compileArtifact(Nova nova, Path entryFile, CompilationConfig config) {
+        return compileGraphArtifact(nova, new ModuleResolver().resolve(entryFile, config), config);
+    }
+
+    /**
+     * 从宿主源码入口递归编译完整依赖图，返回可重复装载的链接字节码。
+     *
+     * @param nova 提供绑定和 Java 类型的编译门面
+     * @param entry 唯一源码入口
+     * @param config 可选编译元数据
+     * @return className 到 bytecode 的映射
+     */
+    public Map<String, byte[]> compileArtifact(Nova nova, SourceUnit entry, CompilationConfig config) {
+        return compileGraphArtifact(nova, new ModuleResolver().resolve(entry, config), config);
+    }
+
+    /**
      * 按依赖图链接字节码并建立一个程序的函数和初始化索引。
      * @param nova 编译门面
      * @param graph 单入口依赖图
@@ -127,6 +154,53 @@ public final class NovaCompiler {
             // 编译器恢复宿主设置；返回程序保留自己的类加载器，不修改 Nova 的后续编译。
             nova.setScriptClassLoader(previousLoader);
         }
+    }
+
+    /**
+     * 按依赖图编译全部模块，保留每组字节码而不创建运行期 CompiledNova。
+     *
+     * <p>依赖组的导出符号仍通过临时类加载器链接，因此后续组可以正常引用跨模块类型、
+     * 对象和函数；最终合并后的字节码由调用方按代际装载为隔离作用域。</p>
+     *
+     * @param nova 编译门面
+     * @param graph 单入口依赖图
+     * @param config 编译元数据
+     * @return 全部可达模块的 className 到 bytecode 映射
+     */
+    private Map<String, byte[]> compileGraphArtifact(Nova nova, ModuleGraph graph, CompilationConfig config) {
+        if (nova == null) {
+            throw new IllegalArgumentException("Nova compiler facade is required");
+        }
+        String identity = graph.getEntryModuleId() + "/" + config.getName();
+        CompilationPlan plan = new CompilationPlanner().build(graph, identity);
+        CompilationGroupBuilder builder = new CompilationGroupBuilder();
+        ClassLoader previousLoader = nova.getScriptClassLoader();
+        ClassLoader hostLoader = previousLoader == null ? Nova.class.getClassLoader() : previousLoader;
+        CompilationClassLoader loader = new CompilationClassLoader(hostLoader);
+        Map<String, CompilationExports> exportsByGroup = new LinkedHashMap<String, CompilationExports>();
+        Map<String, byte[]> allBytecode = new LinkedHashMap<String, byte[]>();
+        try {
+            nova.setScriptClassLoader(loader);
+            for (CompilationPlan.Group group : plan.getGroups()) {
+                CompilationBundle bundle = builder.build(graph, group, exportsByGroup);
+                try {
+                    Map<String, byte[]> compiled = nova.compileToBytecodeArtifact(bundle.parse(group.getId()));
+                    Map<String, Class<?>> classes = loader.install(compiled);
+                    allBytecode.putAll(compiled);
+                    CompilationExports exports = exportedSymbols(group, classes,
+                            builder.collectJavaImportDeclarations(graph, group));
+                    bundle.exportExtensions(group.getPackageName(), exports, classes);
+                    exportsByGroup.put(group.getId(), exports);
+                } catch (RuntimeException failure) {
+                    throw bundle.getSourceMap().mapFailure(
+                            "Failed to compile module group '" + group.getId() + "' (modules: "
+                                    + group.getModuleIds() + ")", failure);
+                }
+            }
+        } finally {
+            nova.setScriptClassLoader(previousLoader);
+        }
+        return allBytecode;
     }
 
     /**
