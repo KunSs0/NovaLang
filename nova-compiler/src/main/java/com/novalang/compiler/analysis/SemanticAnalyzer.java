@@ -84,6 +84,7 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
     private boolean rejectUnknownGlobalCalls = false;
     private int loopDepth = 0;
     private int lambdaDepth = 0;
+    private NovaType currentFunctionReturnType;
 
     public SemanticAnalyzer() {
         this.symbolTable = new SymbolTable();
@@ -2930,7 +2931,13 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
                 pSym.setResolvedNovaType(pNovaType);
                 funScope.define(pSym);
             }
-            node.getBody().accept(this, ctx);
+            NovaType previousFunctionReturnType = currentFunctionReturnType;
+            currentFunctionReturnType = returnNovaType;
+            try {
+                node.getBody().accept(this, ctx);
+            } finally {
+                currentFunctionReturnType = previousFunctionReturnType;
+            }
             if (node instanceof InlineEntryDecl && node.getBody() instanceof Block) {
                 Block body = (Block) node.getBody();
                 List<NovaType> actualReturns = new ArrayList<NovaType>();
@@ -3766,7 +3773,13 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
 
     @Override
     public Void visitReturnStmt(ReturnStmt node, Void ctx) {
-        if (node.getValue() != null) node.getValue().accept(this, ctx);
+        if (node.getValue() != null) {
+            if (currentFunctionReturnType != null) {
+                analyzeExpressionWithExpectedType(node.getValue(), currentFunctionReturnType, ctx);
+            } else {
+                node.getValue().accept(this, ctx);
+            }
+        }
         return null;
     }
 

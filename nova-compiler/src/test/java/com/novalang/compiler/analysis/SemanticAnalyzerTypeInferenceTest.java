@@ -137,6 +137,13 @@ class SemanticAnalyzerTypeInferenceTest {
         }
 
         @Test
+        @DisplayName("函数返回类型反向推断 emptyList() → List<String>")
+        void emptyListUsesFunctionReturnType() {
+            AnalysisResult r = analyze("fun tags(): List<String> {\n    return emptyList()\n}");
+            assertNoDiagnostics(r);
+        }
+
+        @Test
         @DisplayName("声明类型反向推断 mutableListOf() → List<Int>")
         void mutableListOfEmptyUsesDeclaredType() {
             AnalysisResult r = analyze("val list: List<Int> = mutableListOf()");
