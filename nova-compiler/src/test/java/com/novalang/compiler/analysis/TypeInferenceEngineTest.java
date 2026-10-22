@@ -12,6 +12,7 @@ import org.junit.jupiter.api.Test;
 import java.util.Arrays;
 import java.util.IdentityHashMap;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -55,5 +56,34 @@ class TypeInferenceEngineTest {
         assertNotNull(inferred, "Expected type-specific registry methods to resolve");
         assertEquals("Boolean", inferred.toDisplayString(),
                 "Type-specific members should resolve before inherited Any members");
+    }
+
+    @Test
+    @DisplayName("builtin Nova type names must not be resolved through the Java classloader")
+    void builtinNovaTypeNamesShouldNotTouchJavaClassLoader() {
+        AtomicInteger classLoaderCalls = new AtomicInteger();
+        ClassLoader countingLoader = new ClassLoader(null) {
+            @Override
+            protected Class<?> loadClass(String name, boolean resolve) throws ClassNotFoundException {
+                classLoaderCalls.incrementAndGet();
+                throw new ClassNotFoundException(name);
+            }
+        };
+
+        Thread thread = Thread.currentThread();
+        ClassLoader previousLoader = thread.getContextClassLoader();
+        thread.setContextClassLoader(countingLoader);
+        try {
+            TypeInferenceEngine engine = newEngine();
+            for (NovaTypeRegistry.TypeInfo info : NovaTypeRegistry.getBuiltinTypes()) {
+                assertNotNull(engine.resolveNovaTypeFromName(info.name),
+                        "Builtin Nova type should resolve locally: " + info.name);
+            }
+        } finally {
+            thread.setContextClassLoader(previousLoader);
+        }
+
+        assertEquals(0, classLoaderCalls.get(),
+                "Builtin Nova types are compiler-known names and must not trigger Class.forName");
     }
 }

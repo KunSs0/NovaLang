@@ -6,16 +6,39 @@ import com.novalang.runtime.NovaTypeRegistry;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * 表达式类型推断引擎：从表达式推断 NovaType，不涉及泛型统一。
  */
 public final class TypeInferenceEngine {
 
+    /**
+     * Nova 内置类型名称集合。
+     *
+     * <p>这些名称（List、Map、Future 等）由 NovaTypeRegistry 定义，不是宿主 Java 类。
+     * 内置函数签名解析必须先命中这里，否则会对每个容器类型发起多次 Class.forName
+     * 失败查询；在 Paper 的插件类加载器上，这类失败查询会遍历全部插件依赖图，
+     * 是语义分析阶段的主要耗时来源。</p>
+     */
+    private static final Set<String> NOVA_BUILTIN_TYPE_NAMES = buildNovaBuiltinTypeNames();
+
     private final Map<Expression, NovaType> exprNovaTypeMap;
     private final TypeUnifier typeUnifier;
+
+    /** 收集 NovaTypeRegistry 声明的内置类型，并补充未注册但会出现在内建签名中的类型。 */
+    private static Set<String> buildNovaBuiltinTypeNames() {
+        Set<String> names = new HashSet<String>();
+        for (NovaTypeRegistry.TypeInfo info : NovaTypeRegistry.getBuiltinTypes()) {
+            names.add(info.name);
+        }
+        names.add("ClassInfo");
+        names.add("NovaTask");
+        return Collections.unmodifiableSet(names);
+    }
 
     public TypeInferenceEngine(Map<Expression, NovaType> exprNovaTypeMap, TypeUnifier typeUnifier) {
         this.exprNovaTypeMap = exprNovaTypeMap;
@@ -34,6 +57,9 @@ public final class TypeInferenceEngine {
         String simpleName = ltIdx > 0 ? base.substring(0, ltIdx) : base;
 
         NovaType result = NovaTypes.fromName(simpleName);
+        if (result == null && NOVA_BUILTIN_TYPE_NAMES.contains(simpleName)) {
+            result = new ClassNovaType(simpleName, false);
+        }
         if (result == null) {
             JavaTypeDescriptor javaType = JavaTypeOracle.get().resolve(simpleName);
             if (javaType != null) {
