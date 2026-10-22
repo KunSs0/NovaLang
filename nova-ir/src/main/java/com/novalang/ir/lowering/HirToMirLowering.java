@@ -17,6 +17,7 @@ import com.novalang.ir.hir.expr.*;
 import com.novalang.ir.hir.stmt.*;
 import com.novalang.compiler.hirtype.*;
 import com.novalang.ir.mir.*;
+import com.novalang.ir.profile.NovaCompileProfile;
 import com.novalang.runtime.resolution.MethodNameCanonicalizer;
 import com.novalang.runtime.resolution.MethodSemantics;
 import com.novalang.runtime.resolution.JavaOverloadResolver;
@@ -147,6 +148,19 @@ public class HirToMirLowering {
 
     // 循环上下文栈：break/continue 跳转目标
     private final Deque<LoopContext> loopStack = new ArrayDeque<>();
+    /**
+     * 表达式降级递归深度。
+     *
+     * <p>仅统计最外层表达式，避免嵌套表达式的阶段耗时被重复累加。</p>
+     */
+    private int expressionProfileDepth;
+
+    /**
+     * 参数列表降级递归深度。
+     *
+     * <p>避免嵌套调用的参数阶段重复累加。</p>
+     */
+    private int argumentProfileDepth;
 
     // 块作用域深度：>0 时跳过 $ENV|defineVal/defineVar（块内变量仅通过寄存器访问）
     private int blockScopeDepth = 0;
@@ -258,8 +272,26 @@ public class HirToMirLowering {
     }
 
     private Class<?> resolveJavaClass(String name) {
-        if (javaTypeCache.containsKey(name)) return javaTypeCache.get(name);
+        long profileStart = NovaCompileProfile.start();
+        try {
+            return resolveJavaClassImpl(name);
+        } finally {
+            NovaCompileProfile.add("hir-to-mir.java.resolve", profileStart);
+        }
+    }
+
+    private Class<?> resolveJavaClassImpl(String name) {
         String importedName = javaImports.get(name);
+        // 已声明的 Nova 类型优先于宿主 Java 类型；当前编译单元或依赖模块已经
+        // 知道该类型时，继续 Class.forName 只会对每个前缀制造一次失败探测。
+        if (importedName == null && isKnownNovaTypeName(name)) {
+            NovaCompileProfile.increment("hir-to-mir.java.known-nova");
+            return null;
+        }
+        if (javaTypeCache.containsKey(name)) {
+            NovaCompileProfile.increment("hir-to-mir.java.local-cache-hit");
+            return javaTypeCache.get(name);
+        }
         String javaName = importedName != null
                 ? importedName.replace('/', '.')
                 : name.replace('/', '.');
@@ -269,6 +301,7 @@ public class HirToMirLowering {
         ClassLoader contextLoader = Thread.currentThread().getContextClassLoader();
         Class<?> localClass = tryLoadLocalJavaClass(javaName, contextLoader);
         if (localClass != null) {
+            NovaCompileProfile.increment("hir-to-mir.java.local-load");
             javaTypeCache.put(name, localClass);
             cacheResolvedJavaType(contextLoader, javaName, localClass);
             return localClass;
@@ -287,10 +320,12 @@ public class HirToMirLowering {
         if (sharedResolution != null) {
             Class<?> sharedClass = sharedResolution.getJavaClass();
             if (sharedClass != null) {
+                NovaCompileProfile.increment("hir-to-mir.java.shared-hit");
                 javaTypeCache.put(name, sharedClass);
                 return sharedClass;
             }
             if (sharedResolution.isNegative() && cacheNegativeResolution) {
+                NovaCompileProfile.increment("hir-to-mir.java.shared-negative");
                 javaTypeCache.put(name, null);
                 return null;
             }
@@ -300,15 +335,18 @@ public class HirToMirLowering {
         String[] prefixes = javaName.indexOf('.') >= 0
                 ? new String[]{""}
                 : JAVA_PREFIXES;
+        NovaCompileProfile.increment("hir-to-mir.java.probe");
         for (String prefix : prefixes) {
             String candidate = prefix + javaName;
             while (candidate != null) {
                 try {
                     Class<?> cls = Class.forName(candidate, false, loader);
+                    NovaCompileProfile.increment("hir-to-mir.java.probe-success");
                     javaTypeCache.put(name, cls);
                     cacheResolvedJavaType(effectiveLoader, javaName, cls);
                     return cls;
                 } catch (ClassNotFoundException ignored) {
+                    NovaCompileProfile.increment("hir-to-mir.java.probe-miss");
                     int separator = candidate.lastIndexOf('.');
                     if (separator < prefix.length()) {
                         candidate = null;
@@ -319,6 +357,8 @@ public class HirToMirLowering {
                 }
             }
         }
+        NovaCompileProfile.increment("hir-to-mir.java.unresolved");
+        NovaCompileProfile.increment("hir-to-mir.java.unresolved-name:" + javaName);
         javaTypeCache.put(name, null);
         if (cacheNegativeResolution) {
             putSharedJavaType(effectiveLoader, javaName, new SharedJavaTypeResolution(null));
@@ -559,6 +599,7 @@ public class HirToMirLowering {
         currentPackagePrefix = packagePrefix;
         moduleClassName = packagePrefix + "$Module";
 
+        long profileStart = NovaCompileProfile.start();
         // 收集 Java import 映射 + Nova import 类名
         // 收集用于运行时注册的 import 元数据
         Map<String, String> javaImportsMeta = new HashMap<>();
@@ -666,13 +707,18 @@ public class HirToMirLowering {
             }
         }
 
+        NovaCompileProfile.add("hir-to-mir.imports", profileStart);
+
+        profileStart = NovaCompileProfile.start();
         // 提升嵌套类定义到顶层（支持函数/方法体内的类声明）
         hoistNestedClasses(hirModule.getDeclarations());
 
         // 类型必须先于描述符、继承关系和方法体完成预声明，确保前向引用不会被
         // typeToInternalName 误判为 Java 类型并触发失败的 Class.forName 探测。
         predeclareNovaTypes(hirModule);
+        NovaCompileProfile.add("hir-to-mir.predeclare", profileStart);
 
+        profileStart = NovaCompileProfile.start();
         // 第一遍：收集顶层函数名、类名、方法描述符、类型别名
         // 预扫描 main() 体内的顶层字段（scriptMode 下 var/val 声明被合成到 main 中）
         if (scriptMode) {
@@ -823,9 +869,12 @@ public class HirToMirLowering {
             }
         }
 
+        NovaCompileProfile.add("hir-to-mir.prepass", profileStart);
+
         List<MirClass> classes = new ArrayList<>();
         List<MirFunction> topLevel = new ArrayList<>();
 
+        profileStart = NovaCompileProfile.start();
         for (HirDecl declaration : hirModule.getDeclarations()) {
             if (declaration instanceof HirField) {
                 HirField field = (HirField) declaration;
@@ -838,13 +887,17 @@ public class HirToMirLowering {
         for (HirDecl decl : hirModule.getDeclarations()) {
             if (decl instanceof HirClass) {
                 currentEnclosingClassName = localClassInternalName(decl.getName());
+                long classStart = NovaCompileProfile.start();
                 classes.add(lowerClass((HirClass) decl));
+                NovaCompileProfile.add("hir-to-mir.class", classStart);
             } else if (decl instanceof HirFunction) {
                 currentEnclosingClassName = moduleClassName;
                 HirFunction hf = (HirFunction) decl;
                 if (hf.isExtensionFunction()) {
                     // 顶层扩展函数 → 静态方法 + 注册到扩展函数表
+                    long functionStart = NovaCompileProfile.start();
                     MirFunction extFunc = lowerExtensionFunction(hf, moduleClassName);
+                    NovaCompileProfile.add("hir-to-mir.function", functionStart);
                     topLevel.add(extFunc);
                     extensionMethods.put(hf.getName(), moduleClassName);
                     extensionDescriptors.put(hf.getName(), extFunc.getOverrideDescriptor());
@@ -854,7 +907,9 @@ public class HirToMirLowering {
                     extensionFunctionInfos.add(new MirModule.ExtensionFunctionInfo(
                             receiverTypeName, hf.getName()));
                 } else {
+                    long functionStart = NovaCompileProfile.start();
                     MirFunction func = lowerFunction(hf, null);
+                    NovaCompileProfile.add("hir-to-mir.function", functionStart);
                     String tlDesc = topLevelFuncDescs.get(decl.getName());
                     if (tlDesc != null) {
                         func.setOverrideDescriptor(tlDesc);
@@ -877,6 +932,9 @@ public class HirToMirLowering {
             }
         }
 
+        NovaCompileProfile.add("hir-to-mir.lower-decls", profileStart);
+
+        profileStart = NovaCompileProfile.start();
         // 添加匿名类
         classes.addAll(additionalClasses);
 
@@ -931,6 +989,7 @@ public class HirToMirLowering {
             }
             module.setFileAnnotations(fileAnns);
         }
+        NovaCompileProfile.add("hir-to-mir.assemble", profileStart);
 
         return module;
     }
@@ -1024,7 +1083,9 @@ public class HirToMirLowering {
                 extensionDescriptors.put(m.getName(), extFunc.getOverrideDescriptor());
             } else {
                 boolean isStatic = m.getModifiers().contains(Modifier.STATIC);
+                long functionStart = NovaCompileProfile.start();
                 MirFunction func = lowerFunction(m, isStatic ? null : className);
+                NovaCompileProfile.add("hir-to-mir.function", functionStart);
                 // 设置类型化描述符（跳过构造器和类初始化器）
                 if (!m.getName().startsWith("<")) {
                     Map<String, String> classDescs = novaMethodDescs.get(className);
@@ -1421,7 +1482,9 @@ public class HirToMirLowering {
         if (hirFunc.getBody() != null) {
             int savedScopeDepth = blockScopeDepth;
             blockScopeDepth = 0;
+            long bodyStart = NovaCompileProfile.start();
             int result = lowerNode(hirFunc.getBody(), builder);
+            NovaCompileProfile.add("hir-to-mir.function-body", bodyStart);
             blockScopeDepth = savedScopeDepth;
             // 确保最后有 return
             if (!builder.getCurrentBlock().hasTerminator()) {
@@ -2891,6 +2954,20 @@ public class HirToMirLowering {
 
     private int lowerExpr(Expression expr, MirBuilder builder) {
         if (expr == null) return -1;
+        boolean profileTop = NovaCompileProfile.enabled() && expressionProfileDepth == 0;
+        long profileStart = profileTop ? NovaCompileProfile.start() : 0L;
+        expressionProfileDepth++;
+        try {
+            return lowerExprImpl(expr, builder);
+        } finally {
+            expressionProfileDepth--;
+            if (profileTop) {
+                NovaCompileProfile.add("hir-to-mir.expr." + expr.getClass().getSimpleName(), profileStart);
+            }
+        }
+    }
+
+    private int lowerExprImpl(Expression expr, MirBuilder builder) {
         SourceLocation loc = expr.getLocation();
 
         if (expr instanceof Literal) return lowerLiteral((Literal) expr, builder);
@@ -5148,7 +5225,12 @@ public class HirToMirLowering {
      * 方法调用 target.method(args) → INVOKE_VIRTUAL / INVOKESTATIC
      */
     private int lowerMethodCall(MemberExpr fieldAccess, HirCall expr, MirBuilder builder) {
-        { int r = tryStaticOrImportMethodCall(fieldAccess, expr, builder); if (r >= 0) return r; }
+        {
+            long staticStart = NovaCompileProfile.start();
+            int r = tryStaticOrImportMethodCall(fieldAccess, expr, builder);
+            NovaCompileProfile.add("hir-to-mir.call.static-import", staticStart);
+            if (r >= 0) return r;
+        }
         SourceLocation loc = expr.getLocation();
         int target = lowerExpr(fieldAccess.getTarget(), builder);
         String methodName = resolveMethodAlias(fieldAccess.getMember());
@@ -5194,7 +5276,10 @@ public class HirToMirLowering {
         }
         { int r = lowerDataCopyCall(target, methodName, args, expr, builder, loc); if (r >= 0) return r; }
         { int r = tryComponentNCall(target, methodName, args, builder, loc); if (r >= 0) return r; }
-        return lowerStandardMethodCall(target, methodName, args, expr.getArgs(), builder, loc);
+        long standardStart = NovaCompileProfile.start();
+        int standardResult = lowerStandardMethodCall(target, methodName, args, expr.getArgs(), builder, loc);
+        NovaCompileProfile.add("hir-to-mir.call.standard", standardStart);
+        return standardResult;
     }
 
     /**
@@ -5233,6 +5318,20 @@ public class HirToMirLowering {
     }
 
     private int[] lowerArgs(List<Expression> argExprs, MirBuilder builder) {
+        boolean profileTop = NovaCompileProfile.enabled() && argumentProfileDepth == 0;
+        long profileStart = profileTop ? NovaCompileProfile.start() : 0L;
+        argumentProfileDepth++;
+        try {
+            return lowerArgsImpl(argExprs, builder);
+        } finally {
+            argumentProfileDepth--;
+            if (profileTop) {
+                NovaCompileProfile.add("hir-to-mir.call.args", profileStart);
+            }
+        }
+    }
+
+    private int[] lowerArgsImpl(List<Expression> argExprs, MirBuilder builder) {
         int[] args = new int[argExprs.size()];
         for (int i = 0; i < args.length; i++) args[i] = lowerExpr(argExprs.get(i), builder);
         return args;
@@ -6525,6 +6624,8 @@ public class HirToMirLowering {
                 String localName = localClassInternalName(name);
                 if (classNames.contains(localName) || interfaceNames.contains(localName)) {
                     name = localName;
+                } else if (externalTypeNames.contains(name) || externalTypeNames.contains(localName)) {
+                    // 外部 Nova 类型在当前模块中尚未输出字节码，不能当成 Java 类探测。
                 } else {
                     String boxed = NovaTypeNames.toBoxedInternalName(name);
                     if (boxed != null) return MirType.ofObject(boxed, type.isNullable());
@@ -7441,6 +7542,29 @@ public class HirToMirLowering {
                 || interfaceNames.contains(owner)
                 || externalTypeNames.contains(owner)
                 || enumClassNames.contains(owner);
+    }
+
+    /**
+     * 判断名称是否指向当前编译单元或依赖模块中已声明的 Nova 类型。
+     *
+     * <p>HIR 中类型名可能使用点号或斜杠格式，简单名还可能属于当前包。
+     * 这些名称在宿主 ClassLoader 中通常不存在，不能反复进入 Java 类型探测。</p>
+     */
+    private boolean isKnownNovaTypeName(String name) {
+        if (name == null || name.isEmpty()) {
+            return false;
+        }
+        if (isKnownNovaType(name)) {
+            return true;
+        }
+        String internalName = name.replace('.', '/');
+        if (!internalName.equals(name) && isKnownNovaType(internalName)) {
+            return true;
+        }
+        if (name.indexOf('/') < 0 && name.indexOf('.') < 0) {
+            return isKnownNovaType(localClassInternalName(name));
+        }
+        return false;
     }
 
     private String localClassInternalName(String simpleName) {
