@@ -2,6 +2,7 @@ package com.novalang.compiler.analysis;
 
 import com.novalang.compiler.analysis.contracts.ContractEngine;
 import com.novalang.compiler.analysis.types.*;
+import com.novalang.compiler.profile.SemanticProfile;
 import com.novalang.compiler.ast.*;
 import com.novalang.compiler.ast.decl.*;
 import com.novalang.compiler.ast.expr.*;
@@ -87,6 +88,7 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
     private NovaType currentFunctionReturnType;
 
     public SemanticAnalyzer() {
+        long profileStart = SemanticProfile.start();
         this.symbolTable = new SymbolTable();
         this.currentScope = symbolTable.getGlobalScope();
         this.exprNovaTypeMap = new HashMap<Expression, NovaType>();
@@ -105,7 +107,10 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
         this.inference = new TypeInferenceEngine(exprNovaTypeMap, unifier);
         this.checker = new SemanticChecker(diagnostics, superTypeRegistry, exprNovaTypeMap);
         this.contractEngine = new ContractEngine(unifier, exprNovaTypeMap);
+        long builtinsStart = SemanticProfile.start();
         registerBuiltins();
+        SemanticProfile.add("semantic.constructor.builtins", builtinsStart);
+        SemanticProfile.add("semantic.constructor", profileStart);
     }
 
     /**
@@ -558,9 +563,17 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
 
     /** 分析入口 */
     public AnalysisResult analyze(Program program) {
+        long profileStart = SemanticProfile.start();
         predeclareImportTypes(program);
+        SemanticProfile.add("semantic.imports", profileStart);
+
+        profileStart = SemanticProfile.start();
         predeclareTopLevelTypes(program);
+        SemanticProfile.add("semantic.predeclare", profileStart);
+
+        profileStart = SemanticProfile.start();
         program.accept(this, null);
+        SemanticProfile.add("semantic.visit", profileStart);
         return new AnalysisResult(symbolTable, diagnostics, exprNovaTypeMap);
     }
 
@@ -568,13 +581,23 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
      * 分析 Program 及顶层语句（容错解析时，非声明语句存在于 ParseResult.topLevelStatements）
      */
     public AnalysisResult analyze(Program program, List<Statement> topLevelStatements) {
+        long profileStart = SemanticProfile.start();
         predeclareImportTypes(program);
+        SemanticProfile.add("semantic.imports", profileStart);
+
+        profileStart = SemanticProfile.start();
         predeclareTopLevelTypes(program);
+        SemanticProfile.add("semantic.predeclare", profileStart);
+
+        profileStart = SemanticProfile.start();
         program.accept(this, null);
+        SemanticProfile.add("semantic.visit", profileStart);
         if (topLevelStatements != null) {
+            profileStart = SemanticProfile.start();
             for (Statement stmt : topLevelStatements) {
                 stmt.accept(this, null);
             }
+            SemanticProfile.add("semantic.top-level-statements", profileStart);
         }
         return new AnalysisResult(symbolTable, diagnostics, exprNovaTypeMap);
     }
@@ -2534,7 +2557,9 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
                 String qualifiedName = qualifyTopLevelTypeName(packageName, classDecl.getName());
                 typeResolver.registerKnownType(classDecl.getName());
                 typeResolver.registerKnownType(qualifiedName);
+                long classStart = SemanticProfile.start();
                 predeclareTopLevelClassSymbol(classDecl);
+                SemanticProfile.add("semantic.predeclare.class-symbol", classStart);
                 if (classDecl.getTypeParams() != null && !classDecl.getTypeParams().isEmpty()) {
                     typeResolver.registerTypeDeclaration(classDecl.getName(), classDecl.getTypeParams());
                     typeResolver.registerTypeDeclaration(qualifiedName, classDecl.getTypeParams());
@@ -2552,7 +2577,9 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
                 String qualifiedName = qualifyTopLevelTypeName(packageName, declaration.getName());
                 typeResolver.registerKnownType(declaration.getName());
                 typeResolver.registerKnownType(qualifiedName);
+                long objectStart = SemanticProfile.start();
                 predeclareTopLevelObjectSymbol((ObjectDecl) declaration);
+                SemanticProfile.add("semantic.predeclare.object-symbol", objectStart);
             } else if (declaration instanceof EnumDecl) {
                 String qualifiedName = qualifyTopLevelTypeName(packageName, declaration.getName());
                 typeResolver.registerKnownType(declaration.getName());
@@ -2688,19 +2715,30 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
 
     @Override
     public Void visitProgram(Program node, Void ctx) {
+        long profileStart = SemanticProfile.start();
         for (ImportDecl imp : node.getImports()) {
             imp.accept(this, ctx);
         }
+        SemanticProfile.add("semantic.visit.imports", profileStart);
+
+        profileStart = SemanticProfile.start();
         for (Declaration declaration : node.getDeclarations()) {
             if (declaration instanceof PropertyDecl && ((PropertyDecl) declaration).isExtensionProperty()) {
                 PropertyDecl property = (PropertyDecl) declaration;
                 scriptExtensionProperties.put(property, typeResolver.resolve(property.getType()));
             }
         }
+        SemanticProfile.add("semantic.visit.extension-properties", profileStart);
+
+        profileStart = SemanticProfile.start();
         predeclareFunctions(node.getDeclarations(), currentScope, null);
+        SemanticProfile.add("semantic.visit.predeclare-functions", profileStart);
+
+        profileStart = SemanticProfile.start();
         for (Declaration decl : node.getDeclarations()) {
             decl.accept(this, ctx);
         }
+        SemanticProfile.add("semantic.visit.declarations", profileStart);
         return null;
     }
 

@@ -1,5 +1,8 @@
 package com.novalang.compiler.analysis.types;
 
+import com.novalang.compiler.profile.SemanticProfile;
+import com.novalang.runtime.host.JavaTypeLookupContext;
+
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.List;
@@ -27,8 +30,20 @@ public final class JavaTypeOracle {
 
     public JavaTypeDescriptor resolve(String typeName) {
         if (typeName == null || typeName.isEmpty()) return null;
-        ClassLoader loader = contextClassLoader();
-        CacheKey requestedKey = new CacheKey(loader, typeName);
+        long profileStart = SemanticProfile.start();
+        try {
+            return resolveInternal(typeName);
+        } finally {
+            SemanticProfile.add("semantic.java.resolve", profileStart);
+        }
+    }
+
+    private JavaTypeDescriptor resolveInternal(String typeName) {
+        ClassLoader contextLoader = rawContextClassLoader();
+        // 本次编译生成的依赖类必须走 CompilationClassLoader；宿主 Java 类型走稳定的
+        // 父加载器，避免每个入口都重复执行 Paper 插件类加载器查询。
+        ClassLoader lookupLoader = lookupLoader(contextLoader, typeName);
+        CacheKey requestedKey = new CacheKey(lookupLoader, typeName);
         JavaTypeDescriptor cached = descriptorCache.get(requestedKey);
         if (cached != null) {
             return cached;
@@ -37,7 +52,7 @@ public final class JavaTypeOracle {
             return null;
         }
 
-        JavaTypeDescriptor descriptor = resolveUncached(typeName, loader);
+        JavaTypeDescriptor descriptor = resolveUncached(typeName, contextLoader, lookupLoader);
         if (descriptor != null) {
             CacheKey actualKey = new CacheKey(descriptor.getJavaClass().getClassLoader(),
                     descriptor.getQualifiedName());
@@ -65,12 +80,13 @@ public final class JavaTypeOracle {
         return descriptor;
     }
 
-    private JavaTypeDescriptor resolveUncached(String typeName, ClassLoader loader) {
-        Class<?> javaClass = loadClass(typeName, loader);
+    private JavaTypeDescriptor resolveUncached(String typeName, ClassLoader contextLoader,
+                                               ClassLoader lookupLoader) {
+        Class<?> javaClass = loadClass(typeName, contextLoader, lookupLoader);
         if (javaClass == null && typeName.indexOf('.') < 0) {
             String[] prefixes = { "java.lang.", "java.util.", "java.util.concurrent.", "java.util.function." };
             for (String prefix : prefixes) {
-                javaClass = loadClass(prefix + typeName, loader);
+                javaClass = loadClass(prefix + typeName, contextLoader, lookupLoader);
                 if (javaClass != null) break;
             }
         }
@@ -79,25 +95,51 @@ public final class JavaTypeOracle {
         return new JavaTypeDescriptor(javaClass, samMethod);
     }
 
-    private Class<?> loadClass(String qualifiedName, ClassLoader loader) {
-        String candidate = qualifiedName;
-        while (candidate != null) {
-            try {
-                return Class.forName(candidate, false, loader);
-            } catch (ClassNotFoundException ignored) {
-                int separator = candidate.lastIndexOf('.');
-                if (separator < 0) {
-                    candidate = null;
-                } else {
-                    candidate = candidate.substring(0, separator)
-                            + '$' + candidate.substring(separator + 1);
+    private Class<?> loadClass(String qualifiedName, ClassLoader contextLoader, ClassLoader lookupLoader) {
+        long profileStart = SemanticProfile.start();
+        try {
+            String candidate = qualifiedName;
+            while (candidate != null) {
+                ClassLoader candidateLoader = isLocalClass(contextLoader, candidate)
+                        ? contextLoader
+                        : lookupLoader;
+                try {
+                    return Class.forName(candidate, false, candidateLoader);
+                } catch (ClassNotFoundException ignored) {
+                    int separator = candidate.lastIndexOf('.');
+                    if (separator < 0) {
+                        candidate = null;
+                    } else {
+                        candidate = candidate.substring(0, separator)
+                                + '$' + candidate.substring(separator + 1);
+                    }
                 }
             }
+            return null;
+        } finally {
+            SemanticProfile.add("semantic.java.class-load", profileStart);
         }
-        return null;
     }
 
-    private ClassLoader contextClassLoader() {
+    private ClassLoader lookupLoader(ClassLoader contextLoader, String typeName) {
+        if (isLocalClass(contextLoader, typeName)) {
+            return contextLoader;
+        }
+        if (contextLoader instanceof JavaTypeLookupContext) {
+            ClassLoader hostLoader = ((JavaTypeLookupContext) contextLoader).getJavaTypeClassLoader();
+            if (hostLoader != null) {
+                return hostLoader;
+            }
+        }
+        return contextLoader != null ? contextLoader : JavaTypeOracle.class.getClassLoader();
+    }
+
+    private boolean isLocalClass(ClassLoader contextLoader, String className) {
+        return contextLoader instanceof JavaTypeLookupContext
+                && ((JavaTypeLookupContext) contextLoader).hasLocalClass(className);
+    }
+
+    private ClassLoader rawContextClassLoader() {
         ClassLoader contextLoader = Thread.currentThread().getContextClassLoader();
         return contextLoader != null ? contextLoader : JavaTypeOracle.class.getClassLoader();
     }
@@ -167,7 +209,9 @@ public final class JavaTypeOracle {
             if (descriptor != null) return descriptor.getJavaClass();
         }
         if (typeName != null) {
-            Class<?> javaClass = loadClass(typeName, contextClassLoader());
+            ClassLoader contextLoader = rawContextClassLoader();
+            Class<?> javaClass = loadClass(typeName, contextLoader,
+                    lookupLoader(contextLoader, typeName));
             if (javaClass != null) return javaClass;
             JavaTypeDescriptor descriptor = resolve(typeName);
             if (descriptor != null) {

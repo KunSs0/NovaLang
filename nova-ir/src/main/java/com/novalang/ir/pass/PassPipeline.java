@@ -148,22 +148,29 @@ public class PassPipeline {
      * @return className → bytecode 映射
      */
     public Map<String, byte[]> execute(Program program) {
+        long phaseStart = com.novalang.ir.profile.NovaCompileProfile.start();
         // 0. 语义分析（可选）
         if (enableSemanticAnalysis) {
             runSemanticAnalysis(program);
         }
+        com.novalang.ir.profile.NovaCompileProfile.add("semantic", phaseStart);
 
+        phaseStart = com.novalang.ir.profile.NovaCompileProfile.start();
         // 1. AST → HIR（AST 之后不再需要，program 由调用方管理）
         AstToHirLowering astLowering = new AstToHirLowering();
         astLowering.setScriptMode(scriptMode);
         HirModule hir = astLowering.lower(program);
+        com.novalang.ir.profile.NovaCompileProfile.add("ast-to-hir", phaseStart);
 
         // 2. HIR 优化
+        phaseStart = com.novalang.ir.profile.NovaCompileProfile.start();
         for (HirPass pass : hirPasses) {
             hir = pass.run(hir);
         }
+        com.novalang.ir.profile.NovaCompileProfile.add("hir-opt", phaseStart);
 
         // 3. HIR → MIR
+        phaseStart = com.novalang.ir.profile.NovaCompileProfile.start();
         HirToMirLowering lowering = new HirToMirLowering();
         lowering.setScriptMode(scriptMode);
         lowering.setInterpreterMode(interpreterMode);
@@ -183,11 +190,14 @@ public class PassPipeline {
         MirModule mir = lowering.lower(hir);
         anonymousClassCounterBase = lowering.getAnonymousClassCounter();
         hir = null; // 释放 HIR，减少内存峰值
+        com.novalang.ir.profile.NovaCompileProfile.add("hir-to-mir", phaseStart);
 
         // 4. MIR 优化
+        phaseStart = com.novalang.ir.profile.NovaCompileProfile.start();
         for (MirPass pass : mirPasses) {
             mir = pass.run(mir);
         }
+        com.novalang.ir.profile.NovaCompileProfile.add("mir-opt", phaseStart);
 
         // MIR dump（设置 NOVA_DUMP_MIR=1 环境变量启用）
         if ("1".equals(System.getenv("NOVA_DUMP_MIR"))) {
@@ -197,7 +207,10 @@ public class PassPipeline {
         }
 
         // 5. MIR → 字节码
-        return new MirCodeGenerator().generate(mir);
+        phaseStart = com.novalang.ir.profile.NovaCompileProfile.start();
+        Map<String, byte[]> classes = new MirCodeGenerator().generate(mir);
+        com.novalang.ir.profile.NovaCompileProfile.add("codegen", phaseStart);
+        return classes;
     }
 
     /**

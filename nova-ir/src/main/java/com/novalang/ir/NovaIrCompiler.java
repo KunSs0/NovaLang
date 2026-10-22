@@ -101,9 +101,11 @@ public class NovaIrCompiler implements NovaCompilerApi {
      * @return className → bytecode 映射
      */
     public Map<String, byte[]> compile(String source, String fileName) {
+        long parseStart = com.novalang.ir.profile.NovaCompileProfile.start();
         Lexer lexer = new Lexer(source, fileName);
         Parser parser = new Parser(lexer, fileName);
         Program program = parser.parse();
+        com.novalang.ir.profile.NovaCompileProfile.add("parse", parseStart);
         return pipeline.execute(program);
     }
 
