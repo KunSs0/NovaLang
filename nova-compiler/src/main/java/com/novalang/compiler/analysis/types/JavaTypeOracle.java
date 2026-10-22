@@ -75,6 +75,9 @@ public final class JavaTypeOracle {
             CacheKey actualKey = new CacheKey(descriptor.getJavaClass().getClassLoader(),
                     descriptor.getQualifiedName());
             descriptorCache.put(actualKey, descriptor);
+            // 简单名会先尝试 java.lang/java.util 等前缀；命中后也要缓存请求键，
+            // 否则同一个 Collection/List 别名每次都会重新执行前缀探测。
+            descriptorCache.put(requestedKey, descriptor);
         } else {
             negativeCache.add(requestedKey);
         }
