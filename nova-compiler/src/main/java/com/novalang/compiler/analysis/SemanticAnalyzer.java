@@ -134,6 +134,7 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
         if (typeName == null || typeName.isEmpty()) return;
         externalKnownTypeNames.add(typeName);
         typeResolver.registerKnownType(typeName);
+        inference.registerKnownType(typeName);
     }
 
     /** 注册前一段 REPL 或宿主环境中已经存在的动态值。 */
@@ -2550,6 +2551,7 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
         typeResolver.setCurrentPackageName(packageName);
         for (String knownTypeName : externalKnownTypeNames) {
             typeResolver.registerKnownType(knownTypeName);
+            inference.registerKnownType(knownTypeName);
         }
         for (Declaration declaration : program.getDeclarations()) {
             if (declaration instanceof ClassDecl) {
@@ -2557,6 +2559,7 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
                 String qualifiedName = qualifyTopLevelTypeName(packageName, classDecl.getName());
                 typeResolver.registerKnownType(classDecl.getName());
                 typeResolver.registerKnownType(qualifiedName);
+                inference.registerKnownType(classDecl.getName());
                 long classStart = SemanticProfile.start();
                 predeclareTopLevelClassSymbol(classDecl);
                 SemanticProfile.add("semantic.predeclare.class-symbol", classStart);
@@ -2569,6 +2572,7 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
                 String qualifiedName = qualifyTopLevelTypeName(packageName, interfaceDecl.getName());
                 typeResolver.registerKnownType(interfaceDecl.getName());
                 typeResolver.registerKnownType(qualifiedName);
+                inference.registerKnownType(interfaceDecl.getName());
                 if (interfaceDecl.getTypeParams() != null && !interfaceDecl.getTypeParams().isEmpty()) {
                     typeResolver.registerTypeDeclaration(interfaceDecl.getName(), interfaceDecl.getTypeParams());
                     typeResolver.registerTypeDeclaration(qualifiedName, interfaceDecl.getTypeParams());
@@ -2577,6 +2581,7 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
                 String qualifiedName = qualifyTopLevelTypeName(packageName, declaration.getName());
                 typeResolver.registerKnownType(declaration.getName());
                 typeResolver.registerKnownType(qualifiedName);
+                inference.registerKnownType(declaration.getName());
                 long objectStart = SemanticProfile.start();
                 predeclareTopLevelObjectSymbol((ObjectDecl) declaration);
                 SemanticProfile.add("semantic.predeclare.object-symbol", objectStart);
@@ -2584,6 +2589,7 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
                 String qualifiedName = qualifyTopLevelTypeName(packageName, declaration.getName());
                 typeResolver.registerKnownType(declaration.getName());
                 typeResolver.registerKnownType(qualifiedName);
+                inference.registerKnownType(declaration.getName());
             } else if (declaration instanceof TypeAliasDecl) {
                 TypeAliasDecl aliasDecl = (TypeAliasDecl) declaration;
                 typeResolver.registerTypeAlias(aliasDecl.getName(), aliasDecl.getTypeParams(), aliasDecl.getAliasedType());
@@ -2736,7 +2742,9 @@ public final class SemanticAnalyzer implements AstVisitor<Void, Void> {
 
         profileStart = SemanticProfile.start();
         for (Declaration decl : node.getDeclarations()) {
+            long declarationStart = SemanticProfile.start();
             decl.accept(this, ctx);
+            SemanticProfile.add("semantic.visit.decl." + decl.getClass().getSimpleName(), declarationStart);
         }
         SemanticProfile.add("semantic.visit.declarations", profileStart);
         return null;

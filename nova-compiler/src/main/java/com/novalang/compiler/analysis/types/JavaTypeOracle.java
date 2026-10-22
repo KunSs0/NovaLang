@@ -138,6 +138,9 @@ public final class JavaTypeOracle {
                     return loaded;
                 } catch (ClassNotFoundException ignored) {
                     SemanticProfile.increment(phase + ".miss");
+                    if (!local) {
+                        SemanticProfile.increment("semantic.java.host-miss-name:" + candidate);
+                    }
                     int separator = candidate.lastIndexOf('.');
                     if (separator < 0) {
                         candidate = null;
@@ -239,6 +242,11 @@ public final class JavaTypeOracle {
         if (type instanceof JavaClassNovaType) {
             JavaTypeDescriptor descriptor = ((JavaClassNovaType) type).getDescriptor();
             if (descriptor != null) return descriptor.getJavaClass();
+        }
+        // Nova 自定义类没有宿主 Java 类型身份；Java 重载解析只能用 Object
+        // 占位，具体适配由运行期完成。继续按类名探测只会产生失败加载。
+        if (type instanceof ClassNovaType) {
+            return Object.class;
         }
         if (typeName != null) {
             ClassLoader contextLoader = rawContextClassLoader();

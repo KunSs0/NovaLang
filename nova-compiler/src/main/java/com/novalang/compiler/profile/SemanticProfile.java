@@ -58,6 +58,7 @@ public final class SemanticProfile {
                         + " " + (entry.getValue() / 1000000L) + "ms x" + COUNT.get(entry.getKey())));
         EVENTS.entrySet().stream()
                 .sorted((left, right) -> Long.compare(right.getValue(), left.getValue()))
+                .limit(80)
                 .forEach(entry -> System.out.println("[SemanticProfile]   " + entry.getKey()
                         + " count=" + entry.getValue()));
     }

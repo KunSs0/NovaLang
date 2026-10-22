@@ -28,6 +28,12 @@ public final class TypeInferenceEngine {
 
     private final Map<Expression, NovaType> exprNovaTypeMap;
     private final TypeUnifier typeUnifier;
+    /**
+     * 当前编译单元和依赖模块已声明的 Nova 类型名。
+     *
+     * <p>类型名回退解析时先命中这里，避免把已知 Nova 类型当成未知 Java 类。</p>
+     */
+    private final Set<String> knownTypeNames = new HashSet<String>();
 
     /** 收集 NovaTypeRegistry 声明的内置类型，并补充未注册但会出现在内建签名中的类型。 */
     private static Set<String> buildNovaBuiltinTypeNames() {
@@ -45,6 +51,21 @@ public final class TypeInferenceEngine {
         this.typeUnifier = typeUnifier;
     }
 
+    /**
+     * 登记当前编译单元或依赖模块已声明的 Nova 类型。
+     *
+     * <p>类型名回退解析时先命中这里，避免把已知 Nova 类型当成未知 Java 类
+     * 执行 Class.forName。</p>
+     *
+     * @param typeName 简单类型名
+     */
+    public void registerKnownType(String typeName) {
+        if (typeName == null || typeName.isEmpty()) {
+            return;
+        }
+        knownTypeNames.add(typeName);
+    }
+
     /** 从字符串类型名回退解析为 NovaType */
     public NovaType resolveNovaTypeFromName(String typeName) {
         if (typeName == null) return null;
@@ -58,6 +79,9 @@ public final class TypeInferenceEngine {
 
         NovaType result = NovaTypes.fromName(simpleName);
         if (result == null && NOVA_BUILTIN_TYPE_NAMES.contains(simpleName)) {
+            result = new ClassNovaType(simpleName, false);
+        }
+        if (result == null && knownTypeNames.contains(simpleName)) {
             result = new ClassNovaType(simpleName, false);
         }
         if (result == null) {
