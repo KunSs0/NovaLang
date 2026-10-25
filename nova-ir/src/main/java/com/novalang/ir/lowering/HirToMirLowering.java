@@ -282,6 +282,16 @@ public class HirToMirLowering {
 
     private Class<?> resolveJavaClassImpl(String name) {
         String importedName = javaImports.get(name);
+        if (importedName == null) {
+            String qualifiedName = name.replace('/', '.');
+            int separator = qualifiedName.indexOf('.');
+            if (separator > 0) {
+                String importedOwner = javaImports.get(qualifiedName.substring(0, separator));
+                if (importedOwner != null) {
+                    importedName = importedOwner + qualifiedName.substring(separator);
+                }
+            }
+        }
         // 已声明的 Nova 类型优先于宿主 Java 类型；当前编译单元或依赖模块已经
         // 知道该类型时，继续 Class.forName 只会对每个前缀制造一次失败探测。
         if (importedName == null && isKnownNovaTypeName(name)) {
@@ -6632,6 +6642,11 @@ public class HirToMirLowering {
                     Class<?> javaClass = resolveJavaClass(name);
                     if (javaClass != null) name = javaClass.getName().replace('.', '/');
                 }
+            } else {
+                Class<?> javaClass = resolveJavaClass(name);
+                if (javaClass != null) {
+                    name = javaClass.getName().replace('.', '/');
+                }
             }
             return MirType.ofObject(name, type.isNullable());
         }
@@ -6653,8 +6668,14 @@ public class HirToMirLowering {
                 if ("Ok".equals(simpleName) || "Err".equals(simpleName)
                         || "Result".equals(simpleName)) return simpleName;
             }
-            // 已含 '/' 的完整限定名直接返回
-            if (name.contains("/")) return name;
+            // 限定 Java 类型仍需解析嵌套类的二进制名称。
+            if (name.contains("/")) {
+                Class<?> javaClass = resolveJavaClass(name);
+                if (javaClass != null) {
+                    return javaClass.getName().replace('.', '/');
+                }
+                return name;
+            }
             // typealias 展开：递归解析别名到目标类型
             HirType aliasTarget = typeAliasMap.get(name);
             if (aliasTarget != null) return typeToInternalName(aliasTarget);
