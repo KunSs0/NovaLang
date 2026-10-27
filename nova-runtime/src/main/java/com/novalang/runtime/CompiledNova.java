@@ -65,6 +65,8 @@ public final class CompiledNova implements AutoCloseable {
     private ClassLoader scriptClassLoader;
     /** 项目编译的链接信息；源码字符串编译没有此元数据。 */
     private CompiledProgramMetadata compilationMetadata;
+    /** 模块顶层声明是否已初始化；组件工厂在首次实例化前自动补齐。 */
+    private volatile boolean modulesInitialized;
 
     /** 解释器模式构造 — 预解析源代码为 AST，run() 时跳过词法分析和解析 */
     CompiledNova(String source, String fileName, Nova nova) {
@@ -179,7 +181,34 @@ public final class CompiledNova implements AutoCloseable {
         }
     }
 
-    /** 按依赖顺序执行模块初始化，执行上下文和资源所有权始终属于本程序。 */
+    /**
+     * 补齐模块顶层声明的一次性初始化。
+     *
+     * <p>顶层声明由模块初始化写入运行时全局；组件工厂只绑定入口函数，
+     * 若跳过初始化，组件内读取顶层常量只能得到空值。</p>
+     */
+    private void ensureModulesInitialized() {
+        if (modulesInitialized) {
+            return;
+        }
+        synchronized (this) {
+            if (modulesInitialized) {
+                return;
+            }
+            modulesInitialized = true;
+            if (compilationMetadata != null) {
+                runModules(bindings, true);
+                return;
+            }
+            if (mainHandle != null) {
+                runBytecode();
+            }
+        }
+    }
+
+    /**
+     * 按依赖顺序执行模块初始化，执行上下文和资源所有权始终属于本程序。
+     */
     private Object runModules(Map<String, Object> contextBindings, boolean copyBindings) {
         try {
             return withScriptExecutionContext(contextBindings, copyBindings, () -> {
@@ -216,6 +245,7 @@ public final class CompiledNova implements AutoCloseable {
     }
 
     Object invokeComponentFactory(MethodHandle entry, String name) {
+        ensureModulesInitialized();
         try {
             return withScriptExecutionContext(bindings, true, () -> {
                 Object value = entry.invokeExact();
@@ -251,11 +281,18 @@ public final class CompiledNova implements AutoCloseable {
     public Object run() {
         requireOpen();
         if (compilationMetadata != null) {
-            return runModules(bindings, true);
+            Object result = runModules(bindings, true);
+            modulesInitialized = true;
+            return result;
         }
         if (compiledClasses != null) {
-            if (mainHandle != null) return runBytecode();
+            if (mainHandle != null) {
+                Object result = runBytecode();
+                modulesInitialized = true;
+                return result;
+            }
             // 纯函数定义的脚本无 main()，run() 无操作，通过 call() 调用函数
+            modulesInitialized = true;
             return null;
         }
         return runInterpreted();
