@@ -20,16 +20,48 @@ public final class SerializationProviders {
     private static final Map<String, YamlProvider> yamlProviders = new LinkedHashMap<>();
 
     static {
-        // ServiceLoader 扫描（一次性）
-        for (JsonProvider p : ServiceLoader.load(JsonProvider.class)) {
-            jsonProviders.put(p.name(), p);
-        }
-        for (YamlProvider p : ServiceLoader.load(YamlProvider.class)) {
-            yamlProviders.put(p.name(), p);
-        }
+        // ServiceLoader 扫描（一次性）。
+        // 必须同时使用 NovaLang 自身的 classloader 与线程上下文 classloader：
+        // 插件环境下（Paper PluginClassLoader）调用线程的 TCCL 往往看不到本 jar 的
+        // META-INF/services，只依赖 TCCL 会让 provider 全部缺失并永久缓存为 null。
+        ClassLoader ownLoader = SerializationProviders.class.getClassLoader();
+        loadJsonProviders(ownLoader);
+        loadJsonProviders(Thread.currentThread().getContextClassLoader());
+        loadYamlProviders(ownLoader);
+        loadYamlProviders(Thread.currentThread().getContextClassLoader());
         // 选择最高优先级
         jsonProvider = selectBest(jsonProviders.values());
         yamlProvider = selectBest(yamlProviders.values());
+    }
+
+    /**
+     * 从一个 classloader 收集 JSON provider。
+     *
+     * <p>同一个 provider 可能被多个 classloader 同时发现，按 name 覆盖写即可。</p>
+     *
+     * @param loader 待扫描的 classloader，为 null 时跳过
+     */
+    private static void loadJsonProviders(ClassLoader loader) {
+        if (loader == null) {
+            return;
+        }
+        for (JsonProvider p : ServiceLoader.load(JsonProvider.class, loader)) {
+            jsonProviders.put(p.name(), p);
+        }
+    }
+
+    /**
+     * 从一个 classloader 收集 YAML provider。
+     *
+     * @param loader 待扫描的 classloader，为 null 时跳过
+     */
+    private static void loadYamlProviders(ClassLoader loader) {
+        if (loader == null) {
+            return;
+        }
+        for (YamlProvider p : ServiceLoader.load(YamlProvider.class, loader)) {
+            yamlProviders.put(p.name(), p);
+        }
     }
 
     private SerializationProviders() {}
