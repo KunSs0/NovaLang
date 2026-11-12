@@ -71,31 +71,37 @@ public class MirLocalCSE implements MirPass {
 
     static final class VNState {
         final Map<ExprKey, Integer> exprTable = new HashMap<>();
-        final int[] canon;
+        /** 全局常量别名基线；所有状态共享，不在每个基本块复制。 */
+        final int[] base;
+        /** 相对基线的稀疏覆盖；只记录被重新赋值或 CSE 命中的寄存器。 */
+        final Map<Integer, Integer> overrides = new HashMap<>();
 
         /** 使用全局常量别名初始化（多前驱块的基线映射） */
         VNState(int size, int[] constAlias) {
-            canon = new int[size];
-            if (constAlias != null) {
-                System.arraycopy(constAlias, 0, canon, 0, Math.min(size, constAlias.length));
-                // 超出 constAlias 范围的映射到自身
-                for (int i = constAlias.length; i < size; i++) canon[i] = i;
-            } else {
-                for (int i = 0; i < size; i++) canon[i] = i;
-            }
+            base = constAlias;
         }
 
         VNState(VNState src) {
             exprTable.putAll(src.exprTable);
-            canon = src.canon.clone();
+            base = src.base;
+            overrides.putAll(src.overrides);
         }
 
         int getCanon(int reg) {
-            return (reg >= 0 && reg < canon.length) ? canon[reg] : reg;
+            Integer override = overrides.get(reg);
+            if (override != null) return override;
+            if (base != null && reg >= 0 && reg < base.length) return base[reg];
+            return reg;
         }
 
         void setCanon(int reg, int val) {
-            if (reg >= 0 && reg < canon.length) canon[reg] = val;
+            if (reg < 0) return;
+            int baseVal = (base != null && reg < base.length) ? base[reg] : reg;
+            if (val == baseVal) {
+                overrides.remove(reg);
+            } else {
+                overrides.put(reg, val);
+            }
         }
 
         /** 寄存器被重定义：移除以该寄存器为结果或为操作数的条目 */

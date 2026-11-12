@@ -1644,16 +1644,24 @@ public class AstToHirLowering implements AstVisitor<AstNode, LoweringContext> {
 
     /**
      * 脱糖：a?.method() → { val tmp = a; if (tmp != null) tmp.method() else null }
+     * <p>
+     * target 先绑定到临时变量，避免在 null 判断与成员访问中重复展开。
+     * 重复展开会让嵌套安全调用形成指数级表达式树，进而放大 MIR 基本块与局部变量数量。
      */
     @Override
     public AstNode visitSafeCallExpr(SafeCallExpr node, LoweringContext ctx) {
         SourceLocation loc = node.getLocation();
         Expression target = lowerExpr(node.getTarget(), ctx);
+        String tmp = ctx.freshTemp();
+        List<Statement> stmts = new ArrayList<>();
+        stmts.add(ctx.makeTempVal(loc, tmp, null, target));
 
+        Expression checkRef = ctx.tempRef(loc, tmp, null);
+        Expression memberRef = ctx.tempRef(loc, tmp, null);
         Expression nullCheck = new BinaryExpr(loc, new PrimitiveType(PrimitiveType.Kind.BOOLEAN),
-                target, BinaryOp.NE, ctx.nullLiteral(loc));
+                checkRef, BinaryOp.NE, ctx.nullLiteral(loc));
 
-        Expression memberAccess = new MemberExpr(loc, target, node.getMember());
+        Expression memberAccess = new MemberExpr(loc, memberRef, node.getMember());
         Expression thenExpr;
         if (node.isMethodCall()) {
             List<Expression> args = new ArrayList<>();
@@ -1666,23 +1674,35 @@ public class AstToHirLowering implements AstVisitor<AstNode, LoweringContext> {
             thenExpr = memberAccess;
         }
 
-        return new ConditionalExpr(loc,nullCheck, thenExpr, ctx.nullLiteral(loc));
+        return new BlockExpr(loc, stmts,
+                new ConditionalExpr(loc, nullCheck, thenExpr, ctx.nullLiteral(loc)));
     }
 
     /**
-     * 脱糖：a?[i] → { val tmp = a; if (tmp != null) tmp[i] else null }
+     * 脱糖：a?[i] → { val tmpTarget = a; val tmpIndex = i; if (tmpTarget != null) tmpTarget[tmpIndex] else null }
+     * <p>
+     * target 与 index 都先绑定到临时变量，保证只求值一次，并避免嵌套安全索引重复展开。
      */
     @Override
     public AstNode visitSafeIndexExpr(SafeIndexExpr node, LoweringContext ctx) {
         SourceLocation loc = node.getLocation();
         Expression target = lowerExpr(node.getTarget(), ctx);
         Expression index = lowerExpr(node.getIndex(), ctx);
+        String tmpTarget = ctx.freshTemp();
+        String tmpIndex = ctx.freshTemp();
+        List<Statement> stmts = new ArrayList<>();
+        stmts.add(ctx.makeTempVal(loc, tmpTarget, null, target));
+        stmts.add(ctx.makeTempVal(loc, tmpIndex, null, index));
 
+        Expression checkRef = ctx.tempRef(loc, tmpTarget, null);
+        Expression targetRef = ctx.tempRef(loc, tmpTarget, null);
+        Expression indexRef = ctx.tempRef(loc, tmpIndex, null);
         Expression nullCheck = new BinaryExpr(loc, new PrimitiveType(PrimitiveType.Kind.BOOLEAN),
-                target, BinaryOp.NE, ctx.nullLiteral(loc));
+                checkRef, BinaryOp.NE, ctx.nullLiteral(loc));
 
-        return new ConditionalExpr(loc,nullCheck,
-                new IndexExpr(loc, target, index), ctx.nullLiteral(loc));
+        return new BlockExpr(loc, stmts,
+                new ConditionalExpr(loc, nullCheck,
+                        new IndexExpr(loc, targetRef, indexRef), ctx.nullLiteral(loc)));
     }
 
     @Override

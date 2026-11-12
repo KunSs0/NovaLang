@@ -247,6 +247,59 @@ class IrPipelineIntegrationTest {
             assertEquals(true, compileAndRun(wrap(
                 "val x = 5\nval a = x * 3 + 1\nval b = x * 3 + 1\nreturn a == b")));
         }
+
+        @Test
+        @DisplayName("嵌套安全调用结果正确且不放大 MIR")
+        void testChainedSafeCallsKeepMirLinear() throws Exception {
+            StringBuilder body = new StringBuilder("val s: String? = \"  abc  \"\nreturn s");
+            for (int i = 0; i < 10; i++) {
+                body.append("?.trim()");
+            }
+            body.append("?.length");
+            assertEquals(3, compileAndRun(wrap(body.toString())));
+
+            PassPipeline pipeline = PassPipeline.createDefault();
+            final int[] maxBlocks = {0};
+            pipeline.getMirPasses().add(0, new com.novalang.ir.pass.MirPass() {
+                @Override
+                public String getName() {
+                    return "CaptureMaxBlocks";
+                }
+
+                @Override
+                public com.novalang.ir.mir.MirModule run(com.novalang.ir.mir.MirModule module) {
+                    for (com.novalang.ir.mir.MirClass cls : module.getClasses()) {
+                        for (com.novalang.ir.mir.MirFunction fn : cls.getMethods()) {
+                            maxBlocks[0] = Math.max(maxBlocks[0], fn.getBlocks().size());
+                        }
+                    }
+                    for (com.novalang.ir.mir.MirFunction fn : module.getTopLevelFunctions()) {
+                        maxBlocks[0] = Math.max(maxBlocks[0], fn.getBlocks().size());
+                    }
+                    return module;
+                }
+            });
+            new NovaIrCompiler(pipeline).compile(wrap(body.toString()), "chained-safe-call.nova");
+            assertTrue(maxBlocks[0] < 200,
+                    "嵌套安全调用应在 HIR 降级阶段绑定临时变量，MIR 基本块数应保持线性，实际=" + maxBlocks[0]);
+        }
+
+        @Test
+        @DisplayName("安全调用的接收者只求值一次")
+        void testSafeCallEvaluatesTargetOnce() throws Exception {
+            String code = "object Test {\n" +
+                    "  var calls = 0\n" +
+                    "  fun next(): String? {\n" +
+                    "    calls = calls + 1\n" +
+                    "    return \"abc\"\n" +
+                    "  }\n" +
+                    "  fun run(): Any {\n" +
+                    "    val n = next()?.length\n" +
+                    "    return calls\n" +
+                    "  }\n" +
+                    "}";
+            assertEquals(1, compileAndRun(code));
+        }
     }
 
     // ============ Peephole (MirPeepholeOptimization) ============
