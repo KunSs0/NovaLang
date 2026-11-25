@@ -140,6 +140,30 @@ class CompiledBytecodeRegressionTest {
         assertEquals("name=world", compiled.call("viaReceiver"));
     }
 
+    @Test
+    @DisplayName("compiled class should implement interface methods declared outside the first supertype")
+    void compiledClassShouldImplementNonFirstInterfaceMethods() {
+        CompiledNova compiled = new Nova().compileToBytecode(
+                "import java java.lang.AutoCloseable\n" +
+                "import java.util.function.Supplier\n" +
+                "class Closer : Supplier<String>, AutoCloseable {\n" +
+                "    var closed = false\n" +
+                "    override fun get(): String = \"x\"\n" +
+                "    override fun close() {\n" +
+                "        closed = true\n" +
+                "    }\n" +
+                "}\n" +
+                "fun closeThroughInterface() {\n" +
+                "    val closer = Closer()\n" +
+                "    val target: AutoCloseable = closer\n" +
+                "    target.close()\n" +
+                "    return closer.closed\n" +
+                "}\n",
+                "interface-override.nova");
+
+        assertEquals(true, compiled.call("closeThroughInterface"));
+    }
+
     private URLClassLoader compileScriptOnlyClassLoader() throws Exception {
         Path classesDir = tempDir.resolve("classes");
         Path srcDir = tempDir.resolve("src").resolve("dynamic");

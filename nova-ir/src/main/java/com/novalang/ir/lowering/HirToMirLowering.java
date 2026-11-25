@@ -847,14 +847,20 @@ public class HirToMirLowering {
             if (decl instanceof HirClass) {
                 HirClass hc = (HirClass) decl;
                 String className = localClassInternalName(hc.getName());
+                Map<String, String> childDescs = novaMethodDescs.get(className);
+                if (childDescs == null) {
+                    continue;
+                }
+                // 已按父类修正的方法名：其余父类型只处理未命中的方法，避免覆盖父类签名
+                Set<String> resolvedNames = new HashSet<>();
                 String superName = classSuperClass.get(className);
                 if (superName != null) {
-                    Map<String, String> childDescs = novaMethodDescs.get(className);
                     for (HirFunction m : hc.getMethods()) {
                         if (m.getModifiers().contains(Modifier.OVERRIDE)) {
                             String parentDesc = lookupNovaMethodDescInherited(superName, m.getName());
                             if (parentDesc != null) {
                                 childDescs.put(m.getName(), parentDesc);
+                                resolvedNames.add(m.getName());
                             }
                         }
                     }
@@ -864,18 +870,18 @@ public class HirToMirLowering {
                     String javaSuperName = typeToInternalName(hc.getSuperClass());
                     Class<?> javaSuperClass = resolveJavaClass(javaSuperName);
                     if (javaSuperClass != null) {
-                        Map<String, String> childDescs = novaMethodDescs.get(className);
-                        if (childDescs != null) {
-                            for (HirFunction m : hc.getMethods()) {
-                                java.lang.reflect.Method javaMethod =
-                                        findJavaMethod(javaSuperClass, m.getName(), m.getParams().size());
-                                if (javaMethod != null) {
-                                    childDescs.put(m.getName(), buildJavaMethodDesc(javaMethod));
-                                }
+                        for (HirFunction m : hc.getMethods()) {
+                            java.lang.reflect.Method javaMethod =
+                                    findJavaMethod(javaSuperClass, m.getName(), m.getParams().size());
+                            if (javaMethod != null) {
+                                childDescs.put(m.getName(), buildJavaMethodDesc(javaMethod));
+                                resolvedNames.add(m.getName());
                             }
                         }
                     }
                 }
+                // 其余父类型（接口）：上面的两条分支只覆盖首个父类型，接口成员需要单独修正
+                correctInterfaceOverrideDescriptors(hc, childDescs, resolvedNames);
             }
         }
 
@@ -1292,6 +1298,145 @@ public class HirToMirLowering {
         }
         builder.emitReturnVoid(loc);
         return clinit;
+    }
+
+    /**
+     * 按接口声明修正 override 方法的入口描述符。
+     * <p>类声明多个父类型时，HIR 只把首个父类型登记为 superClass，其余父类型只记录在 interfaces 中。
+     * 若这些接口声明的方法在 Nova 侧省略了返回类型，MIR 会以 Object 作为返回类型，
+     * 生成的入口无法满足接口签名，JVM 通过接口调用时会抛 {@code AbstractMethodError}。</p>
+     *
+     * @param hirClass 待修正的 HIR 类
+     * @param childDescs 该类已登记的方法描述符，修正结果写回此表
+     * @param resolvedNames 已按父类修正过的方法名，跳过以免覆盖父类签名
+     */
+    private void correctInterfaceOverrideDescriptors(HirClass hirClass, Map<String, String> childDescs,
+                                                     Set<String> resolvedNames) {
+        List<String> candidates = new ArrayList<>();
+        for (HirType interfaceType : hirClass.getInterfaces()) {
+            String interfaceName = typeToInternalName(interfaceType);
+            if (interfaceName != null) {
+                candidates.add(interfaceName);
+            }
+        }
+        // HIR 不区分首个父类型是类还是接口，首个父类型为接口时同样需要修正
+        HirType firstType = hirClass.getSuperClass();
+        if (firstType != null) {
+            String firstName = typeToInternalName(firstType);
+            if (firstName != null && isInterfaceType(firstName)) {
+                candidates.add(firstName);
+            }
+        }
+        if (candidates.isEmpty()) {
+            return;
+        }
+        for (HirFunction method : hirClass.getMethods()) {
+            if (resolvedNames.contains(method.getName()) || !needsSuperTypeDescriptor(method)) {
+                continue;
+            }
+            for (String candidate : candidates) {
+                String descriptor = resolveSuperTypeMemberDesc(candidate, method);
+                if (descriptor == null || !canAdoptSuperTypeDescriptor(method, descriptor)) {
+                    continue;
+                }
+                childDescs.put(method.getName(), descriptor);
+                resolvedNames.add(method.getName());
+                break;
+            }
+        }
+    }
+
+    /**
+     * 判断实现方法能否直接采用父类型成员的入口描述符。
+     * <p>参数列表必须完全一致，否则会改变本类调用点的实参类型；显式声明了非 Unit 返回值时，
+     * 不能用 void 入口顶替，否则调用方会静默丢失返回值（这类签名冲突应另行诊断，不能悄悄改写）。</p>
+     *
+     * @param method 实现类中的方法声明
+     * @param superTypeDescriptor 父类型成员入口描述符
+     * @return 可以共用同一 JVM 入口时返回 true
+     */
+    private boolean canAdoptSuperTypeDescriptor(HirFunction method, String superTypeDescriptor) {
+        int superClose = superTypeDescriptor.indexOf(')');
+        if (superClose < 0) {
+            return false;
+        }
+        if (method.getReturnType() != null && "V".equals(superTypeDescriptor.substring(superClose + 1))
+                && hirTypeToMir(method.getReturnType()).getKind() != MirType.Kind.VOID) {
+            return false;
+        }
+        String ownDescriptor = buildHirMethodDescriptor(method);
+        int ownClose = ownDescriptor.indexOf(')');
+        if (ownClose < 0) {
+            return false;
+        }
+        return ownDescriptor.substring(0, ownClose + 1)
+                .equals(superTypeDescriptor.substring(0, superClose + 1));
+    }
+
+    /**
+     * 判断方法是否需要按父类型签名修正入口描述符。
+     * <p>省略返回类型的方法一定需要修正；显式声明返回类型的 override 方法也要修正，
+     * 否则接口声明的擦除类型（如 {@code Supplier.get(): Object}）与协变声明不一致。</p>
+     *
+     * @param method 待判断的方法声明
+     * @return 需要按父类型签名修正时返回 true
+     */
+    private boolean needsSuperTypeDescriptor(HirFunction method) {
+        if (method.getReturnType() == null) {
+            return true;
+        }
+        return method.getModifiers().contains(Modifier.OVERRIDE);
+    }
+
+    /**
+     * 判断给定 JVM 内部名是否为接口。
+     *
+     * @param internalName JVM 内部名
+     * @return 属于 Nova 接口或 Java 接口时返回 true
+     */
+    private boolean isInterfaceType(String internalName) {
+        if (internalName == null) {
+            return false;
+        }
+        if (interfaceNames.contains(internalName)) {
+            return true;
+        }
+        Class<?> javaType = resolveJavaClass(internalName);
+        return javaType != null && javaType.isInterface();
+    }
+
+    /**
+     * 在指定父类型上查找与给定方法同名同元数的成员并返回其入口描述符。
+     * <p>Nova 类型按登记表解析；Java 类型通过反射取擦除后的真实签名，供实现类对齐 JVM 入口。</p>
+     *
+     * @param typeName 父类型的 JVM 内部名
+     * @param method 实现类中的方法声明
+     * @return 成员入口描述符；父类型没有对应成员时返回 null
+     */
+    private String resolveSuperTypeMemberDesc(String typeName, HirFunction method) {
+        if (typeName == null) {
+            return null;
+        }
+        int argumentCount = method.getParams().size();
+        Map<String, String> novaDescs = novaMethodDescs.get(typeName);
+        if (novaDescs != null) {
+            String descriptor = novaDescs.get(method.getName());
+            if (descriptor != null && countDescParams(descriptor) == argumentCount) {
+                return descriptor;
+            }
+        }
+        if (isKnownNovaType(typeName)) {
+            return null;
+        }
+        Class<?> javaType = resolveJavaClass(typeName);
+        if (javaType == null) {
+            return null;
+        }
+        java.lang.reflect.Method javaMethod = findJavaMethod(javaType, method.getName(), argumentCount);
+        if (javaMethod == null) {
+            return null;
+        }
+        return buildJavaMethodDesc(javaMethod);
     }
 
     /**

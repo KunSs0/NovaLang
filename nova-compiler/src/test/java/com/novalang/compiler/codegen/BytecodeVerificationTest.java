@@ -532,4 +532,51 @@ class BytecodeVerificationTest {
         assertEquals(3, ((Number) invokeModuleFunction(source, "viaCompanion")).intValue());
         assertEquals(4, ((Number) invokeModuleFunction(source, "viaSingleton")).intValue());
     }
+
+    // ============================================================
+    //  接口覆盖描述符（类声明多个父类型时，非首个接口的方法必须对齐 JVM 签名）
+    // ============================================================
+
+    @Test
+    @DisplayName("非首个父类型接口的 void override 可经接口调用")
+    void testNonFirstInterfaceVoidOverride() throws Exception {
+        String source =
+            "import java java.lang.AutoCloseable\n" +
+            "import java.util.function.Supplier\n" +
+            "class Closer : Supplier<String>, AutoCloseable {\n" +
+            "    var closed = false\n" +
+            "    override fun get(): String = \"x\"\n" +
+            "    override fun close() {\n" +
+            "        closed = true\n" +
+            "    }\n" +
+            "}\n" +
+            "fun closeThroughInterface(): Boolean {\n" +
+            "    val closer = Closer()\n" +
+            "    val target: AutoCloseable = closer\n" +
+            "    target.close()\n" +
+            "    return closer.closed\n" +
+            "}\n";
+
+        assertEquals(true, invokeModuleFunction(source, "closeThroughInterface"));
+    }
+
+    @Test
+    @DisplayName("非首个父类型接口的原始类型返回值可经接口调用")
+    void testNonFirstInterfacePrimitiveReturnOverride() throws Exception {
+        String source =
+            "import java java.lang.Runnable\n" +
+            "import java.util.function.IntSupplier\n" +
+            "class Ints : Runnable, IntSupplier {\n" +
+            "    override fun run() {\n" +
+            "        val n = 1\n" +
+            "    }\n" +
+            "    override fun getAsInt() = 7\n" +
+            "}\n" +
+            "fun intThroughInterface(): Int {\n" +
+            "    val supplier: IntSupplier = Ints()\n" +
+            "    return supplier.getAsInt()\n" +
+            "}\n";
+
+        assertEquals(7, ((Number) invokeModuleFunction(source, "intThroughInterface")).intValue());
+    }
 }
