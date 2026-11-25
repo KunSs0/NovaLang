@@ -579,4 +579,51 @@ class BytecodeVerificationTest {
 
         assertEquals(7, ((Number) invokeModuleFunction(source, "intThroughInterface")).intValue());
     }
+
+    @Test
+    @DisplayName("多个接口对同一入口给出不同签名时编译期报冲突")
+    void testInterfaceDescriptorConflictIsReported() {
+        String source =
+            "import java java.lang.AutoCloseable\n" +
+            "interface Left {\n" +
+            "    fun tag(): String\n" +
+            "}\n" +
+            "interface Right {\n" +
+            "    fun tag(): Int\n" +
+            "}\n" +
+            "class Impl : AutoCloseable, Left, Right {\n" +
+            "    override fun tag() = \"x\"\n" +
+            "    override fun close() {\n" +
+            "        val n = 1\n" +
+            "    }\n" +
+            "}\n";
+
+        RuntimeException error = assertThrows(RuntimeException.class,
+                () -> compiler.compile(source, "conflict.nova"));
+        String message = String.valueOf(error.getMessage());
+        assertTrue(message.contains("同时匹配多个父类型"), message);
+        assertTrue(message.contains("'Left'") && message.contains("'Right'"), message);
+    }
+
+    @Test
+    @DisplayName("接口要求 void 而实现声明了返回值时编译期报错")
+    void testInterfaceVoidReturnMismatchIsReported() {
+        String source =
+            "import java java.lang.AutoCloseable\n" +
+            "interface Marker {\n" +
+            "    fun tag()\n" +
+            "}\n" +
+            "class Impl : AutoCloseable, Marker {\n" +
+            "    override fun tag(): String = \"x\"\n" +
+            "    override fun close() {\n" +
+            "        val n = 1\n" +
+            "    }\n" +
+            "}\n";
+
+        RuntimeException error = assertThrows(RuntimeException.class,
+                () -> compiler.compile(source, "return-mismatch.nova"));
+        String message = String.valueOf(error.getMessage());
+        assertTrue(message.contains("无法实现该接口方法"), message);
+        assertTrue(message.contains("'Marker'"), message);
+    }
 }

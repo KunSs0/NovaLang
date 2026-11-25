@@ -80,6 +80,14 @@ public class HirToMirLowering {
     public void setAnonymousClassCounterBase(int base) { this.anonymousClassCounter = base; }
     /** 获取当前计数器值（lowering 完成后读取，供下次调用使用） */
     public int getAnonymousClassCounter() { return anonymousClassCounter; }
+
+    /**
+     * 获取接口覆写在 JVM 层面无法满足的冲突说明。
+     * <p>降级完成后由编译管线读取；非空表示生成的类会缺失接口方法实现，必须中止编译。</p>
+     *
+     * @return 冲突说明列表，按类声明顺序排列
+     */
+    public List<String> getOverrideConflicts() { return overrideConflicts; }
     private final List<MirClass> additionalClasses = new ArrayList<>();
 
     // 扩展函数注册: methodName → ownerClass (internal name)
@@ -115,6 +123,8 @@ public class HirToMirLowering {
             new IdentityHashMap<MirFunction, Set<Integer>>();
     // 类字段名: className → Set<fieldName>（用于区分字段调用和方法调用）
     private final Map<String, Set<String>> classFieldNames = new HashMap<>();
+    // 接口覆写无法用同一个 JVM 方法满足时的冲突说明，降级结束后由编译管线统一报错
+    private final List<String> overrideConflicts = new ArrayList<>();
     // 类注解数据: className → List<HirAnnotation>（用于运行时 .annotations 访问）
     private final Map<String, List<HirAnnotation>> classAnnotationData = new HashMap<>();
 
@@ -1305,6 +1315,8 @@ public class HirToMirLowering {
      * <p>类声明多个父类型时，HIR 只把首个父类型登记为 superClass，其余父类型只记录在 interfaces 中。
      * 若这些接口声明的方法在 Nova 侧省略了返回类型，MIR 会以 Object 作为返回类型，
      * 生成的入口无法满足接口签名，JVM 通过接口调用时会抛 {@code AbstractMethodError}。</p>
+     * <p>多个接口对同一入口给出不同签名、或接口要求 void 而实现声明了返回值时，无法用同一个
+     * JVM 方法同时满足，此时把冲突记录到 {@link #overrideConflicts}，由编译管线报错而不是任选其一。</p>
      *
      * @param hirClass 待修正的 HIR 类
      * @param childDescs 该类已登记的方法描述符，修正结果写回此表
@@ -1312,6 +1324,52 @@ public class HirToMirLowering {
      */
     private void correctInterfaceOverrideDescriptors(HirClass hirClass, Map<String, String> childDescs,
                                                      Set<String> resolvedNames) {
+        List<String> candidates = collectInterfaceCandidates(hirClass);
+        if (candidates.isEmpty()) {
+            return;
+        }
+        for (HirFunction method : hirClass.getMethods()) {
+            if (resolvedNames.contains(method.getName()) || !needsSuperTypeDescriptor(method)) {
+                continue;
+            }
+            String ownDescriptor = buildHirMethodDescriptor(method);
+            List<String> matchedTypes = new ArrayList<>();
+            List<String> matchedDescriptors = new ArrayList<>();
+            for (String candidate : candidates) {
+                String descriptor = resolveSuperTypeMemberDesc(candidate, method);
+                // 只接受参数列表与实现一致的候选；参数不同的同名成员属于另一个重载，不是本方法的父声明
+                if (descriptor == null
+                        || !hasSameParameterList(Collections.singletonList(ownDescriptor), descriptor)) {
+                    continue;
+                }
+                matchedTypes.add(candidate);
+                matchedDescriptors.add(descriptor);
+            }
+            if (matchedDescriptors.isEmpty()) {
+                continue;
+            }
+            if (new HashSet<>(matchedDescriptors).size() > 1) {
+                overrideConflicts.add(describeDescriptorConflict(hirClass, method, matchedTypes, matchedDescriptors));
+                continue;
+            }
+            String descriptor = matchedDescriptors.get(0);
+            if (!canAdoptSuperTypeDescriptor(method, descriptor)) {
+                overrideConflicts.add(describeReturnTypeConflict(
+                        hirClass, method, matchedTypes.get(0), descriptor, ownDescriptor));
+                continue;
+            }
+            childDescs.put(method.getName(), descriptor);
+            resolvedNames.add(method.getName());
+        }
+    }
+
+    /**
+     * 收集参与接口覆写修正的父类型：声明的全部接口，以及"首个父类型为接口"的那一个。
+     *
+     * @param hirClass 待处理的 HIR 类
+     * @return 按声明顺序排列的父类型 JVM 内部名
+     */
+    private List<String> collectInterfaceCandidates(HirClass hirClass) {
         List<String> candidates = new ArrayList<>();
         for (HirType interfaceType : hirClass.getInterfaces()) {
             String interfaceName = typeToInternalName(interfaceType);
@@ -1327,23 +1385,81 @@ public class HirToMirLowering {
                 candidates.add(firstName);
             }
         }
-        if (candidates.isEmpty()) {
-            return;
-        }
-        for (HirFunction method : hirClass.getMethods()) {
-            if (resolvedNames.contains(method.getName()) || !needsSuperTypeDescriptor(method)) {
-                continue;
+        return candidates;
+    }
+
+    /**
+     * 生成"多个父类型对同一入口给出不同签名"的诊断文本。
+     *
+     * @param hirClass 实现类
+     * @param method 冲突的方法声明
+     * @param types 命中的父类型 JVM 内部名
+     * @param descriptors 与之一一对应的入口描述符
+     * @return 面向脚本作者的诊断文本
+     */
+    private String describeDescriptorConflict(HirClass hirClass, HirFunction method,
+                                              List<String> types, List<String> descriptors) {
+        StringBuilder detail = new StringBuilder();
+        for (int index = 0; index < types.size(); index++) {
+            if (index > 0) {
+                detail.append("、");
             }
-            for (String candidate : candidates) {
-                String descriptor = resolveSuperTypeMemberDesc(candidate, method);
-                if (descriptor == null || !canAdoptSuperTypeDescriptor(method, descriptor)) {
-                    continue;
-                }
-                childDescs.put(method.getName(), descriptor);
-                resolvedNames.add(method.getName());
-                break;
-            }
+            detail.append('\'').append(displayTypeName(types.get(index))).append('\'');
+            detail.append(' ').append(descriptors.get(index));
         }
+        return locationPrefix(method) + "类 '" + hirClass.getName() + "' 的方法 '" + method.getName()
+                + "' 同时匹配多个父类型的入口：" + detail
+                + "；JVM 无法用同一个方法满足这些签名，请统一父类型声明或改名区分。";
+    }
+
+    /**
+     * 生成"父类型要求 void、实现却声明了返回值"的诊断文本。
+     *
+     * @param hirClass 实现类
+     * @param method 冲突的方法声明
+     * @param type 命中的父类型 JVM 内部名
+     * @param superTypeDescriptor 父类型成员的入口描述符
+     * @param ownDescriptor 实现方法自身的入口描述符
+     * @return 面向脚本作者的诊断文本
+     */
+    private String describeReturnTypeConflict(HirClass hirClass, HirFunction method, String type,
+                                              String superTypeDescriptor, String ownDescriptor) {
+        return locationPrefix(method) + "类 '" + hirClass.getName() + "' 的方法 '" + method.getName()
+                + "' 声明了非 Unit 返回值（" + ownDescriptor + "），但父类型 '"
+                + displayTypeName(type) + "' 的同一入口是 " + superTypeDescriptor
+                + "；该方法无法实现该接口方法，请改为声明 Unit 或改名避开。";
+    }
+
+    /**
+     * 把 JVM 内部名转换成诊断中可读的父类型名。
+     * <p>脚本本地类会被编译进度-模块包，诊断里只保留脚本中书写的简单类名；Java 类型保留全限定名。</p>
+     *
+     * @param internalName 父类型的 JVM 内部名
+     * @return 面向脚本作者的显示名
+     */
+    private String displayTypeName(String internalName) {
+        if (internalName == null) {
+            return "<unknown>";
+        }
+        String dotted = internalName.replace('/', '.');
+        if (dotted.contains("runtime.generated.")) {
+            return dotted.substring(dotted.lastIndexOf('.') + 1);
+        }
+        return dotted;
+    }
+
+    /**
+     * 生成诊断文本的来源位置前缀。
+     *
+     * @param method 方法声明
+     * @return 形如 {@code file:line: } 的前缀，位置缺失时为空串
+     */
+    private String locationPrefix(HirFunction method) {
+        SourceLocation location = method.getLocation();
+        if (location == null || location.getFile() == null) {
+            return "";
+        }
+        return location.getFile() + ":" + location.getLine() + ": ";
     }
 
     /**

@@ -188,6 +188,9 @@ public class PassPipeline {
             lowering.registerExternalInterfaceNames(externalInterfaceNames);
         }
         MirModule mir = lowering.lower(hir);
+        // 接口覆写冲突无法用同一个 JVM 方法满足，生成的类只在调用时暴露问题，编译期直接中止。
+        // 解释器路径（executeToMir）按名称分派，不受该限制，故只在此处拦截。
+        rejectOverrideConflicts(lowering.getOverrideConflicts());
         anonymousClassCounterBase = lowering.getAnonymousClassCounter();
         hir = null; // 释放 HIR，减少内存峰值
         com.novalang.ir.profile.NovaCompileProfile.add("hir-to-mir", phaseStart);
@@ -211,6 +214,25 @@ public class PassPipeline {
         Map<String, byte[]> classes = new MirCodeGenerator().generate(mir);
         com.novalang.ir.profile.NovaCompileProfile.add("codegen", phaseStart);
         return classes;
+    }
+
+    /**
+     * 拒绝接口覆写冲突：同一入口无法同时满足多个父类型签名，或接口要求 void 而实现声明了返回值。
+     * <p>这类类会被 JVM 判定为未实现接口方法，只在调用时抛 {@code AbstractMethodError}，
+     * 因此与语义分析错误同格式输出并中止编译。</p>
+     *
+     * @param conflicts 降级阶段收集到的冲突说明
+     */
+    private void rejectOverrideConflicts(List<String> conflicts) {
+        if (conflicts.isEmpty()) {
+            return;
+        }
+        StringBuilder message = new StringBuilder("Semantic analysis errors:\n");
+        for (String conflict : conflicts) {
+            System.err.println("[ERROR] " + conflict);
+            message.append("  ").append(conflict).append('\n');
+        }
+        throw new RuntimeException(message.toString());
     }
 
     /**
