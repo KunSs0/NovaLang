@@ -879,6 +879,10 @@ public class HirToMirLowering {
             }
         }
 
+        // 默认参数桥接入口必须在任何方法体降级之前登记：降级某个调用点时若只看到全参数入口，
+        // 就会为省略默认实参的调用压入不足的实参，产出无法通过 JVM 校验的字节码。
+        registerDefaultArgumentBridgeDescs(hirModule);
+
         NovaCompileProfile.add("hir-to-mir.prepass", profileStart);
 
         List<MirClass> classes = new ArrayList<>();
@@ -1107,8 +1111,8 @@ public class HirToMirLowering {
                     }
                 }
                 methods.add(func);
-                if (!isStatic && !m.getName().startsWith("<") && m.getBody() != null) {
-                    addDefaultArgumentBridges(m, func, className, methods);
+                if (!m.getName().startsWith("<") && m.getBody() != null) {
+                    addDefaultArgumentBridges(hirClass, m, func, className, methods);
                 }
             }
         }
@@ -1290,43 +1294,208 @@ public class HirToMirLowering {
         return clinit;
     }
 
-    /** 为跨 Workspace 编译组调用导出省略尾部默认参数的方法入口。 */
-    private void addDefaultArgumentBridges(HirFunction source, MirFunction implementation, String owner, List<MirFunction> methods) {
+    /**
+     * 预登记所有带尾部默认值方法的降阶桥接入口描述符。
+     * <p>调用点按实参个数选择入口，因此登记必须早于任何方法体降级；否则先降级的调用点只会看到全参数入口。</p>
+     *
+     * @param hirModule 当前编译组的 HIR 模块
+     */
+    private void registerDefaultArgumentBridgeDescs(HirModule hirModule) {
+        for (HirDecl declaration : hirModule.getDeclarations()) {
+            if (!(declaration instanceof HirClass)) {
+                continue;
+            }
+            HirClass hirClass = (HirClass) declaration;
+            String className = localClassInternalName(hirClass.getName());
+            Map<String, String> methodDescs = novaMethodDescs.get(className);
+            Map<String, List<String>> overloadDescs = novaMethodOverloadDescs.get(className);
+            if (methodDescs == null || overloadDescs == null) {
+                continue;
+            }
+            // 先快照声明入口：后登记的同名桥接入口不能被当成"已声明的同形入口"而互相压制。
+            Map<String, List<String>> declaredOverloads = new HashMap<>();
+            for (Map.Entry<String, List<String>> entry : overloadDescs.entrySet()) {
+                declaredOverloads.put(entry.getKey(), new ArrayList<>(entry.getValue()));
+            }
+            for (HirFunction method : hirClass.getMethods()) {
+                if (method.isExtensionFunction() || method.getName().startsWith("<")
+                        || method.getBody() == null) {
+                    continue;
+                }
+                String fullDescriptor = methodDescs.get(method.getName());
+                List<String> overloads = overloadDescs.get(method.getName());
+                if (fullDescriptor == null || overloads == null) {
+                    continue;
+                }
+                Map<Integer, String> plan = planDefaultArgumentBridges(
+                        method, fullDescriptor, declaredOverloads.get(method.getName()));
+                for (String descriptor : plan.values()) {
+                    if (!overloads.contains(descriptor)) {
+                        overloads.add(descriptor);
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * 规划带尾部默认值方法的降阶桥接入口。
+     * <p>每个入口从末尾向前逐个丢弃带默认值的参数，使省略这些实参的调用有精确元数的目标入口。</p>
+     *
+     * @param source 带默认值的源方法声明
+     * @param fullDescriptor 源方法的完整入口描述符
+     * @param declaredOverloads 同类同名的已声明入口描述符，用于跳过已存在的同形入口
+     * @return 保留参数个数 → 入口描述符，按保留个数从多到少排列
+     */
+    private Map<Integer, String> planDefaultArgumentBridges(HirFunction source, String fullDescriptor,
+                                                            List<String> declaredOverloads) {
+        Map<Integer, String> plan = new LinkedHashMap<>();
         List<HirParam> parameters = source.getParams();
+        if (parameters.isEmpty() || fullDescriptor == null) {
+            return plan;
+        }
+        int close = fullDescriptor.indexOf(')');
+        if (close < 0) {
+            return plan;
+        }
+        MirType resultType = descriptorToMirType(fullDescriptor.substring(close + 1));
+        for (int retained = parameters.size() - 1; retained >= 0; retained--) {
+            HirParam omitted = parameters.get(retained);
+            // 只有末尾连续带默认值的参数才能被省略；遇到 vararg 或必填参数即停止
+            if (!omitted.hasDefaultValue() || omitted.isVararg()) {
+                break;
+            }
+            List<MirType> parameterTypes = new ArrayList<>();
+            for (int index = 0; index < retained; index++) {
+                parameterTypes.add(hirTypeToMir(parameters.get(index).getType()));
+            }
+            String descriptor = MethodDescriptor.of(parameterTypes, resultType).toJvmDescriptorIntOnly();
+            if (hasSameParameterList(declaredOverloads, descriptor)) {
+                continue;
+            }
+            plan.put(retained, descriptor);
+        }
+        return plan;
+    }
+
+    /**
+     * 判断已声明入口中是否已存在参数列表相同的入口描述符。
+     *
+     * @param descriptors 已声明的入口描述符
+     * @param candidate 待检查的入口描述符
+     * @return 参数列表相同时返回 true
+     */
+    private boolean hasSameParameterList(List<String> descriptors, String candidate) {
+        if (descriptors == null) {
+            return false;
+        }
+        int candidateClose = candidate.indexOf(')');
+        if (candidateClose < 0) {
+            return false;
+        }
+        String candidateParameters = candidate.substring(0, candidateClose + 1);
+        for (String descriptor : descriptors) {
+            if (descriptor == null) {
+                continue;
+            }
+            int close = descriptor.indexOf(')');
+            if (close < 0) {
+                continue;
+            }
+            if (descriptor.substring(0, close + 1).equals(candidateParameters)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 收集同类同名方法的已声明入口描述符（不含自动生成的桥接入口）。
+     *
+     * @param hirClass 方法所属的 HIR 类
+     * @param methodName 方法名
+     * @return 已声明入口描述符列表
+     */
+    private List<String> declaredOverloadDescriptors(HirClass hirClass, String methodName) {
+        List<String> descriptors = new ArrayList<>();
+        for (HirFunction method : hirClass.getMethods()) {
+            if (method.isExtensionFunction() || method.getName().startsWith("<")) {
+                continue;
+            }
+            if (!method.getName().equals(methodName)) {
+                continue;
+            }
+            descriptors.add(buildHirOverloadDescriptor(method));
+        }
+        return descriptors;
+    }
+
+    /**
+     * 为带尾部默认值的方法生成降阶桥接入口。
+     * <p>默认值在桥接入口内部求值，因此默认值表达式引用前置参数时仍在正确的局部变量环境中运行。
+     * 实例方法用 INVOKEVIRTUAL、接口默认方法用 INVOKEINTERFACE、伴生对象等静态方法用 INVOKESTATIC 转发。</p>
+     *
+     * @param hirClass 方法所属的 HIR 类
+     * @param source 带默认值的源方法声明
+     * @param implementation 源方法的完整实现
+     * @param owner 方法所属的 JVM 内部类名
+     * @param methods 目标方法列表，桥接入口追加到此
+     */
+    private void addDefaultArgumentBridges(HirClass hirClass, HirFunction source, MirFunction implementation,
+                                           String owner, List<MirFunction> methods) {
         String fullDescriptor = implementation.getOverrideDescriptor();
         if (fullDescriptor == null) {
             fullDescriptor = buildHirMethodDescriptor(source);
         }
-        MirType resultType = descriptorToMirType(fullDescriptor.substring(fullDescriptor.indexOf(')') + 1));
-        for (int count = parameters.size() - 1; count >= 0; count--) {
-            if (!parameters.get(count).hasDefaultValue() || parameters.get(count).isVararg()) {
-                break;
+        int close = fullDescriptor.indexOf(')');
+        if (close < 0) {
+            return;
+        }
+        Map<Integer, String> plan = planDefaultArgumentBridges(source, fullDescriptor,
+                declaredOverloadDescriptors(hirClass, source.getName()));
+        if (plan.isEmpty()) {
+            return;
+        }
+        boolean isStatic = source.getModifiers().contains(Modifier.STATIC);
+        boolean isInterfaceMethod = hirClass.getClassKind() == ClassKind.INTERFACE;
+        List<HirParam> parameters = source.getParams();
+        MirType resultType = descriptorToMirType(fullDescriptor.substring(close + 1));
+        for (Map.Entry<Integer, String> entry : plan.entrySet()) {
+            int retained = entry.getKey().intValue();
+            List<MirParam> retainedParams = new ArrayList<>();
+            for (int index = 0; index < retained; index++) {
+                HirParam parameter = parameters.get(index);
+                retainedParams.add(new MirParam(parameter.getName(), hirTypeToMir(parameter.getType())));
             }
-            List<MirParam> retained = new ArrayList<>();
-            List<MirType> parameterTypes = new ArrayList<>();
-            for (int i = 0; i < count; i++) {
-                MirType type = hirTypeToMir(parameters.get(i).getType());
-                retained.add(new MirParam(parameters.get(i).getName(), type));
-                parameterTypes.add(type);
-            }
-            MirFunction bridge = new MirFunction(source.getName(), resultType, retained, source.getModifiers());
+            MirFunction bridge = new MirFunction(source.getName(), resultType, retainedParams,
+                    source.getModifiers());
             bridge.setDefaultArgumentBridge(true);
-            bridge.setOverrideDescriptor(MethodDescriptor.of(parameterTypes, resultType).toJvmDescriptorIntOnly());
+            bridge.setOverrideDescriptor(entry.getValue());
             MirBuilder builder = new MirBuilder(bridge);
-            int receiver = builder.newLocal("this", MirType.ofObject(owner));
+            // 静态入口没有接收者；其余形态在局部变量 0 处分配 this
+            int receiver = isStatic ? -1 : builder.newLocal("this", MirType.ofObject(owner));
             int[] arguments = new int[parameters.size()];
-            for (int i = 0; i < parameters.size(); i++) {
-                HirParam parameter = parameters.get(i);
-                if (i < count) {
-                    arguments[i] = builder.newLocal(parameter.getName(), hirTypeToMir(parameter.getType()));
-                } else {
-                    int value = lowerExpr(parameter.getDefaultValue(), builder);
-                    arguments[i] = builder.newLocal(parameter.getName(), hirTypeToMir(parameter.getType()));
-                    builder.emitMoveTo(value, arguments[i], source.getLocation());
+            for (int index = 0; index < parameters.size(); index++) {
+                HirParam parameter = parameters.get(index);
+                arguments[index] = builder.newLocal(parameter.getName(), hirTypeToMir(parameter.getType()));
+                if (index < retained) {
+                    continue;
                 }
+                // 省略的实参在桥接入口内按声明求值，前置参数此时仍是可用局部变量
+                int value = lowerExpr(parameter.getDefaultValue(), builder);
+                builder.emitMoveTo(value, arguments[index], source.getLocation());
             }
-            int result = builder.emitInvokeVirtualDesc(receiver, source.getName(), arguments, owner,
-                    fullDescriptor, resultType, source.getLocation());
+            int result;
+            if (isStatic) {
+                result = builder.emitInvokeStatic(owner + "|" + source.getName() + "|" + fullDescriptor,
+                        arguments, resultType, source.getLocation());
+            } else if (isInterfaceMethod) {
+                result = builder.emitInvokeInterfaceDesc(receiver, source.getName(), arguments, owner,
+                        fullDescriptor, resultType, source.getLocation());
+            } else {
+                result = builder.emitInvokeVirtualDesc(receiver, source.getName(), arguments, owner,
+                        fullDescriptor, resultType, source.getLocation());
+            }
             if (resultType.getKind() == MirType.Kind.VOID) {
                 builder.emitReturnVoid(source.getLocation());
             } else {
@@ -4632,7 +4801,8 @@ public class HirToMirLowering {
                 int outerTarget = builder.emitGetField(thisLocal.getIndex(), "$outer",
                         MirType.ofObject(outerOwner), expr.getLocation());
                 int[] args = lowerArgs(expr.getArgs(), builder);
-                String desc = lookupNovaMethodDesc(outerOwner, name, args.length);
+                String desc = ensureDescriptorArity(outerOwner, name,
+                        lookupNovaMethodDesc(outerOwner, name, args.length), args.length);
                 MirType retType = inferNovaMethodReturnType(outerOwner, name, desc);
                 int result = builder.emitInvokeVirtualDesc(outerTarget, name, args,
                         outerOwner, desc, retType, expr.getLocation());
@@ -4687,7 +4857,8 @@ public class HirToMirLowering {
             }
             if (shouldSelfCall) {
                 int[] args = lowerArgs(expr.getArgs(), builder);
-                String desc = lookupNovaMethodDesc(owner, name, args.length);
+                String desc = ensureDescriptorArity(owner, name,
+                        lookupNovaMethodDesc(owner, name, args.length), args.length);
                 MirType retType = inferNovaMethodReturnType(owner, name, desc);
                 int result;
                 if (interfaceNames.contains(owner)) {
@@ -5244,7 +5415,7 @@ public class HirToMirLowering {
         SourceLocation loc = expr.getLocation();
         int target = lowerExpr(fieldAccess.getTarget(), builder);
         String methodName = resolveMethodAlias(fieldAccess.getMember());
-        // 类方法默认参数: 检查参数数量不足时补 null
+        // 类方法默认参数: 省略尾部默认值且没有精确元数入口时，用 null 占位交由被调方兜底
         List<Expression> effectiveMethodArgs = expr.getArgs();
         MirType targetType = target >= 0 && target < builder.getFunction().getLocals().size()
                 ? builder.getFunction().getLocals().get(target).getType()
@@ -5255,7 +5426,10 @@ public class HirToMirLowering {
             if (methodDesc != null) {
                 // 计算描述符中的参数数量
                 int expectedArgs = countDescParams(methodDesc);
-                if (effectiveMethodArgs.size() < expectedArgs) {
+                // 存在与实参个数相同的入口（含默认参数桥接入口）时按实际实参调用，默认值由被调方入口物化；
+                // 跨 Workspace 拿不到该入口时才补 null，沿用被调方的 null 兜底
+                if (effectiveMethodArgs.size() < expectedArgs
+                        && findExactArityDescriptor(tOwner, methodName, effectiveMethodArgs.size()) == null) {
                     List<Expression> filled = new ArrayList<>(effectiveMethodArgs);
                     for (int i = filled.size(); i < expectedArgs; i++) {
                         filled.add(new Literal(loc, null, Literal.LiteralKind.NULL));
@@ -5686,8 +5860,9 @@ public class HirToMirLowering {
                         funcInterface, funcDesc,
                         MirType.ofObject("java/lang/Object"), loc);
             }
-            // 尝试 Nova 类/接口方法描述符注册表（沿继承链查找）
-            desc = lookupNovaMethodDesc(owner, methodName, args, builder);
+            // 尝试 Nova 类/接口方法描述符注册表（沿继承链查找），并按实参个数校正到精确元数入口
+            desc = ensureDescriptorArity(owner, methodName,
+                    lookupNovaMethodDesc(owner, methodName, args, builder), args.length);
             returnType = inferNovaMethodReturnType(owner, methodName, desc);
             MirType compilerGeneratedReturnType = inferCompilerGeneratedMethodReturnType(
                     owner, methodName, args.length);
@@ -5717,7 +5892,8 @@ public class HirToMirLowering {
             if (!methodInOwn) {
                 String ifaceOwner = findMethodInInterfaces(owner, methodName);
                 if (ifaceOwner != null) {
-                    desc = lookupNovaMethodDesc(ifaceOwner, methodName, args.length);
+                    desc = ensureDescriptorArity(ifaceOwner, methodName,
+                            lookupNovaMethodDesc(ifaceOwner, methodName, args.length), args.length);
                     returnType = inferNovaMethodReturnType(ifaceOwner, methodName, desc);
                     return builder.emitInvokeInterfaceDesc(target, methodName, args,
                             ifaceOwner, desc, returnType, loc);
@@ -5779,6 +5955,8 @@ public class HirToMirLowering {
         } else {
             desc = MethodDescriptor.allObjectDesc(args.length);
         }
+        // 省略尾部默认值的静态调用改走精确元数入口（伴生对象方法的桥接入口同样静态）
+        desc = ensureDescriptorArity(className, methodName, desc, args.length);
         String extra = className + "|" + methodName + "|" + desc;
 
         // 推断返回类型
@@ -5808,6 +5986,8 @@ public class HirToMirLowering {
         } else {
             desc = MethodDescriptor.allObjectDesc(args.length);
         }
+        // 省略尾部默认值的单例调用改走精确元数入口
+        desc = ensureDescriptorArity(className, methodName, desc, args.length);
         MirType returnType = inferNovaMethodReturnType(className, methodName, desc);
         return builder.emitInvokeVirtualDesc(instance, methodName, args,
                 className, desc, returnType, loc);
@@ -7329,6 +7509,53 @@ public class HirToMirLowering {
     private String lookupNovaMethodDesc(String owner, String methodName, int argCount) {
         String desc = lookupNovaMethodDescInherited(owner, methodName);
         return desc != null ? desc : MethodDescriptor.allObjectDesc(argCount);
+    }
+
+    /**
+     * 沿继承链查找参数个数恰好为 argCount 的方法入口描述符。
+     * <p>入口候选同时包含已声明重载与自动生成的默认参数桥接入口。</p>
+     *
+     * @param owner 接收者类型（JVM 内部名）
+     * @param methodName 方法名
+     * @param argCount 当前调用实际压入的实参个数
+     * @return 精确元数的入口描述符，未找到时返回 null
+     */
+    private String findExactArityDescriptor(String owner, String methodName, int argCount) {
+        String current = owner;
+        while (current != null) {
+            Map<String, List<String>> classOverloads = novaMethodOverloadDescs.get(current);
+            if (classOverloads != null) {
+                List<String> overloads = classOverloads.get(methodName);
+                if (overloads != null) {
+                    for (String descriptor : overloads) {
+                        if (countDescParams(descriptor) == argCount) {
+                            return descriptor;
+                        }
+                    }
+                }
+            }
+            current = classSuperClass.get(current);
+        }
+        return null;
+    }
+
+    /**
+     * 保证方法入口描述符的参数个数与调用点压入的实参个数一致。
+     * <p>按方法名登记的入口是全参数入口，省略默认实参的调用必须改走精确元数的入口（默认参数桥接入口），
+     * 否则调用点少压实参、方法又被声明为更多形参时，生成的字节码无法通过 JVM 校验。</p>
+     *
+     * @param owner 接收者类型（JVM 内部名）
+     * @param methodName 方法名
+     * @param descriptor 当前选中的入口描述符
+     * @param argCount 当前调用实际压入的实参个数
+     * @return 与实参个数匹配的入口描述符；没有精确元数入口时保持原描述符
+     */
+    private String ensureDescriptorArity(String owner, String methodName, String descriptor, int argCount) {
+        if (descriptor != null && countDescParams(descriptor) == argCount) {
+            return descriptor;
+        }
+        String exact = findExactArityDescriptor(owner, methodName, argCount);
+        return exact != null ? exact : descriptor;
     }
 
     /** 沿继承链查找方法描述符（不包含回退），用于 override 描述符修复 */

@@ -457,4 +457,79 @@ class BytecodeVerificationTest {
         assertEquals("value: 42", invokeModuleFunction(source, "strPlusInt"));
         assertEquals("42 is the answer", invokeModuleFunction(source, "intPlusStr"));
     }
+
+    // ============================================================
+    //  默认参数调用（调用点与声明元数必须一致）
+    // ============================================================
+
+    @Test
+    @DisplayName("类内自调用省略尾部默认参数")
+    void testSelfCallOmittingDefaultArgument() throws Exception {
+        String source =
+            "class Demo {\n" +
+            "    fun target(a: Int, b: Int = 5): Int {\n" +
+            "        return b\n" +
+            "    }\n" +
+            "    fun callIt(): Int {\n" +
+            "        return target(1)\n" +
+            "    }\n" +
+            "}\n" +
+            "fun viaSelfCall(): Int = Demo().callIt()\n";
+
+        assertEquals(5, ((Number) invokeModuleFunction(source, "viaSelfCall")).intValue());
+    }
+
+    @Test
+    @DisplayName("显式接收者调用省略原始类型默认参数")
+    void testReceiverCallOmittingPrimitiveDefaultArgument() throws Exception {
+        String source =
+            "class Demo {\n" +
+            "    fun target(a: Int, b: Int = 5): Int {\n" +
+            "        return b\n" +
+            "    }\n" +
+            "}\n" +
+            "fun viaReceiver(): Int = Demo().target(1)\n";
+
+        assertEquals(5, ((Number) invokeModuleFunction(source, "viaReceiver")).intValue());
+    }
+
+    @Test
+    @DisplayName("默认值引用前置参数")
+    void testDefaultArgumentReferencingEarlierParameter() throws Exception {
+        String source =
+            "class Demo {\n" +
+            "    fun scale(a: Int, b: Int = a * 2): Int {\n" +
+            "        return b\n" +
+            "    }\n" +
+            "    fun callIt(): Int {\n" +
+            "        return scale(3)\n" +
+            "    }\n" +
+            "}\n" +
+            "fun viaParamDefault(): Int = Demo().callIt()\n";
+
+        assertEquals(6, ((Number) invokeModuleFunction(source, "viaParamDefault")).intValue());
+    }
+
+    @Test
+    @DisplayName("伴生对象静态方法与 object 单例省略默认参数")
+    void testStaticAndSingletonCallOmittingDefaultArgument() throws Exception {
+        String source =
+            "class Foo {\n" +
+            "    companion object {\n" +
+            "        fun ping(x: Int = 3): Int {\n" +
+            "            return x\n" +
+            "        }\n" +
+            "    }\n" +
+            "}\n" +
+            "object Registry {\n" +
+            "    fun pong(x: Int = 4): Int {\n" +
+            "        return x\n" +
+            "    }\n" +
+            "}\n" +
+            "fun viaCompanion(): Int = Foo.ping()\n" +
+            "fun viaSingleton(): Int = Registry.pong()\n";
+
+        assertEquals(3, ((Number) invokeModuleFunction(source, "viaCompanion")).intValue());
+        assertEquals(4, ((Number) invokeModuleFunction(source, "viaSingleton")).intValue());
+    }
 }

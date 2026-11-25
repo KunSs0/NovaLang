@@ -120,6 +120,26 @@ class CompiledBytecodeRegressionTest {
         assertEquals(java.util.Collections.singleton("greet"), compiled.getAvailableFunctions());
     }
 
+    @Test
+    @DisplayName("compiled class methods should materialize declared default arguments for shortened calls")
+    void compiledClassMethodsShouldMaterializeDefaultArguments() {
+        CompiledNova compiled = new Nova().compileToBytecode(
+                "class Demo {\n" +
+                "    fun label(name: String = \"world\") = \"name=\" + name\n" +
+                "    fun count(b: Int = 5) = \"b=\" + b\n" +
+                "    fun selfCall() = label()\n" +
+                "    fun selfCount() = count()\n" +
+                "}\n" +
+                "fun viaSelfCall() = Demo().selfCall()\n" +
+                "fun viaSelfCount() = Demo().selfCount()\n" +
+                "fun viaReceiver() = Demo().label()\n",
+                "default-argument.nova");
+
+        assertEquals("name=world", compiled.call("viaSelfCall"));
+        assertEquals("b=5", compiled.call("viaSelfCount"));
+        assertEquals("name=world", compiled.call("viaReceiver"));
+    }
+
     private URLClassLoader compileScriptOnlyClassLoader() throws Exception {
         Path classesDir = tempDir.resolve("classes");
         Path srcDir = tempDir.resolve("src").resolve("dynamic");
